@@ -11,7 +11,7 @@ corresponds to the entries below.
   Clubs" -> "Called: ♣ Clubs" in the contract strip, "Call Ace of Clubs" ->
   "Call ♣ Clubs" on the call-phase buttons. Dropped "Ace of" since it's
   redundant while calling an ace is the only option (revisit if a
-  call-a-ten rule gets added later). (pending commit)
+  call-a-ten rule gets added later). (`e9d81cd`)
 
 ## [0.5.3] - 2026-07-24
 - Renamed two AI opponents to lean into the Wisconsin theme: Lorraine ->
