@@ -12,10 +12,10 @@ corresponds to the entries below.
   and spades as hard to tell apart at the old sizes. Card dimensions and
   the overall layout footprint are unchanged; a little padding was trimmed
   in the header/status areas to offset the larger text so the table area
-  doesn't get cramped. (pending commit)
+  doesn't get cramped. (`7464f12`)
 - Simplified the version badge to just `vX.Y.Z` (dropped the trailing
   commit-hash suffix, which had hex letters in it). Removed the now-unused
-  git-hash injection from `vite.config.js`. (pending commit)
+  git-hash injection from `vite.config.js`. (`7464f12`)
 
 ## [0.4.1] - 2026-07-24
 - Fixed the leftmost card getting clipped off-screen during the bury phase
