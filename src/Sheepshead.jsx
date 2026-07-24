@@ -19,9 +19,9 @@ const felt = {
   chip: "#1B4D3B",
 };
 
-function Card({ card, small, onClick, dim, selected, faceDown }) {
-  const w = small ? 42 : 56;
-  const h = small ? 60 : 80;
+function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
+  const w = Math.round((small ? 42 : 56) * scale);
+  const h = Math.round((small ? 60 : 80) * scale);
   if (faceDown) {
     return (
       <div style={{
@@ -44,18 +44,18 @@ function Card({ card, small, onClick, dim, selected, faceDown }) {
       cursor: onClick ? "pointer" : "default",
       opacity: dim ? 0.55 : 1,
       display: "flex", flexDirection: "column", justifyContent: "space-between",
-      padding: small ? "3px 4px" : "4px 6px",
+      padding: `${Math.round((small ? 3 : 4) * scale)}px ${Math.round((small ? 4 : 6) * scale)}px`,
       userSelect: "none", WebkitTapHighlightColor: "transparent",
     }}>
-      <div style={{ fontSize: small ? 13 : 16, fontWeight: 800, lineHeight: 1, color: red ? felt.red : felt.black, fontFamily: "Georgia, serif" }}>
+      <div style={{ fontSize: Math.round((small ? 13 : 16) * scale), fontWeight: 800, lineHeight: 1, color: red ? felt.red : felt.black, fontFamily: "Georgia, serif" }}>
         {card.rank}
-        <span style={{ fontSize: small ? 11 : 14 }}>{SUIT_SYM[card.suit]}</span>
+        <span style={{ fontSize: Math.round((small ? 11 : 14) * scale) }}>{SUIT_SYM[card.suit]}</span>
       </div>
-      <div style={{ alignSelf: "center", fontSize: small ? 18 : 26, color: red ? felt.red : felt.black, lineHeight: 1 }}>
+      <div style={{ alignSelf: "center", fontSize: Math.round((small ? 18 : 26) * scale), color: red ? felt.red : felt.black, lineHeight: 1 }}>
         {SUIT_SYM[card.suit]}
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        {trump && <div style={{ width: small ? 6 : 8, height: small ? 6 : 8, borderRadius: "50%", background: felt.brass, boxShadow: "0 0 3px " + felt.brass }} />}
+        {trump && <div style={{ width: Math.round((small ? 6 : 8) * scale), height: Math.round((small ? 6 : 8) * scale), borderRadius: "50%", background: felt.brass, boxShadow: "0 0 3px " + felt.brass }} />}
       </div>
     </div>
   );
@@ -333,25 +333,33 @@ export default function Sheepshead() {
           <div style={{ marginLeft: "auto", fontSize: 11, color: felt.creamDim }}>{g.trickCounts[0]} tricks · score {g.scores[0]}</div>
         </div>
         <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
-          {g.hands[0].map((c, i) => {
-            const inBury = g.phase === "bury";
-            const playable = g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c));
-            const selected = g.selected.some((x) => cid(x) === cid(c));
-            return (
-              <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -14, zIndex: i }}>
-                <Card
-                  card={c}
-                  selected={selected}
-                  dim={g.phase === "playing" && g.turn === 0 && !playable}
-                  onClick={
-                    inBury ? () => toggleBury(c)
-                    : playable ? () => humanPlay(c)
-                    : undefined
-                  }
-                />
-              </div>
-            );
-          })}
+          {(() => {
+            // More than 6 cards only happens transiently while burying (holding
+            // the blind before discarding 2) — shrink the fan a bit so the
+            // leftmost card's rank doesn't get crowded off narrow phone widths.
+            const fanScale = g.hands[0].length > 6 ? 0.9 : 1;
+            const overlap = Math.round(14 * fanScale);
+            return g.hands[0].map((c, i) => {
+              const inBury = g.phase === "bury";
+              const playable = g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c));
+              const selected = g.selected.some((x) => cid(x) === cid(c));
+              return (
+                <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: i }}>
+                  <Card
+                    card={c}
+                    scale={fanScale}
+                    selected={selected}
+                    dim={g.phase === "playing" && g.turn === 0 && !playable}
+                    onClick={
+                      inBury ? () => toggleBury(c)
+                      : playable ? () => humanPlay(c)
+                      : undefined
+                    }
+                  />
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 
