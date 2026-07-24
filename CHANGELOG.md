@@ -10,8 +10,7 @@ corresponds to the entries below.
 - Added a "Last Trick" feature: the tricks/score text in the bottom-right of
   the hand area is now a button (styled like "Scores") that opens a modal
   listing the previous trick's cards by player, in the order they were
-  played (leader first), with "led"/"won" tags and points taken. (pending
-  commit)
+  played (leader first), with "led"/"won" tags and points taken. (`9c442a7`)
 
 ## [0.4.2] - 2026-07-24
 - Bumped font sizes ~20% across the board (card ranks/suits, seat labels,
