@@ -11,7 +11,7 @@ corresponds to the entries below.
   symbol — "Called: Ace of Clubs" instead of "Called: A♣" in the contract
   strip, and "Call Ace of Clubs" instead of "Call A♣" on the call-phase
   buttons. Directly addresses the clubs/spades confusion; card faces
-  themselves still use symbols. (pending commit)
+  themselves still use symbols. (`cc1361d`)
 
 ## [0.5.1] - 2026-07-24
 - Fixed the contract strip wrapping onto two lines at the new font size:
