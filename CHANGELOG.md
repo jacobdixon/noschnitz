@@ -7,6 +7,12 @@ fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below; the short hash after it pins the exact
 commit, for when two screenshots share a version but not a build.
 
+## [0.4.1] - 2026-07-24
+- Fixed the leftmost card getting clipped off-screen during the bury phase
+  (8 cards held) on narrower phones — confirmed via a real Pixel 9
+  screenshot. The hand fan now shrinks ~10% (card size + overlap) whenever
+  more than 6 cards are held; normal 6-card play is unaffected. (`83ac79f`)
+
 ## [0.4.0] - 2026-07-24
 - Added a discreet version/commit badge to the UI (`v0.4.0·6b7ef41` style) so
   tester screenshots carry an exact build stamp. (`6b7ef41`)
