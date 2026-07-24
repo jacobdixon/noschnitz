@@ -9,7 +9,7 @@ corresponds to the entries below.
 ## [0.5.5] - 2026-07-24
 - Shortened "Picker team wins" to "Pickers win" in the hand-end modal
   headline, to leave more horizontal room for the "— Schneider!" /
-  "— No-tricker!" suffix on the same line. (pending commit)
+  "— No-tricker!" suffix on the same line. (`e54a970`)
 
 ## [0.5.4] - 2026-07-24
 - Switched called-suit text to the classic icon + label pattern: "Called: A
