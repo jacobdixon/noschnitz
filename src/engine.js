@@ -1,0 +1,365 @@
+/* ================= SHEEPSHEAD ENGINE — Call an Ace, 5-handed =================
+   Pure game logic, no React/JSX. Kept separate from Sheepshead.jsx so it can be
+   imported by a headless simulation harness (scripts/simulate.mjs) for testing
+   AI changes without a browser. */
+
+export const SUITS = ["C", "S", "H", "D"];
+export const RANKS = ["7", "8", "9", "K", "10", "A", "J", "Q"];
+export const SUIT_SYM = { C: "♣", S: "♠", H: "♥", D: "♦" };
+export const SUIT_NAME = { C: "Clubs", S: "Spades", H: "Hearts", D: "Diamonds" };
+export const CARD_POINTS = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0, "8": 0, "7": 0 };
+export const NAMES = ["You", "Gus", "Lorraine", "Werner", "Patty"];
+
+export const isTrump = (c) => c.rank === "Q" || c.rank === "J" || c.suit === "D";
+export const effSuit = (c) => (isTrump(c) ? "T" : c.suit);
+export const cardPts = (c) => CARD_POINTS[c.rank];
+export const cid = (c) => c.rank + c.suit;
+
+export function trumpPower(c) {
+  const qOrder = { C: 14, S: 13, H: 12, D: 11 };
+  const jOrder = { C: 10, S: 9, H: 8, D: 7 };
+  if (c.rank === "Q") return qOrder[c.suit];
+  if (c.rank === "J") return jOrder[c.suit];
+  return { A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1 }[c.rank];
+}
+export const failPower = (c) => ({ A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1 }[c.rank]);
+export const power = (c) => (isTrump(c) ? 100 + trumpPower(c) : failPower(c));
+
+export function makeDeck() {
+  const d = [];
+  for (const s of SUITS) for (const r of RANKS) d.push({ suit: s, rank: r });
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+export function sortHand(hand) {
+  const suitOrd = { C: 0, S: 1, H: 2 };
+  return [...hand].sort((a, b) => {
+    const at = isTrump(a), bt = isTrump(b);
+    if (at && bt) return trumpPower(b) - trumpPower(a);
+    if (at) return -1;
+    if (bt) return 1;
+    if (a.suit !== b.suit) return suitOrd[a.suit] - suitOrd[b.suit];
+    return failPower(b) - failPower(a);
+  });
+}
+
+export function trickWinner(trick) {
+  const led = effSuit(trick[0].card);
+  let best = trick[0];
+  for (const p of trick.slice(1)) {
+    const bt = isTrump(best.card), pt = isTrump(p.card);
+    if (pt && !bt) best = p;
+    else if (pt && bt && trumpPower(p.card) > trumpPower(best.card)) best = p;
+    else if (!pt && !bt && effSuit(p.card) === led && failPower(p.card) > failPower(best.card)) best = p;
+  }
+  return best.player;
+}
+
+/* ---------- Legality (follow suit + called-ace constraints) ---------- */
+export function legalPlays(g, playerIdx) {
+  const hand = g.hands[playerIdx];
+  const called = g.calledSuit; // null when picker went alone
+  const isPartner = playerIdx === g.partner;
+  const isPicker = playerIdx === g.picker;
+  const aceOut = g.calledAcePlayed;
+  const lastTrick = g.tricksDone === 5;
+
+  const calledAce = (c) => called && c.suit === called && c.rank === "A" && !isTrump(c);
+  const inCalled = (c) => called && !isTrump(c) && c.suit === called;
+
+  let legal;
+  if (g.trick.length === 0) {
+    legal = [...hand];
+    // Partner may not lead the called suit except with the ace itself (until ace is played)
+    if (isPartner && !aceOut && !lastTrick) {
+      const filtered = legal.filter((c) => !inCalled(c) || calledAce(c));
+      if (filtered.length) legal = filtered;
+    }
+  } else {
+    const led = effSuit(g.trick[0].card);
+    const follow = hand.filter((c) => effSuit(c) === led);
+    legal = follow.length ? follow : [...hand];
+    // Partner must play the called ace the first time the suit is led
+    if (isPartner && !aceOut && led === called) {
+      const ace = legal.find(calledAce);
+      if (ace) legal = [ace];
+    }
+  }
+
+  // Partner may not throw the called ace off-suit before the suit is led (unless forced or last trick)
+  if (isPartner && !aceOut && !lastTrick && g.trick.length > 0) {
+    const led = effSuit(g.trick[0].card);
+    if (led !== called) {
+      const filtered = legal.filter((c) => !calledAce(c));
+      if (filtered.length) legal = filtered;
+    }
+  }
+  // Picker must retain a called-suit card until the suit has been led
+  if (isPicker && called && !g.calledSuitLed && !lastTrick) {
+    const calledCards = hand.filter(inCalled);
+    if (calledCards.length === 1 && g.trick.length > 0 && effSuit(g.trick[0].card) !== called) {
+      const filtered = legal.filter((c) => !inCalled(c));
+      if (filtered.length) legal = filtered;
+    }
+  }
+  return legal;
+}
+
+/* ------------------------------ AI brains ------------------------------ */
+export function handStrength(hand) {
+  const t = hand.filter(isTrump);
+  const q = t.filter((c) => c.rank === "Q").length;
+  const j = t.filter((c) => c.rank === "J").length;
+  return t.length * 2 + q * 2 + j;
+}
+
+export function aiBuryAndCall(hand) {
+  // choose 2 to bury from 8, then a suit to call
+  let h = [...hand];
+  const fails = () => h.filter((c) => !isTrump(c));
+  const suitsHeld = (arr) => {
+    const m = { C: [], S: [], H: [] };
+    arr.forEach((c) => m[c.suit].push(c));
+    return m;
+  };
+  const callable = (arr, buriedSoFar = []) => {
+    const m = suitsHeld(arr.filter((c) => !isTrump(c)));
+    return ["C", "S", "H"].filter(
+      (s) =>
+        m[s].length > 0 &&
+        !m[s].some((c) => c.rank === "A") &&
+        !buriedSoFar.some((c) => c.suit === s && c.rank === "A")
+    );
+  };
+
+  const buried = [];
+  for (let k = 0; k < 2; k++) {
+    const f = fails();
+    let pool = f.length ? f : h.filter((c) => trumpPower(c) <= 3); // low diamonds as last resort
+    if (!pool.length) pool = [...h].sort((a, b) => power(a) - power(b)).slice(0, 1);
+    // prefer high points; avoid destroying the only callable suit
+    const scored = pool
+      .map((c) => {
+        const rest = h.filter((x) => x !== c);
+        const keepsCall = callable(rest, [...buried, c]).length > 0 || callable(h, buried).length === 0;
+        const m = suitsHeld(fails());
+        const shortBonus = !isTrump(c) && m[c.suit].length === 1 && !m[c.suit].some((x) => x.rank === "A") ? -3 : 0;
+        return { c, score: cardPts(c) * 2 + (keepsCall ? 4 : -8) + shortBonus + (c.rank === "A" && !isTrump(c) ? 3 : 0) };
+      })
+      .sort((a, b) => b.score - a.score);
+    const pick = scored[0].c;
+    buried.push(pick);
+    h = h.filter((c) => c !== pick);
+  }
+  const opts = callable(h, buried);
+  let call = null;
+  if (opts.length) {
+    const m = suitsHeld(h.filter((c) => !isTrump(c)));
+    opts.sort((a, b) => m[a].length - m[b].length);
+    call = opts[0];
+  }
+  return { buried, call, hand: h };
+}
+
+export function knowsTeammate(g, viewer, target) {
+  if (viewer === target) return true;
+  const onPickerTeam = (i) => i === g.picker || i === g.partner;
+  const viewerOnPicker = onPickerTeam(viewer);
+  // viewer knows picker; partner knows self; everyone knows partner after reveal
+  const targetKnownPicker = target === g.picker || (g.partnerRevealed && target === g.partner);
+  if (viewerOnPicker) {
+    if (viewer === g.partner || viewer === g.picker) {
+      if (target === g.picker) return true;
+      if (viewer === g.partner && target === g.picker) return true;
+      if (g.partnerRevealed && target === g.partner) return true;
+      if (viewer === g.picker && !g.partnerRevealed) return false; // picker unsure of partner
+      return targetKnownPicker;
+    }
+  }
+  // defender: teammates are all non-picker-team players (as far as known)
+  if (!viewerOnPicker) return !targetKnownPicker && target !== g.picker;
+  return false;
+}
+
+export function aiChooseCard(g, idx) {
+  const legal = legalPlays(g, idx);
+  if (legal.length === 1) return legal[0];
+  const onPickerTeam = idx === g.picker || idx === g.partner;
+
+  if (g.trick.length === 0) {
+    // Leading
+    const trumps = legal.filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
+    const fails = legal.filter((c) => !isTrump(c));
+    if (onPickerTeam) {
+      if (trumps.length && (trumps[0].rank === "Q" || trumps.length >= 3)) return trumps[0];
+      if (idx === g.picker && g.calledSuit && !g.calledAcePlayed) {
+        const cs = fails.filter((c) => c.suit === g.calledSuit);
+        if (cs.length && g.tricksDone >= 2) return cs.sort((a, b) => failPower(a) - failPower(b))[0]; // call for the ace
+      }
+      if (fails.length) return fails.sort((a, b) => cardPts(a) - cardPts(b) || failPower(a) - failPower(b))[0];
+      return trumps[trumps.length - 1];
+    } else {
+      const aces = fails.filter((c) => c.rank === "A" && c.suit !== g.calledSuit);
+      if (aces.length) return aces[0];
+      const nonCalled = fails.filter((c) => c.suit !== g.calledSuit);
+      if (nonCalled.length) return nonCalled.sort((a, b) => cardPts(a) - cardPts(b))[0];
+      if (fails.length) return fails.sort((a, b) => cardPts(a) - cardPts(b))[0];
+      return trumps.length ? trumps[trumps.length - 1] : legal[0];
+    }
+  }
+
+  // Following
+  const winnerSoFar = trickWinner(g.trick);
+  const winningCard = g.trick.find((t) => t.player === winnerSoFar).card;
+  const mateWinning = knowsTeammate(g, idx, winnerSoFar);
+  const beats = (c) => {
+    const hypo = [...g.trick, { player: idx, card: c }];
+    return trickWinner(hypo) === idx;
+  };
+  const winners = legal.filter(beats);
+  const trickPts = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
+  const lastToPlay = g.trick.length === 4;
+
+  if (mateWinning && (lastToPlay || power(winningCard) >= 110)) {
+    // schmear: give points to a winning teammate
+    return [...legal].sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+  }
+  if (winners.length) {
+    if (lastToPlay) {
+      // cheapest winner, but prefer pointy winner if it's ours anyway
+      return winners.sort((a, b) => power(a) - power(b))[0];
+    }
+    if (trickPts >= 10 || g.tricksDone >= 3) {
+      // try to secure with strength
+      return winners.sort((a, b) => power(b) - power(a))[0];
+    }
+    return winners.sort((a, b) => power(a) - power(b))[0];
+  }
+  // can't win: dump lowest points, lowest power
+  return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+}
+
+/* ------------------------------ Game setup ------------------------------ */
+export function freshHand(dealer, scores, handNum) {
+  const deck = makeDeck();
+  const hands = [[], [], [], [], []];
+  let di = 0;
+  for (let p = 0; p < 5; p++) for (let k = 0; k < 6; k++) hands[p].push(deck[di++]);
+  const blind = [deck[di++], deck[di++]];
+  return {
+    phase: "picking",
+    handNum,
+    dealer,
+    hands: hands.map(sortHand),
+    blind,
+    buried: [],
+    picker: null,
+    partner: null,
+    partnerRevealed: false,
+    calledSuit: null,
+    calledAcePlayed: false,
+    calledSuitLed: false,
+    alone: false,
+    pickTurn: (dealer + 1) % 5,
+    passes: 0,
+    trick: [],
+    leader: (dealer + 1) % 5,
+    turn: (dealer + 1) % 5,
+    tricksDone: 0,
+    trickCounts: [0, 0, 0, 0, 0],
+    ptsTaken: [0, 0, 0, 0, 0],
+    lastTrick: null,
+    selected: [],
+    scores,
+    message: null,
+    result: null,
+  };
+}
+
+export function assignPartner(g) {
+  if (!g.calledSuit) return { ...g, partner: null, alone: true };
+  let partner = null;
+  for (let p = 0; p < 5; p++) {
+    if (p === g.picker) continue;
+    if (g.hands[p].some((c) => c.suit === g.calledSuit && c.rank === "A" && !isTrump(c))) partner = p;
+  }
+  return { ...g, partner, alone: partner === null };
+}
+
+export function applyPlay(g, idx, card) {
+  const hands = g.hands.map((h, i) => (i === idx ? h.filter((c) => cid(c) !== cid(card)) : h));
+  const trick = [...g.trick, { player: idx, card }];
+  let { partnerRevealed, calledAcePlayed, calledSuitLed } = g;
+  if (g.calledSuit && !isTrump(card) && card.suit === g.calledSuit) {
+    if (trick.length === 1) calledSuitLed = true;
+    if (effSuit(trick[0].card) === g.calledSuit) calledSuitLed = true;
+    if (card.rank === "A") {
+      calledAcePlayed = true;
+      if (idx === g.partner) partnerRevealed = true;
+    }
+  }
+  const next = { ...g, hands, trick, partnerRevealed, calledAcePlayed, calledSuitLed };
+  if (trick.length < 5) next.turn = (idx + 1) % 5;
+  else next.turn = -1; // wait for trick resolution
+  return next;
+}
+
+export function resolveTrick(g) {
+  const w = trickWinner(g.trick);
+  const pts = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
+  const ptsTaken = [...g.ptsTaken];
+  ptsTaken[w] += pts;
+  const trickCounts = [...g.trickCounts];
+  trickCounts[w] += 1;
+  const tricksDone = g.tricksDone + 1;
+  const base = {
+    ...g,
+    ptsTaken,
+    trickCounts,
+    tricksDone,
+    lastTrick: { trick: g.trick, winner: w },
+    trick: [],
+    leader: w,
+    turn: w,
+  };
+  if (tricksDone === 6) return scoreHand(base);
+  return base;
+}
+
+export function scoreHand(g) {
+  const buriedPts = g.buried.reduce((s, c) => s + cardPts(c), 0);
+  const pickerTeam = [g.picker, ...(g.partner !== null ? [g.partner] : [])];
+  const teamPts = pickerTeam.reduce((s, p) => s + g.ptsTaken[p], 0) + buriedPts;
+  const defPts = 120 - teamPts;
+  const teamTricks = pickerTeam.reduce((s, p) => s + g.trickCounts[p], 0);
+  const pickerWins = teamPts >= 61;
+  let mult = 1;
+  let label = "";
+  if (pickerWins) {
+    if (teamTricks === 6) { mult = 3; label = "No-tricker!"; }
+    else if (defPts <= 30) { mult = 2; label = "Schneider!"; }
+  } else {
+    if (teamTricks === 0) { mult = 3; label = "No-tricker!"; }
+    else if (teamPts <= 30) { mult = 2; label = "Schneider!"; }
+  }
+  const scores = [...g.scores];
+  const sign = pickerWins ? 1 : -1;
+  if (g.alone || g.partner === null) {
+    scores[g.picker] += sign * 4 * mult;
+    for (let p = 0; p < 5; p++) if (p !== g.picker) scores[p] -= sign * mult;
+  } else {
+    scores[g.picker] += sign * 2 * mult;
+    scores[g.partner] += sign * 1 * mult;
+    for (let p = 0; p < 5; p++) if (!pickerTeam.includes(p)) scores[p] -= sign * mult;
+  }
+  return {
+    ...g,
+    phase: "handEnd",
+    scores,
+    result: { teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam },
+  };
+}
