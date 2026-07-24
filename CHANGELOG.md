@@ -9,7 +9,7 @@ corresponds to the entries below.
 ## [0.5.3] - 2026-07-24
 - Renamed two AI opponents to lean into the Wisconsin theme: Lorraine ->
   Bunny, Werner -> Duane. Both 5 characters, no avatar-initial collisions
-  with You/Gus/Patty. (pending commit)
+  with You/Gus/Patty. (`ab8c259`)
 
 ## [0.5.2] - 2026-07-24
 - Called-suit text now spells out the suit name instead of showing the
