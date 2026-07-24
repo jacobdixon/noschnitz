@@ -568,13 +568,14 @@ export default function Sheepshead() {
 
   return (
     <div style={{
-      minHeight: "100vh", background: `radial-gradient(ellipse at 50% 30%, ${felt.bg}, ${felt.bgDeep} 80%)`,
+      height: "100dvh", overflow: "hidden",
+      background: `radial-gradient(ellipse at 50% 30%, ${felt.bg}, ${felt.bgDeep} 80%)`,
       color: felt.cream, fontFamily: "'Avenir Next', 'Segoe UI', system-ui, sans-serif",
       display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto",
       borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `2px solid ${felt.rail}` }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `2px solid ${felt.rail}` }}>
         <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 16, color: felt.brass }}>
           SHEEPSHEAD
         </div>
@@ -585,7 +586,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Contract strip */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 12px", fontSize: 12, color: felt.creamDim, minHeight: 28 }}>
+      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "6px 12px", fontSize: 12, color: felt.creamDim, minHeight: 28 }}>
         <span>Hand {g.handNum}</span>
         <span>· Dealer: {NAMES[g.dealer]}</span>
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
@@ -598,7 +599,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Table */}
-      <div style={{ position: "relative", flex: 1, minHeight: 340 }}>
+      <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
         {[1, 2, 3, 4].map((i) => (
           <div key={i} style={{ position: "absolute", ...seatPos[i], display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 84 }}>
             <div style={{
@@ -643,7 +644,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Status + actions */}
-      <div style={{ padding: "8px 12px", textAlign: "center", minHeight: 84 }}>
+      <div style={{ flexShrink: 0, padding: "8px 12px", textAlign: "center", minHeight: 84 }}>
         <div style={{ fontSize: 13, marginBottom: 8, color: felt.creamDim, fontStyle: "italic" }}>{statusLine()}</div>
 
         {g.phase === "picking" && g.pickTurn === 0 && g.passes < 5 && (
@@ -680,7 +681,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Your hand */}
-      <div style={{ padding: "0 10px 14px" }}>
+      <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
           {roleTag(0)}
