@@ -187,7 +187,14 @@ export function aiBuryAndCall(hand) {
   }
   const opts = callable(h, buried);
   let call = null;
-  if (opts.length) {
+  // Go it alone on hand for the 4x multiplier instead of calling a partner:
+  // reserved for hands well above the pick threshold (10) — this is the same
+  // handStrength() used to decide whether to pick at all, just held to a much
+  // higher bar since winning 61+ solo against four defenders is a lot harder
+  // than winning it with a secret partner's help.
+  const ALONE_HANDSTRENGTH = 17;
+  const strongEnoughToGoAlone = handStrength(h) >= ALONE_HANDSTRENGTH;
+  if (opts.length && !strongEnoughToGoAlone) {
     const m = suitsHeld(h.filter((c) => !isTrump(c)));
     opts.sort((a, b) => m[a].length - m[b].length);
     call = opts[0];

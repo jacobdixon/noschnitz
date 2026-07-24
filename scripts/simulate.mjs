@@ -58,20 +58,32 @@ function simulate(numHands) {
   let handNum = 1;
   let picked = 0, thrownIn = 0, pickerWins = 0, alone = 0, schneider = 0, noTricker = 0;
   const teamPtsHist = [];
+  let aloneCount = 0, aloneWins = 0, aloneNetScore = 0;
+  let partneredCount = 0, partneredWins = 0, partneredNetScore = 0;
 
   for (let i = 0; i < numHands; i++) {
+    const scoresBefore = scores;
     const res = playHand(dealer, scores, handNum);
     if (res.thrownIn) {
       thrownIn++;
     } else {
       picked++;
-      const { result, alone: wentAlone } = res.g;
+      const { result, alone: wentAlone, picker } = res.g;
       scores = res.g.scores;
+      const pickerDelta = scores[picker] - scoresBefore[picker];
       if (result.pickerWins) pickerWins++;
-      if (wentAlone) alone++;
       if (result.label === "Schneider!") schneider++;
       if (result.label === "No-tricker!") noTricker++;
       teamPtsHist.push(result.teamPts);
+      if (wentAlone) {
+        aloneCount++;
+        if (result.pickerWins) aloneWins++;
+        aloneNetScore += pickerDelta;
+      } else {
+        partneredCount++;
+        if (result.pickerWins) partneredWins++;
+        partneredNetScore += pickerDelta;
+      }
     }
     dealer = (dealer + 1) % 5;
     handNum++;
@@ -82,11 +94,17 @@ function simulate(numHands) {
     numHands, picked, thrownIn,
     pickRate: picked / numHands,
     pickerWinRate: pickerWins / (picked || 1),
-    aloneRate: alone / (picked || 1),
+    aloneRate: aloneCount / (picked || 1),
     schneiderRate: schneider / (picked || 1),
     noTrickerRate: noTricker / (picked || 1),
     avgTeamPts: avg(teamPtsHist),
     finalScoreSpread: Math.max(...scores) - Math.min(...scores),
+    aloneCount,
+    aloneWinRate: aloneWins / (aloneCount || 1),
+    aloneAvgPickerScore: aloneNetScore / (aloneCount || 1),
+    partneredCount,
+    partneredWinRate: partneredWins / (partneredCount || 1),
+    partneredAvgPickerScore: partneredNetScore / (partneredCount || 1),
   };
 }
 
@@ -103,3 +121,5 @@ console.log(`  went alone:        ${(stats.aloneRate * 100).toFixed(1)}%`);
 console.log(`  schneider rate:    ${(stats.schneiderRate * 100).toFixed(1)}%`);
 console.log(`  no-tricker rate:   ${(stats.noTrickerRate * 100).toFixed(1)}%`);
 console.log(`  avg picker-team pts: ${stats.avgTeamPts.toFixed(1)} / 120`);
+console.log(`  -- alone (${stats.aloneCount}): win rate ${(stats.aloneWinRate * 100).toFixed(1)}%, avg picker score/hand ${stats.aloneAvgPickerScore.toFixed(2)}`);
+console.log(`  -- partnered (${stats.partneredCount}): win rate ${(stats.partneredWinRate * 100).toFixed(1)}%, avg picker score/hand ${stats.partneredAvgPickerScore.toFixed(2)}`);
