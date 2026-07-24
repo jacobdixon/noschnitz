@@ -278,9 +278,20 @@ export function aiChooseCard(g, idx) {
   const trickPts = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
   const lastToPlay = g.trick.length === 4;
 
-  if (mateWinning && (lastToPlay || power(winningCard) >= 110)) {
-    // schmear: give points to a winning teammate
-    return [...legal].sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+  if (mateWinning) {
+    // How safe is it to assume this trick is already won? Previously this
+    // only fired for J-club-or-better trump or the literal last card of the
+    // trick, which passed up a lot of free points. Now also schmear when the
+    // winning trump is any Jack-or-better AND when few enough unseen trump
+    // remain relative to how many players still get to act that no one is
+    // likely to be sitting on something bigger.
+    const remainingToAct = 4 - g.trick.length; // players still to act after me, not counting me
+    const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
+    const trumpLooksSafe = isTrump(winningCard) && (trumpPower(winningCard) >= 7 || oppTrumpLeft <= remainingToAct);
+    if (lastToPlay || trumpLooksSafe) {
+      // schmear: give points to a winning teammate
+      return [...legal].sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+    }
   }
   if (winners.length) {
     if (lastToPlay) {
