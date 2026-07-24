@@ -12,7 +12,7 @@ corresponds to the entries below.
   the version badge up into the header row, centered between the
   SHEEPSHEAD title and the Trump/Scores buttons. The play-area header is
   now just "Dealer: X · Y picked · Called: A#" (plus "· Alone" when it
-  applies), full width, one line. (pending commit)
+  applies), full width, one line. (`8a240a6`)
 
 ## [0.5.0] - 2026-07-24
 - Added a "Last Trick" feature: the tricks/score text in the bottom-right of
