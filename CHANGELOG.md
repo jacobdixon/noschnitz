@@ -6,6 +6,14 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.5.1] - 2026-07-24
+- Fixed the contract strip wrapping onto two lines at the new font size:
+  dropped "Hand N" from it (moved into the Scores modal instead) and moved
+  the version badge up into the header row, centered between the
+  SHEEPSHEAD title and the Trump/Scores buttons. The play-area header is
+  now just "Dealer: X · Y picked · Called: A#" (plus "· Alone" when it
+  applies), full width, one line. (pending commit)
+
 ## [0.5.0] - 2026-07-24
 - Added a "Last Trick" feature: the tricks/score text in the bottom-right of
   the hand area is now a button (styled like "Scores") that opens a modal

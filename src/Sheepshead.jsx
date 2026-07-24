@@ -225,6 +225,9 @@ export default function Sheepshead() {
         <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
           SHEEPSHEAD
         </div>
+        <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
+          v{__APP_VERSION__}
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setShowHelp(true)} style={btnGhost}>Trump</button>
           <button onClick={() => setShowScores(true)} style={btnGhost}>Scores</button>
@@ -232,9 +235,8 @@ export default function Sheepshead() {
       </div>
 
       {/* Contract strip */}
-      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28 }}>
-        <span>Hand {g.handNum}</span>
-        <span>· Dealer: {NAMES[g.dealer]}</span>
+      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28, width: "100%" }}>
+        <span>Dealer: {NAMES[g.dealer]}</span>
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
         {g.calledSuit && (
           <span style={{ color: felt.brass, fontWeight: 700 }}>
@@ -242,9 +244,6 @@ export default function Sheepshead() {
           </span>
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
-        <span style={{ marginLeft: "auto", fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
-          v{__APP_VERSION__}
-        </span>
       </div>
 
       {/* Table */}
@@ -401,7 +400,10 @@ export default function Sheepshead() {
       {/* Scores modal */}
       {showScores && (
         <Modal onClose={() => setShowScores(false)}>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Score</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+            <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass }}>Score</div>
+            <div style={{ fontSize: 13, color: felt.creamDim }}>Hand {g.handNum}</div>
+          </div>
           {NAMES.map((n, i) => (
             <div key={n} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 17 }}>
               <span style={{ fontWeight: i === 0 ? 800 : 500 }}>{n}</span>
