@@ -6,6 +6,11 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.5.3] - 2026-07-24
+- Renamed two AI opponents to lean into the Wisconsin theme: Lorraine ->
+  Bunny, Werner -> Duane. Both 5 characters, no avatar-initial collisions
+  with You/Gus/Patty. (pending commit)
+
 ## [0.5.2] - 2026-07-24
 - Called-suit text now spells out the suit name instead of showing the
   symbol — "Called: Ace of Clubs" instead of "Called: A♣" in the contract

@@ -8,7 +8,7 @@ export const RANKS = ["7", "8", "9", "K", "10", "A", "J", "Q"];
 export const SUIT_SYM = { C: "♣", S: "♠", H: "♥", D: "♦" };
 export const SUIT_NAME = { C: "Clubs", S: "Spades", H: "Hearts", D: "Diamonds" };
 export const CARD_POINTS = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0, "8": 0, "7": 0 };
-export const NAMES = ["You", "Gus", "Lorraine", "Werner", "Patty"];
+export const NAMES = ["You", "Gus", "Bunny", "Duane", "Patty"];
 
 export const isTrump = (c) => c.rank === "Q" || c.rank === "J" || c.suit === "D";
 export const effSuit = (c) => (isTrump(c) ? "T" : c.suit);
