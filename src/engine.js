@@ -246,6 +246,17 @@ export function aiChooseCard(g, idx) {
       if (fails.length) return fails.sort((a, b) => cardPts(a) - cardPts(b) || failPower(a) - failPower(b))[0];
       return trumps[trumps.length - 1];
     } else {
+      // Defenders: hunt for the picker's partner. Leading a short called-suit
+      // holding forces whoever holds the called ace to play it right now
+      // (see legalPlays), unmasking the partner and stripping the picker's
+      // protection window — worth more than the trick itself while it's
+      // still unknown who holds it.
+      if (g.calledSuit && !g.calledAcePlayed) {
+        const calledSuitCards = fails.filter((c) => c.suit === g.calledSuit);
+        if (calledSuitCards.length && calledSuitCards.length <= 2) {
+          return calledSuitCards.sort((a, b) => failPower(a) - failPower(b))[0];
+        }
+      }
       const aces = fails.filter((c) => c.rank === "A" && c.suit !== g.calledSuit);
       if (aces.length) return aces[0];
       const nonCalled = fails.filter((c) => c.suit !== g.calledSuit);
