@@ -79,6 +79,7 @@ export default function Sheepshead() {
   const [g, setG] = useState(() => freshHand(Math.floor(Math.random() * 5), [0, 0, 0, 0, 0], 1));
   const [showScores, setShowScores] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showLastTrick, setShowLastTrick] = useState(false);
 
   /* ---------- engine loop ---------- */
   useEffect(() => {
@@ -333,7 +334,7 @@ export default function Sheepshead() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
           {roleTag(0)}
-          <div style={{ marginLeft: "auto", fontSize: 13, color: felt.creamDim }}>{g.trickCounts[0]} tricks · score {g.scores[0]}</div>
+          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </div>
         <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
           {(() => {
@@ -409,6 +410,41 @@ export default function Sheepshead() {
           ))}
           <div style={{ marginTop: 12 }}>
             <button style={btnPlain} onClick={() => setShowScores(false)}>Close</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Last trick modal */}
+      {showLastTrick && (
+        <Modal onClose={() => setShowLastTrick(false)}>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Last Trick</div>
+          {g.lastTrick ? (
+            <>
+              {g.lastTrick.trick.map((t, i) => {
+                const red = t.card.suit === "H" || t.card.suit === "D";
+                const won = t.player === g.lastTrick.winner;
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 17 }}>
+                    <span style={{ fontWeight: i === 0 || won ? 800 : 500 }}>
+                      {NAMES[t.player]}
+                      {i === 0 && <span style={{ fontSize: 12, color: felt.creamDim, fontWeight: 500 }}> · led</span>}
+                      {won && <span style={{ fontSize: 12, color: felt.brass, fontWeight: 700 }}> · won</span>}
+                    </span>
+                    <span style={{ color: red ? felt.red : felt.cream, fontWeight: 700 }}>
+                      {t.card.rank}{SUIT_SYM[t.card.suit]}
+                    </span>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 8 }}>
+                {NAMES[g.lastTrick.winner]} took {g.lastTrick.trick.reduce((s, t) => s + cardPts(t.card), 0)} pts
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 16, color: felt.creamDim }}>No trick played yet this hand.</div>
+          )}
+          <div style={{ marginTop: 12 }}>
+            <button style={btnPlain} onClick={() => setShowLastTrick(false)}>Close</button>
           </div>
         </Modal>
       )}
