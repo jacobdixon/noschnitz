@@ -225,7 +225,20 @@ export function aiChooseCard(g, idx) {
     const trumps = legal.filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
     const fails = legal.filter((c) => !isTrump(c));
     if (onPickerTeam) {
-      if (trumps.length && (trumps[0].rank === "Q" || trumps.length >= 3)) return trumps[0];
+      // Trump-aware leading: count what's still unseen instead of using a
+      // fixed "3+ trumps or a Q" rule regardless of how the trump has fallen.
+      const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
+      if (trumps.length) {
+        if (oppTrumpLeft === 0) {
+          // We hold every remaining trump — completely risk-free. Lead the
+          // weakest one to bleed opponents' fail-suit points across
+          // multiple guaranteed tricks instead of burning strength early.
+          return trumps[trumps.length - 1];
+        }
+        if (trumps[0].rank === "Q") return trumps[0]; // top trump is always a safe, pressuring lead
+        if (oppTrumpLeft <= 2 && trumps.length >= 2) return trumps[0]; // opponents nearly tapped out — press now
+        if (trumps.length >= 3) return trumps[0]; // real depth, original conservative bar
+      }
       if (idx === g.picker && g.calledSuit && !g.calledAcePlayed) {
         const cs = fails.filter((c) => c.suit === g.calledSuit);
         if (cs.length && g.tricksDone >= 2) return cs.sort((a, b) => failPower(a) - failPower(b))[0]; // call for the ace
