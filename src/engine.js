@@ -25,6 +25,36 @@ export function trumpPower(c) {
 export const failPower = (c) => ({ A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1 }[c.rank]);
 export const power = (c) => (isTrump(c) ? 100 + trumpPower(c) : failPower(c));
 
+export const TRUMP_COUNT = 14; // Q x4, J x4, diamonds x6
+
+/* ---------- Card memory: what's been seen this hand ---------- */
+// g.played accumulates every card from every *resolved* trick. Combined with
+// the in-progress g.trick, this lets the AI reason about what's still
+// unaccounted for (in other hands, the blind, or buried) instead of only
+// ever looking at the current trick in isolation.
+export function seenCards(g) {
+  return [...g.played, ...g.trick.map((t) => t.card)];
+}
+
+// Trump not yet seen this hand and not in `hand` — i.e. still out there
+// somewhere (other hands, blind/buried). Lets the AI judge how safe it is
+// to lead or hold trump instead of using a fixed rule of thumb.
+export function unseenTrumpCount(g, hand) {
+  const seenTrump = seenCards(g).filter(isTrump).length;
+  const mineTrump = hand.filter(isTrump).length;
+  return Math.max(0, TRUMP_COUNT - seenTrump - mineTrump);
+}
+
+// How many cards of a given effective suit (fail suit letter, or "T" for
+// trump) remain unseen and not in `hand`. Useful for judging whether a fail
+// suit is likely exhausted around the table.
+export function unseenSuitCount(g, hand, suit) {
+  const totalPerSuit = suit === "T" ? TRUMP_COUNT : 6; // 6 non-trump ranks per fail suit
+  const seenInSuit = seenCards(g).filter((c) => effSuit(c) === suit).length;
+  const mineInSuit = hand.filter((c) => effSuit(c) === suit).length;
+  return Math.max(0, totalPerSuit - seenInSuit - mineInSuit);
+}
+
 export function makeDeck() {
   const d = [];
   for (const s of SUITS) for (const r of RANKS) d.push({ suit: s, rank: r });
@@ -266,6 +296,7 @@ export function freshHand(dealer, scores, handNum) {
     alone: false,
     pickTurn: (dealer + 1) % 5,
     passes: 0,
+    played: [],
     trick: [],
     leader: (dealer + 1) % 5,
     turn: (dealer + 1) % 5,
@@ -321,6 +352,7 @@ export function resolveTrick(g) {
     ptsTaken,
     trickCounts,
     tricksDone,
+    played: [...g.played, ...g.trick.map((t) => t.card)],
     lastTrick: { trick: g.trick, winner: w },
     trick: [],
     leader: w,
