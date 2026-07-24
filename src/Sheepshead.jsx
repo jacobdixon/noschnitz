@@ -20,6 +20,9 @@ const felt = {
 };
 
 function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
+  // Card box dimensions stay put (so the table/hand layout doesn't get
+  // cramped); only the rank/suit glyphs inside get ~20% bigger for
+  // legibility — clubs vs. spades were hard to tell apart at the old sizes.
   const w = Math.round((small ? 42 : 56) * scale);
   const h = Math.round((small ? 60 : 80) * scale);
   if (faceDown) {
@@ -47,11 +50,11 @@ function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
       padding: `${Math.round((small ? 3 : 4) * scale)}px ${Math.round((small ? 4 : 6) * scale)}px`,
       userSelect: "none", WebkitTapHighlightColor: "transparent",
     }}>
-      <div style={{ fontSize: Math.round((small ? 13 : 16) * scale), fontWeight: 800, lineHeight: 1, color: red ? felt.red : felt.black, fontFamily: "Georgia, serif" }}>
+      <div style={{ fontSize: Math.round((small ? 16 : 19) * scale), fontWeight: 800, lineHeight: 1, color: red ? felt.red : felt.black, fontFamily: "Georgia, serif" }}>
         {card.rank}
-        <span style={{ fontSize: Math.round((small ? 11 : 14) * scale) }}>{SUIT_SYM[card.suit]}</span>
+        <span style={{ fontSize: Math.round((small ? 13 : 17) * scale) }}>{SUIT_SYM[card.suit]}</span>
       </div>
-      <div style={{ alignSelf: "center", fontSize: Math.round((small ? 18 : 26) * scale), color: red ? felt.red : felt.black, lineHeight: 1 }}>
+      <div style={{ alignSelf: "center", fontSize: Math.round((small ? 22 : 31) * scale), color: red ? felt.red : felt.black, lineHeight: 1 }}>
         {SUIT_SYM[card.suit]}
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -64,7 +67,7 @@ function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
 function Badge({ children, gold }) {
   return (
     <span style={{
-      fontSize: 9, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
+      fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
       padding: "2px 6px", borderRadius: 4,
       background: gold ? felt.brass : "#ffffff22",
       color: gold ? "#2A2108" : felt.creamDim,
@@ -217,8 +220,8 @@ export default function Sheepshead() {
       borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
       {/* Header */}
-      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `2px solid ${felt.rail}` }}>
-        <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 16, color: felt.brass }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
+        <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
           SHEEPSHEAD
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -228,7 +231,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Contract strip */}
-      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "6px 12px", fontSize: 12, color: felt.creamDim, minHeight: 28 }}>
+      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28 }}>
         <span>Hand {g.handNum}</span>
         <span>· Dealer: {NAMES[g.dealer]}</span>
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
@@ -239,7 +242,7 @@ export default function Sheepshead() {
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
         <span style={{ marginLeft: "auto", fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
-          v{__APP_VERSION__}·{__COMMIT_HASH__}
+          v{__APP_VERSION__}
         </span>
       </div>
 
@@ -251,15 +254,15 @@ export default function Sheepshead() {
               width: 44, height: 44, borderRadius: "50%", background: felt.chip,
               border: `2px solid ${g.phase === "playing" && g.turn === i ? felt.brass : (g.phase === "picking" && g.pickTurn === i ? felt.brass : "#ffffff2e")}`,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 16,
+              fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
               boxShadow: (g.turn === i || g.pickTurn === i) ? `0 0 10px ${felt.brass}66` : "none",
               transition: "border .2s, box-shadow .2s",
             }}>
               {NAMES[i][0]}
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700 }}>{NAMES[i]}</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: felt.creamDim }}>{g.hands[i].length}🂠 · {g.trickCounts[i]} tricks</span>
+              <span style={{ fontSize: 12, color: felt.creamDim }}>{g.hands[i].length}🂠 · {g.trickCounts[i]} tricks</span>
             </div>
             {roleTag(i)}
           </div>
@@ -274,7 +277,7 @@ export default function Sheepshead() {
         {g.trick.length === 5 && (
           <div style={{
             position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            background: "#000000aa", padding: "4px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700, color: felt.brass, zIndex: 3,
+            background: "#000000aa", padding: "4px 12px", borderRadius: 6, fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
           }}>
             {NAMES[trickWinner(g.trick)]} +{g.trick.reduce((s, t) => s + cardPts(t.card), 0)}
           </div>
@@ -289,8 +292,8 @@ export default function Sheepshead() {
       </div>
 
       {/* Status + actions */}
-      <div style={{ flexShrink: 0, padding: "8px 12px", textAlign: "center", minHeight: 84 }}>
-        <div style={{ fontSize: 13, marginBottom: 8, color: felt.creamDim, fontStyle: "italic" }}>{statusLine()}</div>
+      <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
+        <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>{statusLine()}</div>
 
         {g.phase === "picking" && g.pickTurn === 0 && g.passes < 5 && (
           <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -319,7 +322,7 @@ export default function Sheepshead() {
         )}
 
         {g.tricksDone > 0 && g.phase === "playing" && (
-          <div style={{ fontSize: 11, color: felt.creamDim, marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 4 }}>
             Trick {g.tricksDone + 1} of 6 · You've taken {g.ptsTaken[0]} pts
           </div>
         )}
@@ -328,9 +331,9 @@ export default function Sheepshead() {
       {/* Your hand */}
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
+          <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
           {roleTag(0)}
-          <div style={{ marginLeft: "auto", fontSize: 11, color: felt.creamDim }}>{g.trickCounts[0]} tricks · score {g.scores[0]}</div>
+          <div style={{ marginLeft: "auto", fontSize: 13, color: felt.creamDim }}>{g.trickCounts[0]} tricks · score {g.scores[0]}</div>
         </div>
         <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
           {(() => {
@@ -366,14 +369,14 @@ export default function Sheepshead() {
       {/* Hand end modal */}
       {g.phase === "handEnd" && g.result && (
         <Modal>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
             {g.result.pickerWins ? "Picker team wins" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
           </div>
-          <div style={{ fontSize: 13, marginBottom: 10, color: felt.creamDim }}>
+          <div style={{ fontSize: 16, marginBottom: 10, color: felt.creamDim }}>
             {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
             {g.result.buriedPts > 0 && ` (${g.result.buriedPts} buried)`} · defenders {g.result.defPts}
           </div>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", marginBottom: 14 }}>
+          <table style={{ width: "100%", fontSize: 16, borderCollapse: "collapse", marginBottom: 14 }}>
             <tbody>
               {NAMES.map((n, i) => (
                 <tr key={n} style={{ borderBottom: "1px solid #ffffff18" }}>
@@ -397,9 +400,9 @@ export default function Sheepshead() {
       {/* Scores modal */}
       {showScores && (
         <Modal onClose={() => setShowScores(false)}>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Score</div>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Score</div>
           {NAMES.map((n, i) => (
-            <div key={n} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 14 }}>
+            <div key={n} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 17 }}>
               <span style={{ fontWeight: i === 0 ? 800 : 500 }}>{n}</span>
               <span style={{ color: felt.brass, fontWeight: 700 }}>{g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}</span>
             </div>
@@ -413,8 +416,8 @@ export default function Sheepshead() {
       {/* Trump help modal */}
       {showHelp && (
         <Modal onClose={() => setShowHelp(false)}>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>Trump order</div>
-          <div style={{ fontSize: 13, lineHeight: 1.7, color: felt.creamDim }}>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>Trump order</div>
+          <div style={{ fontSize: 16, lineHeight: 1.7, color: felt.creamDim }}>
             <div style={{ color: felt.cream, fontWeight: 700 }}>Q♣ Q♠ Q♥ Q♦ · J♣ J♠ J♥ J♦ · A♦ 10♦ K♦ 9♦ 8♦ 7♦</div>
             <div style={{ marginTop: 8 }}>All queens, jacks, and diamonds are trump (marked with a gold dot). Fail suits rank A, 10, K, 9, 8, 7.</div>
             <div style={{ marginTop: 8 }}>Points: A=11, 10=10, K=4, Q=3, J=2. Picker's team needs 61 of 120.</div>
@@ -448,15 +451,15 @@ function Modal({ children, onClose }) {
 
 const btnGold = {
   background: felt.brass, color: "#241C06", border: "none", borderRadius: 8,
-  padding: "10px 18px", fontSize: 14, fontWeight: 800, letterSpacing: ".03em",
+  padding: "9px 18px", fontSize: 17, fontWeight: 800, letterSpacing: ".03em",
   cursor: "pointer", boxShadow: "0 2px 0 #7d6420",
 };
 const btnPlain = {
   background: "#ffffff14", color: felt.cream, border: "1px solid #ffffff30", borderRadius: 8,
-  padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+  padding: "9px 18px", fontSize: 17, fontWeight: 700, cursor: "pointer",
 };
 const btnGhost = {
   background: "transparent", color: felt.creamDim, border: `1px solid ${felt.brassDim}`,
-  borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer",
+  borderRadius: 6, padding: "4px 10px", fontSize: 13, fontWeight: 700, cursor: "pointer",
   letterSpacing: ".05em",
 };
