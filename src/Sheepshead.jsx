@@ -104,7 +104,7 @@ export default function Sheepshead() {
     }
     if (g.phase === "playing") {
       if (g.trick.length === 5) {
-        t = setTimeout(() => setG((s) => (s.trick.length === 5 ? resolveTrick(s) : s)), 1500);
+        t = setTimeout(() => setG((s) => (s.trick.length === 5 ? resolveTrick(s) : s)), 2625);
       } else if (g.turn !== 0 && g.turn !== -1) {
         t = setTimeout(() => setG((s) => {
           if (s.phase !== "playing" || s.turn === 0 || s.turn === -1 || s.trick.length >= 5) return s;
