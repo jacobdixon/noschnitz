@@ -370,7 +370,7 @@ export default function Sheepshead() {
       {g.phase === "handEnd" && g.result && (
         <Modal>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-            {g.result.pickerWins ? "Picker team wins" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
+            {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
           </div>
           <div style={{ fontSize: 16, marginBottom: 10, color: felt.creamDim }}>
             {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points

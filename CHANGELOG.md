@@ -6,6 +6,11 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.5.5] - 2026-07-24
+- Shortened "Picker team wins" to "Pickers win" in the hand-end modal
+  headline, to leave more horizontal room for the "— Schneider!" /
+  "— No-tricker!" suffix on the same line. (pending commit)
+
 ## [0.5.4] - 2026-07-24
 - Switched called-suit text to the classic icon + label pattern: "Called: A
   Clubs" -> "Called: ♣ Clubs" in the contract strip, "Call Ace of Clubs" ->
