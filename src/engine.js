@@ -215,7 +215,58 @@ export function knowsTeammate(g, viewer, target) {
   return false;
 }
 
+/* ------------------------- Endgame exact solver ------------------------- */
+// With 2 tricks (<=2 cards per hand) left, the remaining game tree is tiny —
+// at most 2 legal cards per player per decision, 10 decisions total, so it's
+// cheap to solve exactly by minimax instead of leaning on heuristics right
+// when the last tricks (which most often decide whether the picker's team
+// crosses 61) are being played. Both "sides" (picker+partner vs. defenders)
+// are treated as a single coalition maximizing/minimizing their own team's
+// total trick points; buried points are a fixed offset already banked
+// before this window, so they don't affect which move is optimal here.
+function pickerTeamOf(g) {
+  return g.partner !== null ? [g.picker, g.partner] : [g.picker];
+}
+
+function endgameValue(g) {
+  if (g.phase === "handEnd") {
+    return pickerTeamOf(g).reduce((s, p) => s + g.ptsTaken[p], 0);
+  }
+  if (g.trick.length === 5) {
+    return endgameValue(resolveTrick(g));
+  }
+  const idx = g.turn;
+  const isPickerSide = pickerTeamOf(g).includes(idx);
+  const legal = legalPlays(g, idx);
+  let best = isPickerSide ? -Infinity : Infinity;
+  for (const card of legal) {
+    const val = endgameValue(applyPlay(g, idx, card));
+    if (isPickerSide ? val > best : val < best) best = val;
+  }
+  return best;
+}
+
+export function solveEndgameCard(g) {
+  const idx = g.turn;
+  const legal = legalPlays(g, idx);
+  if (legal.length <= 1) return legal[0];
+  const isPickerSide = pickerTeamOf(g).includes(idx);
+  let bestCard = legal[0];
+  let bestVal = isPickerSide ? -Infinity : Infinity;
+  for (const card of legal) {
+    const val = endgameValue(applyPlay(g, idx, card));
+    if (isPickerSide ? val > bestVal : val < bestVal) {
+      bestVal = val;
+      bestCard = card;
+    }
+  }
+  return bestCard;
+}
+
 export function aiChooseCard(g, idx) {
+  // Last two tricks: solve exactly rather than using heuristics.
+  if (g.tricksDone >= 4) return solveEndgameCard(g);
+
   const legal = legalPlays(g, idx);
   if (legal.length === 1) return legal[0];
   const onPickerTeam = idx === g.picker || idx === g.partner;
