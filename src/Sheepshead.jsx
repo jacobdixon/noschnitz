@@ -240,7 +240,7 @@ export default function Sheepshead() {
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
         {g.calledSuit && (
           <span style={{ color: felt.brass, fontWeight: 700 }}>
-            · Called: Ace of {SUIT_NAME[g.calledSuit]}
+            · Called: {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
           </span>
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
@@ -312,7 +312,7 @@ export default function Sheepshead() {
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             {(g.callOptions || []).map((su) => (
               <button key={su} style={btnGold} onClick={() => callAce(su)}>
-                Call Ace of <span style={{ color: su === "H" ? "#7A1E14" : "#1c1a14" }}>{SUIT_NAME[su]}</span>
+                Call <span style={{ color: su === "H" ? "#7A1E14" : "#1c1a14" }}>{SUIT_SYM[su]}</span> {SUIT_NAME[su]}
               </button>
             ))}
             {(!g.callOptions || g.callOptions.length === 0) && (
