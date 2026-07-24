@@ -238,6 +238,9 @@ export default function Sheepshead() {
           </span>
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
+        <span style={{ marginLeft: "auto", fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
+          v{__APP_VERSION__}·{__COMMIT_HASH__}
+        </span>
       </div>
 
       {/* Table */}
