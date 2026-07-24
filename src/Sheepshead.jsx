@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  SUIT_SYM, NAMES, isTrump, cid, cardPts, sortHand, trickWinner, handStrength,
+  SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, cardPts, sortHand, trickWinner, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay,
   resolveTrick,
 } from "./engine.js";
@@ -240,7 +240,7 @@ export default function Sheepshead() {
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
         {g.calledSuit && (
           <span style={{ color: felt.brass, fontWeight: 700 }}>
-            · Called: A{SUIT_SYM[g.calledSuit]}
+            · Called: Ace of {SUIT_NAME[g.calledSuit]}
           </span>
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
@@ -312,7 +312,7 @@ export default function Sheepshead() {
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             {(g.callOptions || []).map((su) => (
               <button key={su} style={btnGold} onClick={() => callAce(su)}>
-                Call A<span style={{ color: su === "H" ? "#7A1E14" : "#1c1a14" }}>{SUIT_SYM[su]}</span>
+                Call Ace of <span style={{ color: su === "H" ? "#7A1E14" : "#1c1a14" }}>{SUIT_NAME[su]}</span>
               </button>
             ))}
             {(!g.callOptions || g.callOptions.length === 0) && (

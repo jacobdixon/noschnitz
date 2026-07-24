@@ -6,6 +6,13 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.5.2] - 2026-07-24
+- Called-suit text now spells out the suit name instead of showing the
+  symbol — "Called: Ace of Clubs" instead of "Called: A♣" in the contract
+  strip, and "Call Ace of Clubs" instead of "Call A♣" on the call-phase
+  buttons. Directly addresses the clubs/spades confusion; card faces
+  themselves still use symbols. (pending commit)
+
 ## [0.5.1] - 2026-07-24
 - Fixed the contract strip wrapping onto two lines at the new font size:
   dropped "Hand N" from it (moved into the Scores modal instead) and moved
