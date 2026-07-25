@@ -22,8 +22,7 @@ corresponds to the entries below.
     horizontal scroll as a fallback on narrow phones.
   - Verified trickHistory across 500 simulated hands: exactly 6 tricks
     per hand, all 5 players present in each, and the flattened card
-    list matches the existing card-counting log exactly. (pending
-    commit)
+    list matches the existing card-counting log exactly. (`a532ce1`)
 
 ## [0.6.1] - 2026-07-24
 - Added "Hand N" to the hand-end summary modal (small label above the
