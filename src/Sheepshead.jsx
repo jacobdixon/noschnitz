@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, cardPts, sortHand, trickWinner, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay,
-  resolveTrick,
+  resolveTrick, gradeHandPlays,
 } from "./engine.js";
 
 /* ================================ UI ================================ */
@@ -183,6 +183,12 @@ export default function Sheepshead() {
 
   /* ---------- derived ---------- */
   const legalNow = useMemo(() => (g.phase === "playing" && g.turn === 0 ? legalPlays(g, 0).map(cid) : []), [g]);
+  // Best/worst play grading is only meaningful once a hand is fully resolved;
+  // recompute once per hand (not on every render) since trickHistory is frozen by then.
+  const playGrades = useMemo(
+    () => (g.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
+    [g.phase, g.handNum]
+  );
   const seatPos = [null,
     { left: "2%", top: "46%" },
     { left: "20%", top: "4%" },
@@ -444,6 +450,8 @@ export default function Sheepshead() {
                       const isLeader = th.trick[0].player === p;
                       const isWinner = th.winner === p;
                       const red = card.suit === "H" || card.suit === "D";
+                      const isBestPlay = playGrades.best && playGrades.best.trick === t && playGrades.best.player === p;
+                      const isWorstPlay = playGrades.worst && playGrades.worst.trick === t && playGrades.worst.player === p;
                       return (
                         <td key={t} style={{ textAlign: "center", padding: "6px 4px" }}>
                           <span style={{
@@ -456,6 +464,8 @@ export default function Sheepshead() {
                             borderBottom: isLeader ? `2px solid ${felt.brass}` : "2px solid transparent",
                           }}>
                             {card.rank}{SUIT_SYM[card.suit]}
+                            {isBestPlay && <span style={{ color: "#4FAE64", fontWeight: 900, marginLeft: 2 }}>!</span>}
+                            {isWorstPlay && <span style={{ color: felt.red, fontWeight: 900, marginLeft: 2 }}>?</span>}
                           </span>
                         </td>
                       );
@@ -467,6 +477,8 @@ export default function Sheepshead() {
           </div>
           <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
             <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
+            <br />
+            <span style={{ color: "#4FAE64", fontWeight: 900 }}>!</span> best play · <span style={{ color: felt.red, fontWeight: 900 }}>?</span> worst play
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button style={btnGold} onClick={nextHand}>Deal next hand</button>

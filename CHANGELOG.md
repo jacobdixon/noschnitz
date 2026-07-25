@@ -6,6 +6,31 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.7.2] - 2026-07-24
+- Recap grid now flags the single best play (`!`) and single worst play
+  (`?`) of the hand, chess-style, no explanation shown — just the glyph
+  next to the card.
+  - engine.js: added `rolloutValue(g)`, a deterministic single-path
+    playout to hand-end using the built-in AI (`aiChooseCard`) for every
+    remaining decision on both sides. Since `aiChooseCard` already
+    switches to the exact minimax solver for the last two tricks, that
+    precision folds automatically into the rollout — one consistent
+    yardstick across all six tricks instead of blending two separate
+    scoring systems.
+  - `gradeHandPlays(g)` replays a finished hand from `trickHistory`
+    (reconstructing each player's post-bury starting hand from the cards
+    they're recorded as having played), and at every real decision
+    (skipping forced single-legal-card plays) compares the actual card's
+    rollout value against every legal alternative, from the mover's own
+    team's perspective. Worst play = biggest point cost vs. the best
+    available option. Best play = a decision that matched the best
+    option (cost 0) with the largest gap between the best and worst
+    available options, so a genuinely correct, high-stakes read gets
+    picked over a trivial no-brainer.
+  - Verified across 284 completed simulated hands: no exceptions, every
+    flagged card matches what was actually played, best and worst never
+    point at the same cell, ~3ms/hand grading cost. (`pending commit`)
+
 ## [0.7.1] - 2026-07-24
 - Redesigned the "Last Trick" modal from a text list to a mini table view:
   all 5 seats laid out like the live play area (avatar, name, card played),

@@ -231,7 +231,7 @@ export function knowsTeammate(g, viewer, target) {
 // are treated as a single coalition maximizing/minimizing their own team's
 // total trick points; buried points are a fixed offset already banked
 // before this window, so they don't affect which move is optimal here.
-function pickerTeamOf(g) {
+export function pickerTeamOf(g) {
   return g.partner !== null ? [g.picker, g.partner] : [g.picker];
 }
 
@@ -489,5 +489,91 @@ export function scoreHand(g) {
     phase: "handEnd",
     scores,
     result: { teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam, handDelta },
+  };
+}
+
+/* ------------------------- Post-hand play grading ------------------------ */
+// Rolls a game state forward to hand-end using the built-in AI (aiChooseCard)
+// for every remaining decision, on both sides. Deterministic (aiChooseCard
+// has no randomness), so this is a cheap single-path counterfactual rather
+// than a real search: "if everyone played the built-in AI's way from here,
+// how many points would the picker's team end up with?" Because aiChooseCard
+// itself calls the exact minimax solver once the last two tricks are
+// reached, that precision folds into the rollout automatically — one
+// consistent yardstick across the whole hand instead of switching formulas
+// partway through, which is what keeps early- and late-trick grades on the
+// same scale.
+export function rolloutValue(g) {
+  let cur = g;
+  while (cur.tricksDone < 6) {
+    if (cur.trick.length === 5) { cur = resolveTrick(cur); continue; }
+    const idx = cur.turn;
+    const card = aiChooseCard(cur, idx);
+    cur = applyPlay(cur, idx, card);
+  }
+  return pickerTeamOf(cur).reduce((s, p) => s + cur.ptsTaken[p], 0);
+}
+
+// Replays a finished hand from trickHistory and grades every real decision
+// (skipping forced plays with only one legal card) by comparing the actual
+// card's rollout value against the best and worst legal alternative, from
+// the mover's own team's perspective. Returns the single biggest mistake
+// ("worst") and the single most impactful correct call ("best" — must have
+// cost 0 relative to the best option AND have actually mattered, i.e. the
+// legal alternatives weren't all equivalent).
+export function gradeHandPlays(g) {
+  if (!g.trickHistory || g.trickHistory.length < 6) return { best: null, worst: null };
+
+  const startingHands = [[], [], [], [], []];
+  for (const th of g.trickHistory) for (const play of th.trick) startingHands[play.player].push(play.card);
+
+  let sim = {
+    ...g,
+    phase: "playing",
+    hands: startingHands,
+    played: [],
+    trick: [],
+    tricksDone: 0,
+    trickCounts: [0, 0, 0, 0, 0],
+    ptsTaken: [0, 0, 0, 0, 0],
+    calledAcePlayed: false,
+    calledSuitLed: false,
+    partnerRevealed: false,
+    trickHistory: [],
+    lastTrick: null,
+    leader: g.trickHistory[0].trick[0].player,
+    turn: g.trickHistory[0].trick[0].player,
+  };
+
+  const decisions = [];
+  g.trickHistory.forEach((th, trickIdx) => {
+    for (const play of th.trick) {
+      const idx = play.player;
+      const legal = legalPlays(sim, idx);
+      if (legal.length > 1) {
+        const isPickerSide = pickerTeamOf(sim).includes(idx);
+        const vals = legal.map((card) => ({ card, val: rolloutValue(applyPlay(sim, idx, card)) }));
+        const allVals = vals.map((v) => v.val);
+        const bestVal = isPickerSide ? Math.max(...allVals) : Math.min(...allVals);
+        const worstVal = isPickerSide ? Math.min(...allVals) : Math.max(...allVals);
+        const actual = vals.find((v) => cid(v.card) === cid(play.card));
+        const cost = isPickerSide ? bestVal - actual.val : actual.val - bestVal;
+        const swing = Math.abs(bestVal - worstVal);
+        decisions.push({ trickIdx, player: idx, card: play.card, cost, swing });
+      }
+      sim = applyPlay(sim, idx, play.card);
+    }
+    sim = resolveTrick(sim);
+  });
+
+  let worst = null;
+  let best = null;
+  for (const d of decisions) {
+    if (d.cost > 0 && (!worst || d.cost > worst.cost || (d.cost === worst.cost && d.swing > worst.swing))) worst = d;
+    if (d.cost === 0 && d.swing > 0 && (!best || d.swing > best.swing)) best = d;
+  }
+  return {
+    best: best ? { trick: best.trickIdx, player: best.player, card: best.card } : null,
+    worst: worst ? { trick: worst.trickIdx, player: worst.player, card: worst.card } : null,
   };
 }
