@@ -29,7 +29,7 @@ corresponds to the entries below.
     picked over a trivial no-brainer.
   - Verified across 284 completed simulated hands: no exceptions, every
     flagged card matches what was actually played, best and worst never
-    point at the same cell, ~3ms/hand grading cost. (`pending commit`)
+    point at the same cell, ~3ms/hand grading cost. (`52d2073`)
 
 ## [0.7.1] - 2026-07-24
 - Redesigned the "Last Trick" modal from a text list to a mini table view:
