@@ -6,6 +6,16 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.6.0] - 2026-07-24
+- Added a "Hand" score column to the hand-end summary table, between
+  "Pts" (points taken this hand) and "Total" (running score). Shows each
+  player's score change for just this hand (e.g. picker +4 on an alone
+  schneider). `scoreHand()` in engine.js now returns `result.handDelta`,
+  computed from the pre/post score arrays. Added column headers to the
+  table since it's now 3 numeric columns wide. Verified across 500
+  simulated hands that every hand's deltas sum to zero and match the
+  cumulative total on hand 1. (pending commit)
+
 ## [0.5.5] - 2026-07-24
 - Shortened "Picker team wins" to "Pickers win" in the hand-end modal
   headline, to leave more horizontal room for the "— Schneider!" /

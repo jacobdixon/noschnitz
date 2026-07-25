@@ -481,10 +481,11 @@ export function scoreHand(g) {
     scores[g.partner] += sign * 1 * mult;
     for (let p = 0; p < 5; p++) if (!pickerTeam.includes(p)) scores[p] -= sign * mult;
   }
+  const handDelta = scores.map((s, i) => s - g.scores[i]);
   return {
     ...g,
     phase: "handEnd",
     scores,
-    result: { teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam },
+    result: { teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam, handDelta },
   };
 }

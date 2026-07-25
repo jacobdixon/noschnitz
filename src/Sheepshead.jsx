@@ -377,6 +377,14 @@ export default function Sheepshead() {
             {g.result.buriedPts > 0 && ` (${g.result.buriedPts} buried)`} · defenders {g.result.defPts}
           </div>
           <table style={{ width: "100%", fontSize: 16, borderCollapse: "collapse", marginBottom: 14 }}>
+            <thead>
+              <tr style={{ fontSize: 11, color: felt.creamDim, textTransform: "uppercase", letterSpacing: ".04em" }}>
+                <td style={{ padding: "0 0 4px" }}></td>
+                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Pts</td>
+                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Hand</td>
+                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Total</td>
+              </tr>
+            </thead>
             <tbody>
               {NAMES.map((n, i) => (
                 <tr key={n} style={{ borderBottom: "1px solid #ffffff18" }}>
@@ -386,6 +394,9 @@ export default function Sheepshead() {
                     {i === g.partner && <Badge gold>Partner</Badge>}
                   </td>
                   <td style={{ textAlign: "right" }}>{g.ptsTaken[i]} pts</td>
+                  <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700, width: 50 }}>
+                    {g.result.handDelta[i] >= 0 ? "+" : ""}{g.result.handDelta[i]}
+                  </td>
                   <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700, width: 60 }}>
                     {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
                   </td>
