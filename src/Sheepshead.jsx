@@ -369,6 +369,7 @@ export default function Sheepshead() {
       {/* Hand end modal */}
       {g.phase === "handEnd" && g.result && (
         <Modal>
+          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
             {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
           </div>

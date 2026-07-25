@@ -6,6 +6,11 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.6.1] - 2026-07-24
+- Added "Hand N" to the hand-end summary modal (small label above the
+  win/lose headline), so hand count is visible right after each hand, not
+  just in the Scores modal. (pending commit)
+
 ## [0.6.0] - 2026-07-24
 - Added a "Hand" score column to the hand-end summary table, between
   "Pts" (points taken this hand) and "Total" (running score). Shows each
