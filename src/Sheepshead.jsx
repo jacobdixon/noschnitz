@@ -496,27 +496,41 @@ export default function Sheepshead() {
 
       {/* Last trick modal */}
       {showLastTrick && (
-        <Modal onClose={() => setShowLastTrick(false)}>
+        <Modal maxWidth={420} onClose={() => setShowLastTrick(false)}>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Last Trick</div>
           {g.lastTrick ? (
             <>
-              {g.lastTrick.trick.map((t, i) => {
-                const red = t.card.suit === "H" || t.card.suit === "D";
-                const won = t.player === g.lastTrick.winner;
-                return (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 17 }}>
-                    <span style={{ fontWeight: i === 0 || won ? 800 : 500 }}>
-                      {NAMES[t.player]}
-                      {i === 0 && <span style={{ fontSize: 12, color: felt.creamDim, fontWeight: 500 }}> · led</span>}
-                      {won && <span style={{ fontSize: 12, color: felt.brass, fontWeight: 700 }}> · won</span>}
-                    </span>
-                    <span style={{ color: red ? felt.red : felt.cream, fontWeight: 700 }}>
-                      {t.card.rank}{SUIT_SYM[t.card.suit]}
-                    </span>
-                  </div>
-                );
-              })}
-              <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 8 }}>
+              <div style={{ position: "relative", height: 250, margin: "4px 0 10px" }}>
+                {[0, 1, 2, 3, 4].map((i) => {
+                  const t = g.lastTrick.trick.find((x) => x.player === i);
+                  const isLeader = g.lastTrick.trick[0].player === i;
+                  const isWinner = i === g.lastTrick.winner;
+                  const pos = i === 0
+                    ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
+                    : seatPos[i];
+                  return (
+                    <div key={i} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: 74 }}>
+                      <div style={{
+                        width: 38, height: 38, borderRadius: "50%", background: felt.chip,
+                        border: `2px solid ${isLeader ? felt.brass : "#ffffff2e"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 16,
+                        boxShadow: isWinner ? `0 0 10px ${felt.brass}aa` : "none",
+                      }}>
+                        {NAMES[i][0]}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: isWinner ? 800 : 600, color: isWinner ? felt.brass : felt.cream, textAlign: "center" }}>
+                        {NAMES[i]}
+                      </div>
+                      <div style={{ minHeight: 46 }}>{t && <Card card={t.card} small />}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: felt.creamDim, textAlign: "center" }}>
+                <span style={{ color: felt.brass, fontWeight: 700 }}>Gold ring</span> = led this trick · <span style={{ color: felt.brass, fontWeight: 700 }}>glow</span> = won it
+              </div>
+              <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 6, textAlign: "center" }}>
                 {NAMES[g.lastTrick.winner]} took {g.lastTrick.trick.reduce((s, t) => s + cardPts(t.card), 0)} pts
               </div>
             </>

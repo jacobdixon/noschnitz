@@ -6,6 +6,12 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.7.1] - 2026-07-24
+- Redesigned the "Last Trick" modal from a text list to a mini table view:
+  all 5 seats laid out like the live play area (avatar, name, card played),
+  with a gold ring on the leader's avatar and a glow on the trick-winner's,
+  matching how a trick reads during actual play. (`pending commit`)
+
 ## [0.7.0] - 2026-07-24
 - Added a "Recap" button to the hand-end summary modal. Opens a
   replacement modal (summary hides while it's open) with a grid: players
