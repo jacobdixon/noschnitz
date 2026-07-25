@@ -20,7 +20,7 @@ corresponds to the entries below.
     available at all (e.g. most desktop browsers) -- the tester still ends
     up with the PNG either way.
   - Verified with a clean production build; bundle size essentially
-    unchanged (172.76 kB) since html2canvas isn't bundled. (`pending commit`)
+    unchanged (172.76 kB) since html2canvas isn't bundled. (`3111138`)
 
 ## [0.7.2] - 2026-07-24
 - Recap grid now flags the single best play (`!`) and single worst play
