@@ -14,7 +14,7 @@ corresponds to the entries below.
   computed from the pre/post score arrays. Added column headers to the
   table since it's now 3 numeric columns wide. Verified across 500
   simulated hands that every hand's deltas sum to zero and match the
-  cumulative total on hand 1. (pending commit)
+  cumulative total on hand 1. (`d75f8a0`)
 
 ## [0.5.5] - 2026-07-24
 - Shortened "Picker team wins" to "Pickers win" in the hand-end modal
