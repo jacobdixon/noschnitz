@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, cardPts, sortHand, trickWinner, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay,
@@ -81,6 +81,7 @@ export default function Sheepshead() {
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  const recapCaptureRef = useRef(null);
 
   /* ---------- engine loop ---------- */
   useEffect(() => {
@@ -180,6 +181,54 @@ export default function Sheepshead() {
     setShowRecap(false);
     setG((s) => freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1));
   };
+
+  // Lazily load html2canvas from a CDN only when someone actually taps Share,
+  // rather than bundling it for every visitor.
+  function loadHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+      script.onload = () => resolve(window.html2canvas);
+      script.onerror = () => reject(new Error("Couldn't load screenshot library"));
+      document.head.appendChild(script);
+    });
+  }
+
+  // Screenshots the recap grid and hands it to the OS share sheet (Messages,
+  // Mail, etc.) so testers can send back hands they think the AI misplayed.
+  // Falls back gracefully if file-sharing or navigator.share isn't available.
+  async function handleShareRecap() {
+    if (!recapCaptureRef.current) return;
+    try {
+      const html2canvas = await loadHtml2Canvas();
+      const canvas = await html2canvas(recapCaptureRef.current, { backgroundColor: felt.bgDeep, scale: 2 });
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fileName = `sheepshead-hand-${g.handNum}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+        const shareText = `Sheepshead hand ${g.handNum} — take a look at this play.`;
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: `Sheepshead — Hand ${g.handNum}`, text: shareText });
+          } else if (navigator.share) {
+            await navigator.share({ title: `Sheepshead — Hand ${g.handNum}`, text: shareText });
+          } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+        } catch (shareErr) {
+          // AbortError etc. when the user cancels the share sheet — not an error.
+        }
+      }, "image/png");
+    } catch (err) {
+      console.error("Recap share failed:", err);
+    }
+  }
 
   /* ---------- derived ---------- */
   const legalNow = useMemo(() => (g.phase === "playing" && g.turn === 0 ? legalPlays(g, 0).map(cid) : []), [g]);
@@ -425,8 +474,25 @@ export default function Sheepshead() {
       {/* Hand recap modal */}
       {g.phase === "handEnd" && showRecap && (
         <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
-          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Recap</div>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
+              <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Recap</div>
+            </div>
+            <button
+              onClick={handleShareRecap}
+              aria-label="Share this recap"
+              title="Share this recap"
+              style={{ ...btnGhost, display: "flex", alignItems: "center", gap: 5, padding: "6px 10px" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 15V3M12 3l-4 4M12 3l4 4" />
+                <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+              </svg>
+              Share
+            </button>
+          </div>
+          <div ref={recapCaptureRef} style={{ background: felt.bgDeep }}>
           <div style={{ overflowX: "auto", marginBottom: 14 }}>
             <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
               <thead>
@@ -479,6 +545,7 @@ export default function Sheepshead() {
             <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
             <br />
             <span style={{ color: "#4FAE64", fontWeight: 900 }}>!</span> best play · <span style={{ color: felt.red, fontWeight: 900 }}>?</span> worst play
+          </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button style={btnGold} onClick={nextHand}>Deal next hand</button>

@@ -6,6 +6,22 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.7.3] - 2026-07-25
+- Added a Share button (industry-standard share icon) to the Recap modal so
+  testers can send back hands they think the AI misplayed. Captures a
+  screenshot of the recap grid (hand number, trick-by-trick grid, and the
+  best/worst-play legend) and hands it to the OS share sheet via
+  `navigator.share`, so it goes straight into Messages/Mail/etc. as an
+  image.
+  - Screenshotting uses `html2canvas`, loaded lazily from a CDN only when
+    Share is tapped, so it doesn't add to the bundle for everyone else.
+  - Falls back to `navigator.share` without the file if file-sharing isn't
+    supported, and to a plain image download if `navigator.share` isn't
+    available at all (e.g. most desktop browsers) -- the tester still ends
+    up with the PNG either way.
+  - Verified with a clean production build; bundle size essentially
+    unchanged (172.76 kB) since html2canvas isn't bundled. (`pending commit`)
+
 ## [0.7.2] - 2026-07-24
 - Recap grid now flags the single best play (`!`) and single worst play
   (`?`) of the hand, chess-style, no explanation shown — just the glyph
