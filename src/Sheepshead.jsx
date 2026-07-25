@@ -80,6 +80,7 @@ export default function Sheepshead() {
   const [showScores, setShowScores] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
 
   /* ---------- engine loop ---------- */
   useEffect(() => {
@@ -175,7 +176,10 @@ export default function Sheepshead() {
     });
   };
 
-  const nextHand = () => setG((s) => freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1));
+  const nextHand = () => {
+    setShowRecap(false);
+    setG((s) => freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1));
+  };
 
   /* ---------- derived ---------- */
   const legalNow = useMemo(() => (g.phase === "playing" && g.turn === 0 ? legalPlays(g, 0).map(cid) : []), [g]);
@@ -367,7 +371,7 @@ export default function Sheepshead() {
       </div>
 
       {/* Hand end modal */}
-      {g.phase === "handEnd" && g.result && (
+      {g.phase === "handEnd" && g.result && !showRecap && (
         <Modal>
           <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
@@ -405,7 +409,69 @@ export default function Sheepshead() {
               ))}
             </tbody>
           </table>
-          <button style={btnGold} onClick={nextHand}>Deal next hand</button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button style={btnGold} onClick={nextHand}>Deal next hand</button>
+            <button style={btnPlain} onClick={() => setShowRecap(true)}>Recap</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Hand recap modal */}
+      {g.phase === "handEnd" && showRecap && (
+        <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
+          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Recap</div>
+          <div style={{ overflowX: "auto", marginBottom: 14 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
+              <thead>
+                <tr>
+                  <td style={{ padding: "0 6px 6px 0" }}></td>
+                  {[1, 2, 3, 4, 5, 6].map((t) => (
+                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".03em" }}>
+                      Trick {t}
+                    </td>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {NAMES.map((n, p) => (
+                  <tr key={n} style={{ borderTop: "1px solid #ffffff18" }}>
+                    <td style={{ padding: "6px 6px 6px 0", fontWeight: p === 0 ? 800 : 500, whiteSpace: "nowrap" }}>{n}</td>
+                    {g.trickHistory.map((th, t) => {
+                      const played = th.trick.find((x) => x.player === p);
+                      if (!played) return <td key={t} />;
+                      const { card } = played;
+                      const isLeader = th.trick[0].player === p;
+                      const isWinner = th.winner === p;
+                      const red = card.suit === "H" || card.suit === "D";
+                      return (
+                        <td key={t} style={{ textAlign: "center", padding: "6px 4px" }}>
+                          <span style={{
+                            display: "inline-block",
+                            color: red ? felt.red : felt.cream,
+                            fontWeight: isWinner ? 800 : 500,
+                            background: isWinner ? "#00000040" : "transparent",
+                            borderRadius: 4,
+                            padding: "2px 4px",
+                            borderBottom: isLeader ? `2px solid ${felt.brass}` : "2px solid transparent",
+                          }}>
+                            {card.rank}{SUIT_SYM[card.suit]}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
+            <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button style={btnGold} onClick={nextHand}>Deal next hand</button>
+            <button style={btnPlain} onClick={() => setShowRecap(false)}>Back</button>
+          </div>
         </Modal>
       )}
 
@@ -482,7 +548,7 @@ export default function Sheepshead() {
   );
 }
 
-function Modal({ children, onClose }) {
+function Modal({ children, onClose, maxWidth = 380 }) {
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "#000000a8", zIndex: 20,
@@ -490,7 +556,7 @@ function Modal({ children, onClose }) {
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: felt.bgDeep, border: `2px solid ${felt.rail}`, borderRadius: 12,
-        padding: 18, width: "100%", maxWidth: 380, color: felt.cream,
+        padding: 18, width: "100%", maxWidth, color: felt.cream,
         boxShadow: "0 10px 40px rgba(0,0,0,.6)",
       }}>
         {children}

@@ -6,6 +6,25 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.7.0] - 2026-07-24
+- Added a "Recap" button to the hand-end summary modal. Opens a
+  replacement modal (summary hides while it's open) with a grid: players
+  down the left, one column per trick (1-6), each cell showing the card
+  that player played. The leading player's cell gets a gold underline,
+  the trick-winner's cell gets a shaded background — a quick way to
+  scan the whole hand. Has its own "Deal next hand" button so you can
+  skip straight from recap to the next deal.
+  - engine.js: added `g.trickHistory`, accumulating every resolved
+    trick (not just the last one) for the current hand, reset each
+    `freshHand`.
+  - Modal component now takes an optional `maxWidth` (recap uses 480
+    instead of the default 380 to fit the 7-column grid), with
+    horizontal scroll as a fallback on narrow phones.
+  - Verified trickHistory across 500 simulated hands: exactly 6 tricks
+    per hand, all 5 players present in each, and the flattened card
+    list matches the existing card-counting log exactly. (pending
+    commit)
+
 ## [0.6.1] - 2026-07-24
 - Added "Hand N" to the hand-end summary modal (small label above the
   win/lose headline), so hand count is visible right after each hand, not

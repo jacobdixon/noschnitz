@@ -397,6 +397,7 @@ export function freshHand(dealer, scores, handNum) {
     trickCounts: [0, 0, 0, 0, 0],
     ptsTaken: [0, 0, 0, 0, 0],
     lastTrick: null,
+    trickHistory: [], // every resolved trick this hand, in order — for the hand recap
     selected: [],
     scores,
     message: null,
@@ -447,6 +448,7 @@ export function resolveTrick(g) {
     tricksDone,
     played: [...g.played, ...g.trick.map((t) => t.card)],
     lastTrick: { trick: g.trick, winner: w },
+    trickHistory: [...g.trickHistory, { trick: g.trick, winner: w }],
     trick: [],
     leader: w,
     turn: w,
