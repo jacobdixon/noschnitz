@@ -9,7 +9,7 @@ corresponds to the entries below.
 ## [0.6.1] - 2026-07-24
 - Added "Hand N" to the hand-end summary modal (small label above the
   win/lose headline), so hand count is visible right after each hand, not
-  just in the Scores modal. (pending commit)
+  just in the Scores modal. (`1d0a570`)
 
 ## [0.6.0] - 2026-07-24
 - Added a "Hand" score column to the hand-end summary table, between
