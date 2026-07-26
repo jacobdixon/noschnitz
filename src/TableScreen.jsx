@@ -18,7 +18,7 @@
    created the table). Players expect to sit at the bottom of their own screen,
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays } from "./engine.js";
 import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
@@ -181,6 +181,26 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   const [err, setErr] = useState(null);
   const [selected, setSelected] = useState([]);
 
+  // Your own card, drawn on the felt the instant you tap it rather than after
+  // the round trip. Playing a card was POST -> server -> stream -> render
+  // before anything moved, so the card sat in your hand for the length of a
+  // network hop and the tap felt broken. The server is still the authority —
+  // this is only a stand-in until the real card comes back down the stream,
+  // and an illegal play is rejected and the stand-in withdrawn.
+  const [optimistic, setOptimistic] = useState(null);
+
+  // Retire the stand-in once the genuine card has been REVEALED (not merely
+  // received): dropping it as soon as the server confirms would blink the card
+  // out and back in while the paced cursor caught up to it.
+  useEffect(() => {
+    if (optimistic && frame.revealedIds?.has(cid(optimistic.card))) setOptimistic(null);
+  }, [optimistic, frame.revealedIds]);
+
+  // A new hand invalidates any stand-in still hanging around.
+  useEffect(() => {
+    setOptimistic(null);
+  }, [table?.g?.handNum]);
+
   // Any action can lose a compare-and-swap. When it does, the winning state is
   // already on its way down the stream, so surfacing the conflict as an error
   // would flash a scary message at something that self-heals.
@@ -230,7 +250,11 @@ export default function TableScreen({ tableId, playerId, playerName }) {
     );
   }
 
-  const myHand = g.hands[mySeat] || [];
+  // The optimistic card leaves your hand immediately; once the server confirms,
+  // its own copy of your hand no longer contains it and this filter is a no-op.
+  const myHand = (g.hands[mySeat] || []).filter(
+    (c) => !(optimistic && cid(c) === cid(optimistic.card))
+  );
   // `caughtUp` gates every affordance: until the table has finished showing
   // what everyone else played, your cards aren't live. Otherwise you can play
   // into a trick that visually has two cards in it and watch your own card
@@ -249,7 +273,17 @@ export default function TableScreen({ tableId, playerId, playerName }) {
       return;
     }
     if (!isMyTurn || !legal.includes(cid(card))) return;
-    act(() => api.playCard(tableId, playerId, card));
+    setOptimistic({ card, player: mySeat });
+    act(async () => {
+      try {
+        await api.playCard(tableId, playerId, card);
+      } catch (e) {
+        // Rejected or unreachable — take the stand-in back off the table so the
+        // card returns to your hand rather than being stranded on the felt.
+        setOptimistic(null);
+        throw e;
+      }
+    });
   };
 
   return (
@@ -291,8 +325,16 @@ export default function TableScreen({ tableId, playerId, playerName }) {
           );
         })}
 
-        {/* Each card sits by the player who played it, revealed one at a time. */}
-        {frame.cards.map((p) => (
+        {/* Each card sits by the player who played it, revealed one at a time.
+            The optimistic stand-in joins them until the real card is revealed
+            — suppressed once the trick has been swept, so a card you played
+            can't reappear on an empty felt. */}
+        {[
+          ...frame.cards,
+          ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
+            ? [optimistic]
+            : []),
+        ].map((p) => (
           <div key={cid(p.card)} style={{
             position: "absolute", ...TRICK_POS[rotate(p.player, mySeat)], zIndex: 2,
           }}>

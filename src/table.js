@@ -118,8 +118,18 @@ export const aiSeatIndexes = (table) =>
 // A hand is only interruptible between hands. Mid-hand the engine state holds
 // six tricks of context per seat, and swapping a player into it would either
 // hand them someone else's cards or corrupt the hand.
+//
+// A thrown-in hand (all five passed) counts as a boundary too: nobody picked,
+// no cards were played, and the only legal next move is a redeal. Leaving it
+// out was a deadlock — advanceAI stops at five passes and defers the redeal to
+// its caller, but startHand refused because this said the hand was still in
+// progress. The table then sat in `picking` forever, with a status line
+// claiming someone was still deciding and no affordance to escape.
 export const atHandBoundary = (table) =>
-  table.phase === "lobby" || table.g === null || table.g.phase === "handEnd";
+  table.phase === "lobby" ||
+  table.g === null ||
+  table.g.phase === "handEnd" ||
+  (table.g.phase === "picking" && table.g.passes >= SEATS);
 
 /* ------------------------------- Joining --------------------------------- */
 

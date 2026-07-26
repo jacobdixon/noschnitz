@@ -21,7 +21,7 @@
      the same set to grey out cards, but that's a convenience, not a control;
      nothing about the client's opinion is trusted here.
 
-   All of it — seat lookup, turn check, legality, applyPlay and advanceAI —
+   All of it — seat lookup, turn check, legality, applyPlay and advanceTable —
    happens inside ONE mutate callback, so the whole move is a single
    compare-and-swap. Splitting the validation from the write would let two
    requests both validate against version N and both write: a card played
@@ -30,11 +30,11 @@
    Version bookkeeping: applyPlay() is an engine function and knows nothing
    about the table's CAS counter, so the human's own card is wrapped in
    table.js's commit() to bump `version` the same way every other table
-   mutation does. advanceAI() then bumps it once more if it had anything to do.
+   mutation does. advanceTable() then bumps it once more if it had anything to do.
    ========================================================================= */
 import { seatOf, commit } from "../../../src/table.js";
 import { legalPlays, applyPlay, cid } from "../../../src/engine.js";
-import { advanceAI } from "../../../src/ai-runner.js";
+import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { readJson, sendJson, fail, methodGuard } from "../../_lib/http.js";
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     const played = commit({ ...table, g: applyPlay(g, seat, held) }, now);
     // Resolves the completed trick and runs every AI seat that follows, so one
     // human request produces the full visible consequence of that card.
-    return { table: advanceAI(played, now), seat };
+    return { table: advanceTable(played, now), seat };
   });
 
   if (!out.ok) {

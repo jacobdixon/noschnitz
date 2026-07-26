@@ -54,9 +54,20 @@ function playFullHand(seed = 0) {
   return { final: g, states };
 }
 
-const hand = playFullHand(1);
+// freshHand shuffles, so a given deal may be thrown in (all five pass). Retry
+// until we get one that was actually played — the earlier version dealt once
+// and happened to work, which made this whole suite fail at random.
+function dealPlayedHand(attempts = 50) {
+  for (let i = 0; i < attempts; i++) {
+    const h = playFullHand(i);
+    if (h) return h;
+  }
+  return null;
+}
+
+const hand = dealPlayedHand();
 if (!hand) {
-  console.error("could not deal a played hand for the test");
+  console.error("could not deal a played hand for the test after 50 attempts");
   process.exit(1);
 }
 
@@ -128,6 +139,34 @@ if (!hand) {
   const f4 = frameAt(seq, 4);
   check("revealed cards keep play order",
     f4.cards.map((p) => cid(p.card)).join(",") === seq.slice(0, 4).map((p) => cid(p.card)).join(","));
+}
+
+
+/* --------------------------- sweeping a finished trick --------------------- */
+{
+  // The bug: a completed trick only vanished when the NEXT card arrived. When
+  // the next move belongs to a human there is no next card, so five cards sat
+  // on the felt while somebody was being asked to lead the following trick.
+  const seq = buildPlaySequence(hand.final);
+
+  const held = frameAt(seq, 5, -1);
+  check("a finished trick is shown before it's swept",
+    held.cards.length === 5 && held.complete && !held.cleared);
+
+  const swept = frameAt(seq, 5, 0);
+  check("sweeping a finished trick empties the felt",
+    swept.cards.length === 0 && swept.cleared === true);
+  check("a swept trick no longer reads as complete", swept.complete === false);
+  check("a swept trick drops its winner banner", swept.winner === null);
+
+  // Sweeping trick 0 must not blank trick 1.
+  const nextTrick = frameAt(seq, 8, 0);
+  check("sweeping one trick doesn't affect the next",
+    nextTrick.cards.length === 3 && !nextTrick.cleared && nextTrick.trickIndex === 1);
+
+  // A partial trick is never swept — only finished ones get a beat and a sweep.
+  const partial = frameAt(seq, 3, 0);
+  check("a partial trick is never swept", partial.cards.length === 3 && !partial.cleared);
 }
 
 /* ---------------------------------- edges ---------------------------------- */

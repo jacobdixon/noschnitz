@@ -12,17 +12,17 @@
    refuses (phase isn't "playing") and nothing advances. That's exactly the
    integration gap the end-to-end test caught.
 
-   Passing may end the hand outright: five passes means it's thrown in and
-   redealt. That, and every AI decision that follows this one, is left to
-   advanceAI so the pick/pass sequence has a single implementation rather than
-   one here and one in the AI driver.
+   Passing may end the hand outright: five passes throws the hand in, and
+   advanceTable redeals it. That, and every AI decision that follows this one,
+   is left to advanceTable so the sequence has a single implementation rather
+   than one here and one in the AI driver.
 
    Same hostile-client posture as play.js: the seat comes from seatOf(playerId),
    never from the body, and the phase and turn are re-checked server-side.
    ========================================================================= */
 import { seatOf, commit } from "../../../src/table.js";
 import { sortHand } from "../../../src/engine.js";
-import { advanceAI } from "../../../src/ai-runner.js";
+import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { readJson, sendJson, fail, methodGuard } from "../../_lib/http.js";
@@ -60,9 +60,9 @@ export default async function handler(req, res) {
         { ...table, g: { ...g, passes, pickTurn: (seat + 1) % 5 } },
         now
       );
-      // advanceAI carries on through the remaining AI decisions and handles
-      // the all-passed redeal.
-      return { table: advanceAI(next, now), seat };
+      // advanceTable carries on through the remaining AI decisions and, if
+      // this was the fifth pass, redeals the thrown-in hand.
+      return { table: advanceTable(next, now), seat };
     }
 
     // Taking the blind: the two blind cards join this seat's hand, and the
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
     );
     // Nothing for the AI to do while a human is burying, but calling it keeps
     // every mutation on the same path.
-    return { table: advanceAI(next, now), seat };
+    return { table: advanceTable(next, now), seat };
   });
 
   if (!out.ok) {

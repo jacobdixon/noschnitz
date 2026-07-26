@@ -12,13 +12,13 @@
    could have left between the two, and the authorization decision has to be
    made on the same snapshot the write lands on.
 
-   startHand() seats any pending joiners first, then deals. advanceAI() then
+   startHand() seats any pending joiners first, then deals. advanceTable() then
    runs the AI seats through picking (and the opening lead, if the AI leads)
    inside this same request, so the response the host gets back is already at
    the first decision a human owes.
    ========================================================================= */
 import { startHand, atHandBoundary, seatOf } from "../../../src/table.js";
-import { advanceAI } from "../../../src/ai-runner.js";
+import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { readJson, sendJson, fail, methodGuard } from "../../_lib/http.js";
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     const now = Date.now();
     const dealt = startHand(table, now);
     if (dealt === table) return { table, denied: "hand-in-progress" };
-    return { table: advanceAI(dealt, now) };
+    return { table: advanceTable(dealt, now) };
   });
 
   if (!out.ok) {

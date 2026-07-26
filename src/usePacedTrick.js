@@ -46,37 +46,63 @@ export function buildPlaySequence(g) {
 // Returns the cards of the trick currently being shown, plus the winner once
 // that trick is complete (so the component can show the same "+points" banner
 // the solo game does).
-export function frameAt(sequence, revealed) {
+//
+// `clearedTrick` is the index of a completed trick that has finished its beat
+// on the table and been swept. Without it a finished trick only disappeared
+// when the NEXT card arrived — fine when an AI plays next, but when the next
+// move is a human's there is no next card, so five cards sat on the felt while
+// somebody was being asked to lead the following trick.
+export function frameAt(sequence, revealed, clearedTrick = -1) {
   const shown = sequence.slice(0, revealed);
-  if (shown.length === 0) return { cards: [], trickIndex: 0, winner: null, complete: false };
+  if (shown.length === 0) {
+    return { cards: [], trickIndex: 0, winner: null, complete: false, cleared: false };
+  }
 
   const trickIndex = shown[shown.length - 1].trickIndex;
   const cards = shown.filter((p) => p.trickIndex === trickIndex);
   const complete = cards.length === 5;
-  return { cards, trickIndex, winner: complete ? cards[0].winner : null, complete };
+
+  if (complete && clearedTrick === trickIndex) {
+    return { cards: [], trickIndex, winner: null, complete: false, cleared: true };
+  }
+
+  return { cards, trickIndex, winner: complete ? cards[0].winner : null, complete, cleared: false };
 }
 
 export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS } = {}) {
   const sequence = buildPlaySequence(g);
-  const [revealed, setRevealed] = useState(sequence.length);
-  const handRef = useRef(g?.handNum);
+  const [revealed, setRevealed] = useState(0);
+  const [clearedTrick, setClearedTrick] = useState(-1);
+  const handRef = useRef(null);
   const initialised = useRef(false);
 
-  // Joining or reloading mid-hand must NOT replay the whole hand from the
-  // first card — snap to live once, then animate only what arrives after.
-  if (!initialised.current) {
-    initialised.current = true;
-    handRef.current = g?.handNum;
-  }
-
-  // A new hand resets the cursor; the sequence is empty at that point anyway,
-  // so everything from the first card of the new hand animates normally.
+  // Two distinct jobs, and getting them confused cost a bug: the FIRST state we
+  // ever see must snap straight to live, while a NEW HAND must rewind to zero.
+  //
+  // The earlier version seeded handRef from `g?.handNum` during render, when g
+  // is still undefined (the stream hasn't delivered anything yet). The first
+  // real state therefore always looked like a hand change and rewound the
+  // cursor to zero — so joining a table mid-hand replayed every card from the
+  // first trick, 700ms apart, with the whole UI gated behind `caughtUp` for
+  // fifteen seconds. Indistinguishable from a freeze.
   useEffect(() => {
-    if (g?.handNum !== handRef.current) {
-      handRef.current = g?.handNum;
-      setRevealed(0);
+    if (!g) return;
+
+    if (!initialised.current) {
+      initialised.current = true;
+      handRef.current = g.handNum;
+      // Snap to wherever the table already is. Nothing to animate: we weren't
+      // watching when those cards were played.
+      setRevealed(buildPlaySequence(g).length);
+      return;
     }
-  }, [g?.handNum]);
+
+    if (g.handNum !== handRef.current) {
+      handRef.current = g.handNum;
+      setRevealed(0);
+      setClearedTrick(-1);
+    }
+  }, [g]);
 
   // Never run backwards: if the server somehow reports fewer plays than we've
   // shown (a redeal racing an update), clamp rather than rewinding the table.
@@ -101,13 +127,29 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
     return () => clearTimeout(t);
   }, [revealed, sequence.length, cardMs, trickHoldMs]);
 
+  // Sweep a finished trick once its beat is up. Only needed when the cursor has
+  // nothing left to advance into — otherwise the next card arriving replaces
+  // the trick on its own, which is the AI-plays-next case.
+  const frame = frameAt(sequence, revealed, clearedTrick);
+  useEffect(() => {
+    if (!frame.complete) return;
+    if (revealed < sequence.length) return;
+    const t = setTimeout(() => setClearedTrick(frame.trickIndex), trickHoldMs);
+    return () => clearTimeout(t);
+  }, [frame.complete, frame.trickIndex, revealed, sequence.length, trickHoldMs]);
+
   return {
-    ...frameAt(sequence, revealed),
+    ...frame,
     // True when the display has caught up with the server. The component uses
     // this to hold back your own legal-play affordances until the table has
     // finished showing what everyone else did — clicking into a half-rendered
     // trick is exactly as confusing as it sounds.
     caughtUp: revealed >= sequence.length,
     pending: sequence.length - revealed,
+    // Which cards the player has actually SEEN land. The table screen renders
+    // your own card optimistically the instant you tap it and needs to know
+    // when the real one has caught up, so it can stop drawing its stand-in
+    // without the card blinking out and back.
+    revealedIds: new Set(sequence.slice(0, revealed).map((p) => p.card.rank + p.card.suit)),
   };
 }

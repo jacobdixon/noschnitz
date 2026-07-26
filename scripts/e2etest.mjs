@@ -22,6 +22,7 @@ import { call } from "./_mockhttp.mjs";
 import { _resetStore } from "../api/_lib/store.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { cid, legalPlays } from "../src/engine.js";
+import { seatOf } from "../src/table.js";
 
 import createTableRoute from "../api/tables/index.js";
 import joinRoute from "../api/tables/[id]/join.js";
@@ -299,6 +300,53 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
       JSON.stringify(after.g) === JSON.stringify(before.g));
   }
   assertNoLeak("late join", late.body, after, -1, ERIN, ALL_IDS);
+}
+
+// --- the all-pass deadlock, end to end ------------------------------------
+{
+  // Everyone passing used to wedge the table permanently: advanceAI stops at
+  // five passes and deferred the redeal, startHand refused because a thrown-in
+  // hand wasn't a boundary, and no UI offered a way out.
+  //
+  // Driving this by just passing with every human doesn't reliably reach five
+  // passes — the AI seats pick whenever their hand is strong enough, which is
+  // ~96% of deals, so the case under test almost never happened and the test
+  // passed without proving anything. So the table is put into the exact state
+  // that matters (four passes already recorded, a human owing the fifth) and
+  // the real route drives it from there.
+  await call(startRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST } });
+
+  const live = await store.get(tableId);
+  const hostSeat = seatOf(live, HOST);
+  const rigged = {
+    ...live,
+    version: live.version + 1,
+    g: { ...live.g, phase: "picking", passes: 4, pickTurn: hostSeat, picker: null },
+  };
+  await store.put(rigged, live.version);
+
+  const before = await store.get(tableId);
+  check("rigged into the fifth-pass state", before.g.passes === 4 && before.g.pickTurn === hostSeat);
+
+  const res = await call(pickRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "pass" },
+  });
+  check("the fifth pass is accepted", res.status === 200, `got ${res.status} ${res.body?.error?.code || ""}`);
+
+  const after = await store.get(tableId);
+  check("a thrown-in hand does not wedge the table",
+    !(after.g && after.g.phase === "picking" && after.g.passes >= 5),
+    `phase=${after.g?.phase} passes=${after.g?.passes}`);
+  check("the thrown-in hand is redealt", after.g !== null && after.handNum === before.handNum + 1,
+    `handNum ${before.handNum} -> ${after.handNum}`);
+  // Not an exact card count: the redeal runs advanceTable, so an AI may already
+  // have picked and play may have begun. What matters is that a genuine hand
+  // exists and every seat holds cards.
+  check("the redealt hand is a real deal",
+    after.g.hands.every((h) => h && h.length > 0) && after.g.blind.length === 2,
+    `sizes=${after.g.hands.map((h) => (h ? h.length : "null")).join(",")}`);
+  check("the redealt hand starts from a clean pass count", after.g.passes < 5);
+  assertNoLeak("fifth pass", res.body, after, hostSeat, HOST, ALL_IDS);
 }
 
 // --- state + leave --------------------------------------------------------

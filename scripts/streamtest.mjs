@@ -504,6 +504,49 @@ function open(store, reqOpts, handlerOpts = {}) {
     `${POLL_INTERVAL_MS}ms`);
 }
 
+
+/* ------------- A seat that changes while the stream is open --------------- */
+{
+  // The bug this exists for: the handler resolved seatOf(playerId) ONCE at
+  // connect time and reused it for every frame. A seat is a property of the
+  // table at a moment in time, not of the connection, and it changes under a
+  // live stream in two ordinary cases — joining a lobby you were already
+  // watching, and being seated at the hand boundary after queueing mid-hand
+  // (MP-2.3). With the seat pinned, a player who got seated kept receiving the
+  // maximally-redacted seat -1 view forever and had to refresh to escape.
+  const store = createMemoryStore({ now: () => T0 });
+  let table = createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: T0, id: "seatchg1" });
+  await store.create(table);
+
+  // Watching before holding a seat.
+  const { res, clock, counted } = open(store, { id: table.id, playerId: "p-late" });
+  await settle();
+
+  const first = parseFrames(res.text).filter((f) => f.event === "state").pop();
+  check("an unseated watcher starts at seat -1", first?.data?.table?.you === -1,
+    `you=${first?.data?.table?.you}`);
+  check("an unseated watcher sees no hand",
+    !first?.data?.table?.g || first.data.table.g.hands.every((h) => h === null));
+
+  // Now they take a seat, exactly as api/tables/[id]/join.js would.
+  const joined = joinTable(await store.get(table.id), { playerId: "p-late", name: "Late", now: T0 });
+  await store.put(joined.table, (await store.get(table.id)).version);
+  const seated = joined.seat;
+
+  clock.advance(1200);
+  await settle();
+
+  const latest = parseFrames(res.text).filter((f) => f.event === "state").pop();
+  check("the stream reports the new seat without reconnecting",
+    latest?.data?.table?.you === seated, `you=${latest?.data?.table?.you} expected=${seated}`);
+  check("the newly seated player is flagged as themselves",
+    latest?.data?.table?.seats?.[seated]?.isYou === true);
+  check("their own playerId comes back to them",
+    latest?.data?.table?.seats?.[seated]?.playerId === "p-late");
+  check("nobody else's token leaks in the same frame",
+    !JSON.stringify(latest?.data?.table?.seats?.filter((_, i) => i !== seated)).includes("p-host"));
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

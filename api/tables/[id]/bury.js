@@ -28,7 +28,7 @@
    ========================================================================= */
 import { seatOf, commit } from "../../../src/table.js";
 import { isTrump, cid, assignPartner } from "../../../src/engine.js";
-import { advanceAI } from "../../../src/ai-runner.js";
+import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { readJson, sendJson, fail, methodGuard } from "../../_lib/http.js";
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
     const next = commit({ ...table, g: ng }, now);
     // Play begins immediately; if the leader is an AI seat it acts in this
     // same request rather than leaving the table apparently frozen.
-    return { table: advanceAI(next, now), seat };
+    return { table: advanceTable(next, now), seat };
   });
 
   if (!out.ok) {

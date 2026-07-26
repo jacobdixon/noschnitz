@@ -55,6 +55,12 @@ export function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 
       display: "flex", flexDirection: "column", justifyContent: "space-between",
       padding: `${Math.round((small ? 3 : 4) * scale)}px ${Math.round((small ? 4 : 6) * scale)}px`,
       userSelect: "none", WebkitTapHighlightColor: "transparent",
+      // Mobile Safari and Chrome pop a text-selection / "save image" callout on
+      // a long press, which fires constantly when someone rests a thumb on a
+      // card while thinking. touchAction also removes the ~300ms double-tap
+      // delay browsers add to non-declared touch targets — half the reason a
+      // played card felt sluggish to appear.
+      WebkitTouchCallout: "none", touchAction: "manipulation",
     }}>
       <div style={{ fontSize: Math.round((small ? 16 : 19) * scale), fontWeight: 800, lineHeight: 1, color: red ? felt.red : felt.black, fontFamily: "Georgia, serif" }}>
         {card.rank}

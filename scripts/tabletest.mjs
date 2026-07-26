@@ -172,6 +172,38 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   check("presence ping still refreshes TTL clock", seen.updatedAt === T0 + 5000);
 }
 
+
+/* ------------------- Thrown-in hand: the deadlock case ------------------- */
+
+{
+  // All five passing used to wedge the table permanently: advanceAI stops at
+  // five passes and defers the redeal, startHand refused because this wasn't
+  // considered a boundary, and no UI offered a way out. The table sat in
+  // "picking" forever reporting that somebody was still deciding.
+  let t = startHand(createTable(host), T0);
+  check("a dealt hand is not a boundary", !atHandBoundary(t));
+
+  const passed = { ...t, g: { ...t.g, passes: 5 } };
+  check("a thrown-in hand IS a boundary", atHandBoundary(passed));
+
+  const redealt = startHand(passed, T0 + 1000);
+  check("a thrown-in hand can be redealt", redealt.g !== null && redealt.g.passes === 0);
+  check("redealing advances the hand number", redealt.handNum === t.handNum + 1);
+  check("redealing rotates the dealer", redealt.dealer === (t.dealer + 1) % 5);
+  check("a redealt hand is freshly dealt",
+    redealt.g.hands.reduce((n, h) => n + h.length, 0) === 30 && redealt.g.blind.length === 2);
+
+  // A player who queued while the dead hand was being passed around must be
+  // seated by the redeal, not left waiting on a hand nobody will ever play.
+  const queued = joinTable(t, { playerId: "p-queued", name: "Q", now: T0 });
+  const queuedThenPassed = { ...queued.table, g: { ...queued.table.g, passes: 5 } };
+  check("a mid-hand joiner is queued while the dead hand runs",
+    queued.status === "pending");
+  const afterRedeal = startHand(queuedThenPassed, T0 + 2000);
+  check("the redeal seats anyone who was queued", seatOf(afterRedeal, "p-queued") > 0);
+  check("the redeal drains the queue", afterRedeal.pendingJoins.length === 0);
+}
+
 /* ------------------------- Versioning + CAS store ------------------------- */
 
 {

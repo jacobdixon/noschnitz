@@ -38,7 +38,7 @@ import {
   handStrength, aiBuryAndCall, aiChooseCard, assignPartner, applyPlay,
   resolveTrick, sortHand,
 } from "./engine.js";
-import { commit } from "./table.js";
+import { commit, startHand, atHandBoundary } from "./table.js";
 
 // Ceiling on actions per advance. A whole hand is bounded well under this:
 // 5 pick decisions + 30 card plays + 6 trick resolutions = 41. The cap is not
@@ -198,4 +198,46 @@ export function advanceAI(table, now) {
     { ...table, g, aiLog: [...priorLog, ...entries], aiLogHand: g.handNum },
     now
   );
+}
+
+/* ------------------------------------------------------------------------ */
+
+// Redeals a table that has been thrown in, up to this many times in one
+// request. All five passing twice running is unlikely but not impossible, and
+// an unbounded loop here would spin a serverless invocation until it timed out.
+export const MAX_REDEALS = 4;
+
+/**
+ * advanceAI plus the one thing it deliberately refuses to do: redeal a hand
+ * that everybody passed on.
+ *
+ * The split exists because a redeal is a table-level decision — it bumps the
+ * hand number, rotates the dealer, and seats anyone queued — none of which
+ * belongs in a function whose job is "move the AI seats". But nothing was
+ * picking that decision up, so a thrown-in hand deadlocked the table
+ * permanently. This is the seam where the two meet, and every route that
+ * advances play goes through it rather than calling advanceAI directly.
+ *
+ * Pure, like everything it calls: returns a new table, or the same reference
+ * when there was nothing to do.
+ *
+ * @param {object} table
+ * @param {number} now  caller-supplied timestamp; never reads a clock
+ */
+export function advanceTable(table, now) {
+  let t = advanceAI(table, now);
+
+  for (let i = 0; i < MAX_REDEALS; i++) {
+    const g = t.g;
+    const thrownIn = g && g.phase === "picking" && g.passes >= 5;
+    if (!thrownIn) break;
+    // startHand applies pending joins first, so a player who was queued while
+    // the dead hand was being passed around gets seated in the redeal rather
+    // than waiting for a hand that will never be played.
+    if (!atHandBoundary(t)) break;
+    t = startHand(t, now);
+    t = advanceAI(t, now);
+  }
+
+  return t;
 }

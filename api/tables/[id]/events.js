@@ -202,7 +202,16 @@ export function createEventsHandler(options = {}) {
     // maximally-redacted view. That's deliberate: a player queued to join next
     // hand holds no seat yet and still needs the stream to learn when they get
     // one.
-    const seat = seatOf(table, playerId);
+    //
+    // Resolved per frame, NOT cached for the life of the connection. A seat is
+    // a property of the table at a moment in time, not of the connection, and
+    // it changes under a live stream in two ordinary cases: joining a lobby you
+    // were already watching, and being seated at the hand boundary after
+    // queueing mid-hand (MP-2.3). Pinning it at connect time meant the stream
+    // kept redacting against the seat you used to hold, so a player who got
+    // seated never saw it — refreshing was the only way out. It's a findIndex
+    // over five entries; there is nothing to save by caching it.
+    const seatIn = (t) => seatOf(t, playerId);
 
     // `since` wins over Last-Event-ID: our client tracks the version it has
     // applied, which is more accurate than the last id the browser happened to
@@ -246,7 +255,7 @@ export function createEventsHandler(options = {}) {
     // and every other player's playerId are stripped by tableViewFor.
     const sendState = (t) => {
       lastVersion = t.version;
-      sendEvent("state", { version: t.version, table: tableViewFor(t, seat) }, t.version);
+      sendEvent("state", { version: t.version, table: tableViewFor(t, seatIn(t)) }, t.version);
     };
 
     const close = () => {
