@@ -224,11 +224,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
           v{__APP_VERSION__}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {onPlayWithFriends && (
-            <button onClick={onPlayWithFriends} style={{ ...btnGhost, borderColor: felt.brass, color: felt.brass }}>
-              Friends
-            </button>
-          )}
           <button onClick={() => setShowHelp(true)} style={btnGhost}>Trump</button>
           <button onClick={() => setShowScores(true)} style={btnGhost}>Scores</button>
         </div>
@@ -333,7 +328,19 @@ export default function Sheepshead({ onPlayWithFriends }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
           {roleTag(0)}
-          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
+          {/* Sits beside Last Trick rather than in the header: the header row
+              already measures 429px of content against 363px of space at
+              375px wide, so a third button there clips the title. This row
+              has room to spare. */}
+          {onPlayWithFriends && (
+            <button
+              onClick={onPlayWithFriends}
+              style={{ ...btnGhost, marginLeft: "auto", borderColor: felt.brass, color: felt.brass }}
+            >
+              Friends
+            </button>
+          )}
+          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: onPlayWithFriends ? 8 : "auto" }}>Last Trick</button>
         </div>
         <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
           {(() => {
