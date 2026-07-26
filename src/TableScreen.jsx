@@ -29,15 +29,16 @@ const SEATS = 5;
 // Absolute seat -> screen position, with the viewer always at the bottom.
 const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
 
-// Where each rotated position sits around the felt. Position 0 is the viewer
-// (rendered as the hand at the bottom, not as an avatar).
-const SEAT_POS = [
-  null,
-  { left: "6%", top: "46%" },
-  { left: "26%", top: "8%" },
-  { right: "26%", top: "8%" },
-  { right: "6%", top: "46%" },
-];
+// ...and back: which absolute seat is sitting at a given screen position.
+// Position 0 is the viewer, rendered as the hand rather than an avatar.
+const seatAtPos = (table, mySeat, pos) =>
+  table.seats.findIndex((_, seat) => rotate(seat, mySeat) === pos);
+
+// Cards are 56px of declared width plus padding and border, and the Card
+// component predates box-sizing, so each one actually occupies ~67px. Six of
+// them laid out flat overflow a 375px phone by 39px (measured). The solo hand
+// solves this by fanning them with a negative margin; same trick here.
+const FAN_OVERLAP = 14;
 
 function Avatar({ seat, table, isTurn }) {
   const s = table.seats[seat];
@@ -246,36 +247,59 @@ export default function TableScreen({ tableId, playerId, playerName }) {
         </span>
       </div>
 
-      {/* Felt with the other four seats and the current trick */}
-      <div style={{ flex: 1, position: "relative" }}>
-        {table.seats.map((_, seat) => {
-          if (seat === mySeat) return null;
-          const pos = SEAT_POS[rotate(seat, mySeat)];
-          if (!pos) return null;
-          return (
-            <div key={seat} style={{ position: "absolute", ...pos }}>
-              <Avatar seat={seat} table={table} isTurn={g.turn === seat} />
-            </div>
-          );
-        })}
+      {/* Felt. Laid out as rows rather than absolute percentages — percentage
+          insets put the trick pile straight on top of the two side avatars at
+          phone heights, and the collision point moves with the viewport. */}
+      <div style={{
+        flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
+        padding: "10px 6px", gap: 6,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-evenly", flexShrink: 0 }}>
+          {[2, 3].map((pos) => {
+            const seat = seatAtPos(table, mySeat, pos);
+            return seat < 0 ? null : (
+              <Avatar key={seat} seat={seat} table={table} isTurn={g.turn === seat} />
+            );
+          })}
+        </div>
 
-        <div style={{
-          position: "absolute", inset: "34% 18% 22%",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap",
-        }}>
-          {g.trick.map((t, i) => (
-            <div key={i} style={{ textAlign: "center" }}>
-              <Card card={t.card} small />
-              <div style={{ fontSize: 10, color: felt.creamDim, marginTop: 2 }}>
-                {table.seats[t.player].name}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", gap: 4 }}>
+          {[1].map((pos) => {
+            const seat = seatAtPos(table, mySeat, pos);
+            return seat < 0 ? null : (
+              <div key={seat} style={{ flexShrink: 0 }}>
+                <Avatar seat={seat} table={table} isTurn={g.turn === seat} />
               </div>
-            </div>
-          ))}
+            );
+          })}
+
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 3, flexWrap: "wrap", minWidth: 0,
+          }}>
+            {g.trick.map((t, i) => (
+              <div key={i} style={{ textAlign: "center" }}>
+                <Card card={t.card} small />
+                <div style={{ fontSize: 10, color: felt.creamDim, marginTop: 2 }}>
+                  {table.seats[t.player].name}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {[4].map((pos) => {
+            const seat = seatAtPos(table, mySeat, pos);
+            return seat < 0 ? null : (
+              <div key={seat} style={{ flexShrink: 0 }}>
+                <Avatar seat={seat} table={table} isTurn={g.turn === seat} />
+              </div>
+            );
+          })}
         </div>
 
         <div style={{
-          position: "absolute", bottom: 8, left: 0, right: 0, textAlign: "center",
-          fontStyle: "italic", color: felt.creamDim, fontSize: 15,
+          textAlign: "center", fontStyle: "italic", color: felt.creamDim,
+          fontSize: 15, flexShrink: 0,
         }}>
           {statusLine(g, table, mySeat, isMyTurn)}
         </div>
@@ -324,15 +348,16 @@ export default function TableScreen({ tableId, playerId, playerName }) {
 
       {/* Your hand */}
       <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px 12px" }}>
-        <div style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "nowrap", overflowX: "auto" }}>
-          {myHand.map((c) => (
-            <Card
-              key={cid(c)}
-              card={c}
-              onClick={() => onCardClick(c)}
-              selected={selected.some((s) => cid(s) === cid(c))}
-              dim={g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
-            />
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "nowrap" }}>
+          {myHand.map((c, i) => (
+            <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -FAN_OVERLAP }}>
+              <Card
+                card={c}
+                onClick={() => onCardClick(c)}
+                selected={selected.some((s) => cid(s) === cid(c))}
+                dim={g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
+              />
+            </div>
           ))}
         </div>
       </div>
