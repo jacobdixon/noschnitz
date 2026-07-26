@@ -6,6 +6,37 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.8.0] - 2026-07-26
+- AI now protects its trump power instead of throwing Queens away as schmear.
+  Reported from a real hand: with a Jack led and Q-clubs already down and
+  unbeatable, both Gus and Bunny threw Queens while holding lower trump.
+  - Root cause: the schmear branch sorted every legal card by card points,
+    highest first. When trump is led every legal card is trump, and among trump
+    the highest-point card is a Queen (3) ahead of a Jack (2) — so the AI was
+    giving up the strongest card in the game for one extra point. It wasn't
+    valuing the Queen at all; it was counting pips.
+  - A schmear is now paid in fail points only. Trump takes later tricks and no
+    schmear is worth the trick a trump could win, so trump is never schmear
+    material. When nothing is worth paying, the AI gets out of the way with its
+    cheapest card by points — which makes a Queen the last trump it will ever
+    part with — rather than falling through to the winning logic and overtaking
+    its own teammate.
+  - Also stops speculative schmearing on the opening trick. Before the called
+    ace falls a defender's "teammate" is a guess, and the seat winning may well
+    be the picker's partner; paying points to the wrong side is worse than
+    holding on. Only fires now when the partnership is actually known.
+  - Measured over 3x20,000 simulated hands before and after. Picker win rate
+    63.1-63.6% -> 64.0-64.6%, schneider rate 21.8-22.3% -> 24.3-24.4%, avg
+    picker-team points 70.8-71.1 -> 71.7-71.9. Ranges don't overlap, so it's a
+    real shift rather than run-to-run noise. Pick and alone rates unchanged, as
+    expected — nothing here touches the picking decision.
+  - Adds `npm run aiskilltest` (also `npm test`): 13 assertions on constructed
+    positions, including the reported hand replayed in true play order.
+    Aggregate simulation can't catch this class of bug — a wasted Queen costs a
+    few points against far larger run-to-run noise — so the behaviours players
+    actually notice are asserted directly. Against the old engine 7 of them
+    fail. (`aea4269`)
+
 ## [0.7.4] - 2026-07-25
 - Recap modal now marks who picked and who was the partner, with `Picker` /
   `Partner` badges under the player names in the grid — the same badges the
