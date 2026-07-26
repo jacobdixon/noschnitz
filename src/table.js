@@ -75,7 +75,10 @@ function aiSeat(name) {
 
 // Bumps the CAS version. Every mutation goes through here so no path can
 // forget and produce a write that silently overwrites a concurrent one.
-function commit(table, now) {
+// Exported because ai-runner.js is a mutation path too: it drives a whole
+// burst of AI actions and must land as ONE version bump, which it gets by
+// calling this exactly once at the end rather than reimplementing the rule.
+export function commit(table, now) {
   return { ...table, version: table.version + 1, updatedAt: now };
 }
 

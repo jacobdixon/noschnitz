@@ -11,7 +11,10 @@
     "leaktest": "node scripts/leaktest.mjs",
     "tabletest": "node scripts/tabletest.mjs",
     "storetest": "node scripts/storetest.mjs",
-    "test": "npm run leaktest && npm run tabletest && npm run storetest"
+    "aitest": "node scripts/aitest.mjs",
+    "streamtest": "node scripts/streamtest.mjs",
+    "e2etest": "node scripts/e2etest.mjs",
+    "test": "npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",

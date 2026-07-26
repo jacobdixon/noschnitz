@@ -27,6 +27,43 @@ Duane, Patty — Wisconsin-themed, 4-5 chars each). Source at
   are already filed and labeled (`feature: multiplayer` / `feature: community`,
   `epic`/`story`, `now`). That's the working board; `ROADMAP.md` is the narrative.
 
+## Multiplayer architecture (v2) — the decisions and why
+Read this before touching anything under `api/` or `src/store/`.
+
+**Vercel-only: serverless functions + Upstash Redis.** Chosen over Durable Objects.
+Serverless makes server-authoritative state race-prone, which is survivable only
+because of the CAS rule below — that rule is load-bearing, not a nicety.
+
+- **`src/engine.js` stays pure and is the single source of game rules.** The server
+  calls it; the client may call it to predict. Never fork the rules.
+- **`viewFor(g, seat)` is the only thing that may cross the wire.** Raw `g` holds all
+  five hands — shipping it lets any player read the table in devtools. It also hides
+  the blind, the partner's identity before the reveal, and conflates-away the secret
+  "alone" case. `npm run leaktest` guards it; never route around it.
+- **Every write goes through `mutate()` in `src/store/mutate.js`.** Read with a
+  version, compute purely, write only if the version hasn't moved, retry against the
+  winner if it has. A route that calls `store.put()` directly reintroduces the exact
+  race this exists to prevent. Purity is what makes the retry safe.
+- **CAS is a Lua `EVAL` script** (`src/store/upstash.js`). Upstash is HTTP-based, so
+  there's no connection to hold a `WATCH` across; the check and the write must happen
+  in one round trip. Tables are Redis HASHes (`version` + `state`) so the version is
+  comparable with a plain `HGET` instead of decoding the blob with `cjson`.
+- **`src/store/memory.js` is the reference implementation of the store contract.**
+  `npm run storetest` runs one suite against both it and Upstash — the adapter has to
+  match, and that's enforced rather than assumed.
+- **AI seats advance inside the same request as the human play** (`src/ai-runner.js`),
+  looping until it's a human's turn or the hand ends. Serverless has no background
+  loop to tick them. Each AI play carries a sequence number so the client can pace the
+  reveal instead of flashing four cards at once.
+- **The stream endpoint polls; it does not subscribe.** Upstash's HTTP API can't hold
+  a long-lived `SUBSCRIBE` from a function. `api/tables/[id]/events.js` polls the
+  version and pushes only on change, then closes at a bounded lifetime because Vercel
+  kills long connections — the client reconnects with `since=<version>` and resumes.
+- **Preview and Production have separate stores.** Only Preview/Development have
+  Upstash connected today. Never let test tables and live tables share a keyspace.
+- **`playerId` is a bearer token.** It's how a player proves which seat is theirs, so
+  it must be stripped from other players' entries in every payload.
+
 ## Branch + deploy discipline (v2 phase — read before deploying anything)
 The solo game is live at **noschnitz.com** and stays live, untouched, for the whole
 multiplayer build. Protecting it is the point of this setup.
