@@ -64,11 +64,15 @@ function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
   );
 }
 
-function Badge({ children, gold }) {
+// `compact` is for the recap grid, where the badge sits in the name column of
+// a six-column table: at full size it widens that column enough to push the
+// last trick off-screen on a phone.
+function Badge({ children, gold, compact }) {
   return (
     <span style={{
-      fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
-      padding: "2px 6px", borderRadius: 4,
+      fontSize: compact ? 9 : 11, fontWeight: 700,
+      letterSpacing: compact ? ".04em" : ".08em", textTransform: "uppercase",
+      padding: compact ? "1px 4px" : "2px 6px", borderRadius: 4,
       background: gold ? felt.brass : "#ffffff22",
       color: gold ? "#2A2108" : felt.creamDim,
     }}>{children}</span>
@@ -508,7 +512,21 @@ export default function Sheepshead() {
               <tbody>
                 {NAMES.map((n, p) => (
                   <tr key={n} style={{ borderTop: "1px solid #ffffff18" }}>
-                    <td style={{ padding: "6px 6px 6px 0", fontWeight: p === 0 ? 800 : 500, whiteSpace: "nowrap" }}>{n}</td>
+                    {/* Badges stack under the name rather than sitting beside
+                        it: the grid already scrolls sideways on a phone, and a
+                        wider name column eats the tricks you're trying to read. */}
+                    <td style={{ padding: "6px 6px 6px 0", fontWeight: p === 0 ? 800 : 500, whiteSpace: "nowrap" }}>
+                      <div>{n}</div>
+                      {p === g.picker && (
+                        <div style={{ marginTop: 3 }}><Badge gold compact>Picker</Badge></div>
+                      )}
+                      {p === g.picker && g.alone && (
+                        <div style={{ marginTop: 3 }}><Badge compact>Alone</Badge></div>
+                      )}
+                      {p === g.partner && (
+                        <div style={{ marginTop: 3 }}><Badge gold compact>Partner</Badge></div>
+                      )}
+                    </td>
                     {g.trickHistory.map((th, t) => {
                       const played = th.trick.find((x) => x.player === p);
                       if (!played) return <td key={t} />;

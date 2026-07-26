@@ -6,6 +6,24 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.7.4] - 2026-07-25
+- Recap modal now marks who picked and who was the partner, with `Picker` /
+  `Partner` badges under the player names in the grid — the same badges the
+  hand-end summary already uses, so the two modals speak one language.
+  Reviewing a hand without knowing which team each player was on made the
+  trick-by-trick grid much harder to read, and it's the piece most missed
+  when a recap gets shared out of context.
+  - The picker also gets a secondary (non-gold) `Alone` badge when they went
+    alone, so an absent partner reads as "there wasn't one" rather than
+    looking like the marker failed to render.
+  - Badges stack under the name and use a new `compact` variant of `Badge`
+    (9px, tighter tracking and padding). At full size the `Partner` badge
+    widened the name column enough to push Trick 6 off-screen at 375px —
+    measured 7px of overflow; compact brings it to 0.
+  - Verified by playing a full hand in the browser at mobile (375px) and
+    desktop widths, including temporarily forcing the alone case to check
+    that layout. (`ae4b7ff`)
+
 ## [0.7.3] - 2026-07-25
 - Added a Share button (industry-standard share icon) to the Recap modal so
   testers can send back hands they think the AI misplayed. Captures a
