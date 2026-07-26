@@ -604,9 +604,12 @@ export default function TableScreen({ tableId, playerId, playerName }) {
 
       {/* #30 — tricks now sweep off the felt correctly, so the previous trick is
           gone the instant it ends. Solo has always offered a look back. */}
+      {/* Fixed height for the same reason as the action block: the Last Trick
+          button only exists once a trick has finished, and without a floor the
+          felt above shrank by 11px the first time it appeared (measured). */}
       <div style={{
         flexShrink: 0, display: "flex", alignItems: "center", gap: 8,
-        padding: "0 10px 4px",
+        padding: "0 10px 4px", minHeight: 30,
       }}>
         <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", color: felt.creamDim }}>
           YOUR HAND
