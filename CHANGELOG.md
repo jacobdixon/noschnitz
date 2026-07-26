@@ -35,7 +35,7 @@ corresponds to the entries below.
     Aggregate simulation can't catch this class of bug — a wasted Queen costs a
     few points against far larger run-to-run noise — so the behaviours players
     actually notice are asserted directly. Against the old engine 7 of them
-    fail. (`__PENDING__`)
+    fail. (`aea4269`)
 
 ## [0.7.4] - 2026-07-25
 - Recap modal now marks who picked and who was the partner, with `Picker` /
