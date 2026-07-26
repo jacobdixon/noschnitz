@@ -19,9 +19,10 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback } from "react";
-import { SUIT_SYM, SUIT_NAME, cid, legalPlays } from "./engine.js";
+import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays } from "./engine.js";
 import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
+import { usePacedTrick } from "./usePacedTrick.js";
 import * as api from "./api.js";
 
 const SEATS = 5;
@@ -29,16 +30,34 @@ const SEATS = 5;
 // Absolute seat -> screen position, with the viewer always at the bottom.
 const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
 
-// ...and back: which absolute seat is sitting at a given screen position.
-// Position 0 is the viewer, rendered as the hand rather than an avatar.
-const seatAtPos = (table, mySeat, pos) =>
-  table.seats.findIndex((_, seat) => rotate(seat, mySeat) === pos);
-
 // Cards are 56px of declared width plus padding and border, and the Card
 // component predates box-sizing, so each one actually occupies ~67px. Six of
 // them laid out flat overflow a 375px phone by 39px (measured). The solo hand
 // solves this by fanning them with a negative margin; same trick here.
 const FAN_OVERLAP = 14;
+
+// Both tables below are lifted verbatim from the solo game, by screen position
+// rather than absolute seat. They are already tuned so avatars and played
+// cards don't collide at phone sizes — an earlier attempt here invented its
+// own percentages and put the trick pile straight on top of the side seats.
+//
+// The important one is TRICK_POS: a played card lands pulled inward from its
+// own player's seat, so you can see at a glance who played what. Rendering the
+// trick as a neutral centred row loses that, and with it most of the
+// readability of the game.
+const SEAT_POS = {
+  1: { left: "2%", top: "46%" },
+  2: { left: "20%", top: "4%" },
+  3: { right: "20%", top: "4%" },
+  4: { right: "2%", top: "46%" },
+};
+const TRICK_POS = {
+  0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
+  1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
+  2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
+  3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
+  4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
+};
 
 function Avatar({ seat, table, isTurn }) {
   const s = table.seats[seat];
@@ -153,6 +172,11 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
 
 export default function TableScreen({ tableId, playerId, playerName }) {
   const { table, connected, error } = useTableStream(tableId, playerId);
+  // Called before any early return — hooks can't be conditional, and the
+  // paced cursor has to keep running while the rest of the screen decides
+  // what to render.
+  const frame = usePacedTrick(table?.g);
+  const caughtUp = frame.caughtUp;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [selected, setSelected] = useState([]);
@@ -207,7 +231,11 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   }
 
   const myHand = g.hands[mySeat] || [];
-  const isMyTurn = g.phase === "playing" && g.turn === mySeat;
+  // `caughtUp` gates every affordance: until the table has finished showing
+  // what everyone else played, your cards aren't live. Otherwise you can play
+  // into a trick that visually has two cards in it and watch your own card
+  // appear before theirs.
+  const isMyTurn = g.phase === "playing" && g.turn === mySeat && caughtUp;
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
@@ -247,61 +275,56 @@ export default function TableScreen({ tableId, playerId, playerName }) {
         </span>
       </div>
 
-      {/* Felt. Laid out as rows rather than absolute percentages — percentage
-          insets put the trick pile straight on top of the two side avatars at
-          phone heights, and the collision point moves with the viewport. */}
-      <div style={{
-        flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
-        padding: "10px 6px", gap: 6,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-evenly", flexShrink: 0 }}>
-          {[2, 3].map((pos) => {
-            const seat = seatAtPos(table, mySeat, pos);
-            return seat < 0 ? null : (
-              <Avatar key={seat} seat={seat} table={table} isTurn={g.turn === seat} />
-            );
-          })}
-        </div>
+      {/* Felt — absolute positions matching the solo game, rotated so you are
+          always at the bottom. */}
+      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+        {table.seats.map((_, seat) => {
+          const pos = SEAT_POS[rotate(seat, mySeat)];
+          if (!pos) return null; // position 0 is you — rendered as your hand
+          return (
+            <div key={seat} style={{
+              position: "absolute", ...pos, width: 84,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+            }}>
+              <Avatar seat={seat} table={table} isTurn={g.turn === seat && caughtUp} />
+            </div>
+          );
+        })}
 
-        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", gap: 4 }}>
-          {[1].map((pos) => {
-            const seat = seatAtPos(table, mySeat, pos);
-            return seat < 0 ? null : (
-              <div key={seat} style={{ flexShrink: 0 }}>
-                <Avatar seat={seat} table={table} isTurn={g.turn === seat} />
-              </div>
-            );
-          })}
-
-          <div style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-            gap: 3, flexWrap: "wrap", minWidth: 0,
+        {/* Each card sits by the player who played it, revealed one at a time. */}
+        {frame.cards.map((p) => (
+          <div key={cid(p.card)} style={{
+            position: "absolute", ...TRICK_POS[rotate(p.player, mySeat)], zIndex: 2,
           }}>
-            {g.trick.map((t, i) => (
-              <div key={i} style={{ textAlign: "center" }}>
-                <Card card={t.card} small />
-                <div style={{ fontSize: 10, color: felt.creamDim, marginTop: 2 }}>
-                  {table.seats[t.player].name}
-                </div>
-              </div>
-            ))}
+            <Card card={p.card} small />
           </div>
+        ))}
 
-          {[4].map((pos) => {
-            const seat = seatAtPos(table, mySeat, pos);
-            return seat < 0 ? null : (
-              <div key={seat} style={{ flexShrink: 0 }}>
-                <Avatar seat={seat} table={table} isTurn={g.turn === seat} />
-              </div>
-            );
-          })}
-        </div>
+        {frame.complete && (
+          <div style={{
+            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
+            background: "#000000aa", padding: "4px 12px", borderRadius: 6,
+            fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
+          }}>
+            {table.seats[frame.winner]?.name} +{frame.cards.reduce((s, p) => s + cardPts(p.card), 0)}
+          </div>
+        )}
+
+        {/* Blind marker while nobody has picked yet, as in the solo game. */}
+        {g.phase === "picking" && (
+          <div style={{
+            position: "absolute", left: "50%", top: "44%", transform: "translate(-50%,-50%)",
+            display: "flex", gap: 6,
+          }}>
+            <Card faceDown small /><Card faceDown small />
+          </div>
+        )}
 
         <div style={{
-          textAlign: "center", fontStyle: "italic", color: felt.creamDim,
-          fontSize: 15, flexShrink: 0,
+          position: "absolute", bottom: 6, left: 0, right: 0, textAlign: "center",
+          fontStyle: "italic", color: felt.creamDim, fontSize: 15,
         }}>
-          {statusLine(g, table, mySeat, isMyTurn)}
+          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : " "}
         </div>
       </div>
 
@@ -338,7 +361,9 @@ export default function TableScreen({ tableId, playerId, playerName }) {
         />
       )}
 
-      {g.phase === "handEnd" && table.youAreHost && (
+      {/* Held back until the final trick has finished playing out — otherwise
+          the deal button appears while the last card is still landing. */}
+      {g.phase === "handEnd" && caughtUp && table.youAreHost && (
         <Actions>
           <button style={btnGold} disabled={busy} onClick={() => act(() => api.startHand(tableId, playerId))}>
             Deal next hand
