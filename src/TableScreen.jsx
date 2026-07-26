@@ -19,7 +19,7 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays } from "./engine.js";
+import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays, makeDeck, isTrump, trumpPower, trickWinner } from "./engine.js";
 import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
@@ -27,6 +27,15 @@ import { fanOverlap } from "./fan.js";
 import * as api from "./api.js";
 
 const SEATS = 5;
+
+// Derived, never hand-written: a hardcoded list is a second source of truth for
+// the rules and would quietly go stale if trump ever changed.
+const TRUMP_ORDER = makeDeck().filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
+
+// Reserved height for the status + action block. Without it the felt reflows
+// every time a button appears or disappears, and the whole play area jumps as
+// the last card of a trick lands (#33). Solo has always reserved this space.
+const ACTION_MIN_HEIGHT = 84;
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
 const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
@@ -107,15 +116,14 @@ function Avatar({ seat, table, isTurn }) {
   );
 }
 
-/* ------------------------------- The lobby -------------------------------- */
+/* ------------------------- Sharing the table link -------------------------- */
 
-function Lobby({ table, mySeat, onStart, busy, err }) {
+// MP-1.2/1.3. navigator.share is preferred on phones because it opens Messages
+// directly, which is where this group actually coordinates; clipboard is the
+// desktop fallback.
+function useShareLink(tableId) {
   const [copied, setCopied] = useState(false);
-  const url = api.tableUrl(table.id);
-
-  // MP-1.2/1.3: the link is the whole invitation mechanism, so copying it has
-  // to be one tap. navigator.share is preferred on phones (it opens Messages
-  // directly, which is where this group actually coordinates).
+  const url = api.tableUrl(tableId);
   const share = async () => {
     try {
       if (navigator.share) {
@@ -127,7 +135,28 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
       setTimeout(() => setCopied(false), 2000);
     } catch { /* user dismissed the share sheet */ }
   };
+  return { url, share, copied };
+}
 
+function ShareRow({ tableId }) {
+  const { url, share, copied } = useShareLink(tableId);
+  return (
+    <div style={{
+      display: "flex", gap: 8, alignItems: "center",
+      background: "#00000030", borderRadius: 8, padding: "8px 10px",
+    }}>
+      <code style={{
+        flex: 1, fontSize: 13, color: felt.creamDim,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>{url}</code>
+      <button style={btnGhost} onClick={share}>{copied ? "Copied" : "Share"}</button>
+    </div>
+  );
+}
+
+/* ------------------------------- The lobby -------------------------------- */
+
+function Lobby({ table, mySeat, onStart, busy, err }) {
   const humans = table.seats.filter((s) => s.kind === "human").length;
 
   return (
@@ -140,15 +169,7 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
         you like — nobody has to wait for a fifth.
       </div>
 
-      <div style={{
-        display: "flex", gap: 8, alignItems: "center", marginBottom: 6,
-        background: "#00000030", borderRadius: 8, padding: "8px 10px",
-      }}>
-        <code style={{ flex: 1, fontSize: 13, color: felt.creamDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {url}
-        </code>
-        <button style={btnGhost} onClick={share}>{copied ? "Copied" : "Share"}</button>
-      </div>
+      <ShareRow tableId={table.id} />
 
       <div style={{ marginTop: 18, marginBottom: 8, fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: felt.creamDim }}>
         At the table — {humans} {humans === 1 ? "person" : "people"}
@@ -187,6 +208,127 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
   );
 }
 
+
+/* --------------------------------- Modals --------------------------------- */
+
+// #34 — the table had no way to check what beats what. Derived from the engine,
+// so it can't drift from the rules it documents.
+function TrumpModal({ onClose }) {
+  return (
+    <Modal maxWidth={420} onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+        Trump, high to low
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 12 }}>
+        Every Queen, then every Jack, then the diamonds. Everything else is a
+        fail suit.
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
+        {TRUMP_ORDER.map((c) => (
+          <span key={cid(c)} style={{
+            fontSize: 14, fontWeight: 700, padding: "3px 6px", borderRadius: 4,
+            background: "#00000035",
+            color: c.suit === "H" || c.suit === "D" ? felt.red : felt.cream,
+          }}>{c.rank}{SUIT_SYM[c.suit]}</span>
+        ))}
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 14 }}>
+        Card points: A 11 · 10 10 · K 4 · Q 3 · J 2 · 9/8/7 nothing. 120 in the
+        deck; the picker's team needs 61.
+      </div>
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
+// #34 — running scores, which previously existed nowhere on the table screen.
+function ScoresModal({ table, onClose }) {
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>
+        {table.handNum > 0 ? `After hand ${table.handNum}` : "Not started"}
+      </div>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>
+        Scores
+      </div>
+      <table style={{ width: "100%", fontSize: 16, borderCollapse: "collapse", marginBottom: 14 }}>
+        <tbody>
+          {table.seats.map((s, i) => (
+            <tr key={i} style={{ borderBottom: "1px solid #ffffff18" }}>
+              <td style={{ padding: "6px 0", fontWeight: s.isYou ? 800 : 500 }}>
+                {s.name} {s.isYou && <Badge compact>You</Badge>}
+              </td>
+              <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700 }}>
+                {table.scores[i] >= 0 ? "+" : ""}{table.scores[i]}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
+// #30 — with tricks now sweeping off the felt correctly, the last trick is gone
+// the moment it ends. Solo has always let you look back at it; this restores
+// that for the table, laid out by seat position the way the felt is.
+function LastTrickModal({ table, mySeat, onClose }) {
+  const lt = table.g?.lastTrick;
+  if (!lt) return null;
+  const winner = lt.winner;
+  const leader = lt.trick[0]?.player;
+  const pts = lt.trick.reduce((n, t) => n + cardPts(t.card), 0);
+
+  return (
+    <Modal maxWidth={420} onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>
+        Last trick
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 12 }}>
+        {lt.trick.map((t) => (
+          <div key={cid(t.card)} style={{ textAlign: "center", minWidth: 60 }}>
+            <Card card={t.card} small />
+            <div style={{
+              fontSize: 12, marginTop: 4, whiteSpace: "nowrap",
+              fontWeight: t.player === winner ? 800 : 500,
+              color: t.player === winner ? felt.brass : felt.creamDim,
+              borderBottom: t.player === leader ? `2px solid ${felt.brass}` : "2px solid transparent",
+            }}>
+              {t.player === mySeat ? "You" : table.seats[t.player]?.name}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 14 }}>
+        <span style={{ color: felt.brass, fontWeight: 700 }}>
+          {winner === mySeat ? "You" : table.seats[winner]?.name}
+        </span>{" "}
+        took it for {pts} {pts === 1 ? "point" : "points"} · underline = led
+      </div>
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
+// #31 — the link was only reachable from the lobby, so once a hand was dealt
+// there was no way to invite anyone, despite MP-2.3 supporting joining mid-hand.
+function InviteModal({ table, onClose }) {
+  return (
+    <Modal maxWidth={420} onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+        Invite
+      </div>
+      <div style={{ fontSize: 14, color: felt.creamDim, marginBottom: 12 }}>
+        Anyone who joins now takes an AI seat at the start of the next hand — the
+        hand in progress isn't disturbed.
+      </div>
+      <div style={{ marginBottom: 14 }}><ShareRow tableId={table.id} /></div>
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
 /* --------------------------------- Table ---------------------------------- */
 
 export default function TableScreen({ tableId, playerId, playerName }) {
@@ -208,6 +350,7 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   // and an illegal play is rejected and the stand-in withdrawn.
   const [optimistic, setOptimistic] = useState(null);
   const viewportWidth = useViewportWidth();
+  const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite"
 
   // Retire the stand-in once the genuine card has been REVEALED (not merely
   // received): dropping it as soon as the server confirms would blink the card
@@ -314,19 +457,36 @@ export default function TableScreen({ tableId, playerId, playerName }) {
       position: "fixed", inset: 0, background: felt.bg, color: felt.cream,
       display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
+      {/* Header (#34). Deliberately terse labels: the solo header already holds
+          429px of content in 363px at phone width, and this row carries three
+          buttons plus the table code. Measured after building, not assumed. */}
+      <div style={{
+        flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
+        padding: "8px 10px", borderBottom: `2px solid ${felt.rail}`,
+      }}>
+        <div style={{
+          fontFamily: "Georgia, serif", fontWeight: 900, letterSpacing: ".06em",
+          fontSize: 14, color: felt.brass, whiteSpace: "nowrap",
+          overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1,
+        }}>{table.id}</div>
+        <button style={btnGhost} onClick={() => setModal("invite")}>Invite</button>
+        <button style={btnGhost} onClick={() => setModal("trump")}>Trump</button>
+        <button style={btnGhost} onClick={() => setModal("scores")}>Scores</button>
+      </div>
+
       {/* Contract strip */}
       <div style={{
-        padding: "8px 12px", fontSize: 13, color: felt.creamDim,
-        borderBottom: `2px solid ${felt.rail}`, display: "flex", gap: 10, alignItems: "center",
+        flexShrink: 0, padding: "6px 12px", fontSize: 13, color: felt.creamDim,
+        borderBottom: `1px solid ${felt.rail}`, display: "flex", gap: 10, alignItems: "center",
       }}>
         <span style={{ fontWeight: 700 }}>Hand {g.handNum}</span>
         {g.picker !== null && <span>{table.seats[g.picker].name} picked</span>}
         {g.calledSuit && (
           <span style={{ color: felt.brass, fontWeight: 700 }}>
-            Called: {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
+            {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
           </span>
         )}
-        {g.alone && <Badge>Alone</Badge>}
+        {g.alone && <Badge compact>Alone</Badge>}
         <span style={{ marginLeft: "auto", opacity: connected ? 0 : 1, transition: "opacity .3s" }}>
           reconnecting…
         </span>
@@ -399,7 +559,11 @@ export default function TableScreen({ tableId, playerId, playerName }) {
         </div>
       )}
 
-      {/* Decisions */}
+      {/* Decisions. The reserved height is the fix for #33: these rows appear
+          and disappear as a hand progresses, and without a floor the felt above
+          resized every time — most visibly as the last card of a trick landed
+          and the deal button arrived. */}
+      <div style={{ flexShrink: 0, minHeight: ACTION_MIN_HEIGHT }}>
       {g.phase === "picking" && g.pickTurn === mySeat && (
         <Actions>
           <button style={btnGold} disabled={busy} onClick={() => act(() => api.pick(tableId, playerId, "pick"))}>
@@ -436,6 +600,24 @@ export default function TableScreen({ tableId, playerId, playerName }) {
         </Actions>
       )}
 
+      </div>
+
+      {/* #30 — tricks now sweep off the felt correctly, so the previous trick is
+          gone the instant it ends. Solo has always offered a look back. */}
+      <div style={{
+        flexShrink: 0, display: "flex", alignItems: "center", gap: 8,
+        padding: "0 10px 4px",
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", color: felt.creamDim }}>
+          YOUR HAND
+        </div>
+        {g.lastTrick && (
+          <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
+            Last Trick
+          </button>
+        )}
+      </div>
+
       {/* Your hand */}
       <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px 12px" }}>
         {/* overflowX is a safety net, not the mechanism: the fan is sized to
@@ -453,6 +635,13 @@ export default function TableScreen({ tableId, playerId, playerName }) {
           ))}
         </div>
       </div>
+
+      {modal === "trump" && <TrumpModal onClose={() => setModal(null)} />}
+      {modal === "scores" && <ScoresModal table={table} onClose={() => setModal(null)} />}
+      {modal === "invite" && <InviteModal table={table} onClose={() => setModal(null)} />}
+      {modal === "lastTrick" && (
+        <LastTrickModal table={table} mySeat={mySeat} onClose={() => setModal(null)} />
+      )}
     </div>
   );
 }
