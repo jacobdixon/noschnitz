@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "simulate": "node scripts/simulate.mjs"
+    "simulate": "node scripts/simulate.mjs",
+    "leaktest": "node scripts/leaktest.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
