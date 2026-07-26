@@ -346,9 +346,30 @@ export function aiChooseCard(g, idx) {
     const remainingToAct = 4 - g.trick.length; // players still to act after me, not counting me
     const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
     const trumpLooksSafe = isTrump(winningCard) && (trumpPower(winningCard) >= 7 || oppTrumpLeft <= remainingToAct);
-    if (lastToPlay || trumpLooksSafe) {
-      // schmear: give points to a winning teammate
-      return [...legal].sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+
+    // On the opening trick nobody has seen the called ace fall, so a defender's
+    // "teammate" is a guess — the seat winning may well be the picker's
+    // partner. Paying points to the wrong side is worse than holding on.
+    const teammateIsCertain = g.partnerRevealed || (idx === g.partner && winnerSoFar === g.picker);
+    const speculativeOpening = g.tricksDone === 0 && !teammateIsCertain;
+
+    if ((lastToPlay || trumpLooksSafe) && !speculativeOpening) {
+      // A schmear is paid in FAIL points only. Trump is what takes later
+      // tricks, and no schmear is worth the trick a trump could win. This used
+      // to sort every legal card by card points, and among trump the
+      // highest-point card is a Queen (3) ahead of a Jack (2) — so with trump
+      // led, the "schmear" threw the strongest card in the game away for one
+      // extra point. Reported from a real hand where two seats each dumped a
+      // Queen behind an already-unbeatable Q-clubs.
+      const schmearable = legal.filter((c) => !isTrump(c) && cardPts(c) > 0);
+      if (schmearable.length) {
+        return schmearable.sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+      }
+      // Nothing worth paying. Get out of the way as cheaply as possible rather
+      // than falling through to the winners logic below and overtaking our own
+      // teammate — cheapest by card points first, so a Queen is the last trump
+      // we would ever part with.
+      return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
     }
   }
   if (winners.length) {
