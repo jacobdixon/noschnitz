@@ -10,9 +10,11 @@
     "simulate": "node scripts/simulate.mjs",
     "leaktest": "node scripts/leaktest.mjs",
     "tabletest": "node scripts/tabletest.mjs",
-    "test": "npm run leaktest && npm run tabletest"
+    "storetest": "node scripts/storetest.mjs",
+    "test": "npm run leaktest && npm run tabletest && npm run storetest"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
