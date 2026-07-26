@@ -22,7 +22,7 @@ corresponds to the entries below.
     measured 7px of overflow; compact brings it to 0.
   - Verified by playing a full hand in the browser at mobile (375px) and
     desktop widths, including temporarily forcing the alone case to check
-    that layout. (`__PENDING__`)
+    that layout. (`ae4b7ff`)
 
 ## [0.7.3] - 2026-07-25
 - Added a Share button (industry-standard share icon) to the Recap modal so
