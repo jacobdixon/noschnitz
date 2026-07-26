@@ -23,6 +23,7 @@ import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays } from "./engine.js";
 import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
+import { fanOverlap } from "./fan.js";
 import * as api from "./api.js";
 
 const SEATS = 5;
@@ -30,11 +31,25 @@ const SEATS = 5;
 // Absolute seat -> screen position, with the viewer always at the bottom.
 const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
 
-// Cards are 56px of declared width plus padding and border, and the Card
-// component predates box-sizing, so each one actually occupies ~67px. Six of
-// them laid out flat overflow a 375px phone by 39px (measured). The solo hand
-// solves this by fanning them with a negative margin; same trick here.
-const FAN_OVERLAP = 14;
+// Horizontal padding on the hand row, subtracted from the viewport to get the
+// width the fan actually has to fit inside.
+const HAND_PADDING = 12;
+
+// Tracks viewport width so the fan re-tightens on rotation and resize. The
+// table is position:fixed inset:0, so the viewport IS the container.
+function useViewportWidth() {
+  const [w, setW] = useState(() => (typeof window === "undefined" ? 375 : window.innerWidth));
+  useEffect(() => {
+    const onResize = () => setW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+  return w;
+}
 
 // Both tables below are lifted verbatim from the solo game, by screen position
 // rather than absolute seat. They are already tuned so avatars and played
@@ -79,8 +94,12 @@ function Avatar({ seat, table, isTurn }) {
         {s.name}
       </div>
       <div style={{ fontSize: 10, color: felt.creamDim, whiteSpace: "nowrap" }}>
-        {/* MP-2.2 — which seats are people and which are the house AI. */}
-        {s.kind === "ai" ? "AI" : "•"} {g ? `${g.handCounts?.[seat] ?? 0}🂠` : ""}
+        {/* MP-2.2 which seats are people vs house AI, and COM-3.3 the third
+            case: a real player's seat the AI is covering while they're away.
+            Worth distinguishing — "Dave is being covered" and "Dave was never
+            here" are different social facts at a card table. */}
+        {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "•"}{" "}
+        {g ? `${g.handCounts?.[seat] ?? 0}🂠` : ""}
       </div>
       {isPicker && <Badge gold compact>Picker</Badge>}
       {isPartner && <Badge gold compact>Partner</Badge>}
@@ -188,6 +207,7 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   // this is only a stand-in until the real card comes back down the stream,
   // and an illegal play is rejected and the stand-in withdrawn.
   const [optimistic, setOptimistic] = useState(null);
+  const viewportWidth = useViewportWidth();
 
   // Retire the stand-in once the genuine card has been REVEALED (not merely
   // received): dropping it as soon as the server confirms would blink the card
@@ -255,6 +275,9 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   const myHand = (g.hands[mySeat] || []).filter(
     (c) => !(optimistic && cid(c) === cid(optimistic.card))
   );
+  // Tightens for the picker's 8-card bury view and loosens again once two are
+  // buried. A fixed overlap fits six and clips eight — see src/fan.js.
+  const handOverlap = fanOverlap(myHand.length, viewportWidth - HAND_PADDING);
   // `caughtUp` gates every affordance: until the table has finished showing
   // what everyone else played, your cards aren't live. Otherwise you can play
   // into a trick that visually has two cards in it and watch your own card
@@ -415,9 +438,11 @@ export default function TableScreen({ tableId, playerId, playerName }) {
 
       {/* Your hand */}
       <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px 12px" }}>
-        <div style={{ display: "flex", justifyContent: "center", flexWrap: "nowrap" }}>
+        {/* overflowX is a safety net, not the mechanism: the fan is sized to
+            fit, and a scrollbar appearing here means the geometry is wrong. */}
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "nowrap", overflowX: "auto" }}>
           {myHand.map((c, i) => (
-            <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -FAN_OVERLAP }}>
+            <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -handOverlap }}>
               <Card
                 card={c}
                 onClick={() => onCardClick(c)}

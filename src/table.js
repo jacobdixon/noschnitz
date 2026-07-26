@@ -108,10 +108,26 @@ export function createTable({ hostPlayerId, hostName, now, rand, id } = {}) {
 
 /* -------------------------------- Queries -------------------------------- */
 
+// Matches "away" seats as well as "human" ones: a seat you stepped away from is
+// still YOUR seat, and this is what lets you reclaim it (COM-3.2) rather than
+// being handed whatever is free.
 export const seatOf = (table, playerId) =>
-  playerId == null ? -1 : table.seats.findIndex((s) => s.kind === "human" && s.playerId === playerId);
+  playerId == null ? -1 : table.seats.findIndex((s) => isClaimed(s) && s.playerId === playerId);
+
+// Three seat kinds:
+//   "human" — claimed, the player is present, they play their own cards
+//   "away"  — claimed, the player is absent, AI covers (COM-3.1/3.3)
+//   "ai"    — unclaimed house AI, and the only kind a newcomer may take
+export const isClaimed = (seat) => seat.kind === "human" || seat.kind === "away";
+
+// How long a seat goes unheard-from before the AI covers it. Long enough to
+// survive a tunnel or a phone locking during someone else's turn, short enough
+// that a table doesn't sit dead while everyone waits on a player who left.
+export const AWAY_AFTER_MS = 90_000;
 
 export const humanSeats = (table) => table.seats.filter((s) => s.kind === "human").length;
+// Only unclaimed seats. An "away" seat is reserved for the player who holds it,
+// so a newcomer must never be dropped into it.
 export const aiSeatIndexes = (table) =>
   table.seats.map((s, i) => (s.kind === "ai" ? i : -1)).filter((i) => i >= 0);
 
@@ -147,7 +163,11 @@ export const atHandBoundary = (table) =>
 export function joinTable(table, { playerId, name, now }) {
   const existing = seatOf(table, playerId);
   if (existing >= 0) {
-    const seats = table.seats.map((s, i) => (i === existing ? { ...s, lastSeen: now } : s));
+    // COM-3.2 — reclaiming. If the AI has been covering this seat, take it back;
+    // otherwise this is just a presence refresh on a seat already held.
+    const seats = table.seats.map((s, i) =>
+      i === existing ? { ...s, kind: "human", lastSeen: now } : s
+    );
     return { table: commit({ ...table, seats }, now), seat: existing, status: "seated" };
   }
 
@@ -225,6 +245,41 @@ export function markSeen(table, { playerId, now }) {
   // with real plays for no reason. updatedAt still moves so the store can
   // refresh the table's TTL.
   return { ...table, seats, updatedAt: now };
+}
+
+/* --------------------------- Stepping away (COM-3) ------------------------- */
+
+// COM-3.1 — one action to hand your seat to the AI without giving it up. The
+// difference from leaveTable is the whole point: the seat stays yours, keeps
+// your name, and is not offered to anyone else.
+export function stepAway(table, { playerId, now }) {
+  const idx = seatOf(table, playerId);
+  if (idx < 0 || table.seats[idx].kind === "away") return table;
+  const seats = table.seats.map((s, i) => (i === idx ? { ...s, kind: "away" } : s));
+  return commit({ ...table, seats }, now);
+}
+
+// COM-3.4 — the table must never stall on somebody who stopped responding.
+// Anyone unheard-from for longer than `awayAfterMs` gets covered by the AI so
+// play continues; they reclaim their seat by simply coming back (see joinTable).
+//
+// This depends entirely on `lastSeen` being refreshed while a player is merely
+// WATCHING, not just when they act — otherwise everyone at the table gets
+// covered mid-hand while paying perfect attention. The stream heartbeat is what
+// keeps it current; see api/tables/[id]/events.js.
+export function coverIdleSeats(table, now, awayAfterMs = AWAY_AFTER_MS) {
+  let changed = false;
+  const seats = table.seats.map((s) => {
+    if (s.kind !== "human") return s;
+    // A seat that has never reported in gets the benefit of the doubt until it
+    // has had a full window to do so.
+    const since = s.lastSeen ?? table.updatedAt ?? now;
+    if (now - since <= awayAfterMs) return s;
+    changed = true;
+    return { ...s, kind: "away" };
+  });
+  if (!changed) return table;
+  return commit({ ...table, seats }, now);
 }
 
 /* ------------------------------ Hand control ------------------------------ */

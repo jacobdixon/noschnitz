@@ -16,7 +16,8 @@
     "e2etest": "node scripts/e2etest.mjs",
     "pacingtest": "node scripts/pacingtest.mjs",
     "aiskilltest": "node scripts/aiskilltest.mjs",
-    "test": "npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest"
+    "fantest": "node scripts/fantest.mjs",
+    "test": "npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",

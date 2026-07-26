@@ -12,7 +12,7 @@
 import {
   createTable, joinTable, leaveTable, applyPendingJoins, startHand,
   markSeen, seatOf, humanSeats, aiSeatIndexes, uniqueName, makeTableCode,
-  atHandBoundary, AI_NAMES,
+  atHandBoundary, AI_NAMES, stepAway, coverIdleSeats, AWAY_AFTER_MS,
 } from "../src/table.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { mutate } from "../src/store/mutate.js";
@@ -202,6 +202,74 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   const afterRedeal = startHand(queuedThenPassed, T0 + 2000);
   check("the redeal seats anyone who was queued", seatOf(afterRedeal, "p-queued") > 0);
   check("the redeal drains the queue", afterRedeal.pendingJoins.length === 0);
+}
+
+
+/* --------------------- COM-3: stepping away and cover --------------------- */
+
+{
+  // COM-3.1 — the seat stays yours. That's the whole difference from leaving.
+  let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  const seat = seatOf(t, "p-dave");
+  const away = stepAway(t, { playerId: "p-dave", now: T0 + 10 });
+
+  check("stepping away marks the seat away", away.seats[seat]?.kind === "away");
+  check("stepping away keeps your name on the seat", away.seats[seat]?.name === "Dave");
+  check("stepping away keeps the seat yours", seatOf(away, "p-dave") === seat);
+  check("an away seat is NOT offered to newcomers", !aiSeatIndexes(away).includes(seat));
+  check("leaving, by contrast, releases the seat",
+    leaveTable(t, { playerId: "p-dave", now: T0 + 10 }).seats[seat]?.kind === "ai");
+  check("stepping away twice is a no-op",
+    stepAway(away, { playerId: "p-dave", now: T0 + 20 }) === away);
+
+  // COM-3.2 — coming back is enough; there is no separate "return" action.
+  const back = joinTable(away, { playerId: "p-dave", name: "Dave", now: T0 + 100 });
+  check("returning reclaims your own seat", back.seat === seat && back.status === "seated");
+  check("returning restores you to present", back.table.seats[seat]?.kind === "human");
+  check("returning doesn't consume another seat", humanSeats(back.table) === 2);
+}
+
+{
+  // COM-3.4 — a table must never sit forever on somebody who stopped responding.
+  let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  const seat = seatOf(t, "p-dave");
+
+  const soon = coverIdleSeats(t, T0 + 1000);
+  check("a recently-seen player is left alone", soon === t);
+
+  const later = coverIdleSeats(t, T0 + AWAY_AFTER_MS + 1);
+  check("a player who has gone quiet gets covered", later.seats[seat]?.kind === "away");
+  check("covering keeps the seat theirs to reclaim", seatOf(later, "p-dave") === seat);
+  check("covering bumps the version like any other mutation", later.version > t.version);
+
+  // Presence has to count WATCHING, not just acting — otherwise everyone at the
+  // table gets covered mid-hand while paying perfect attention.
+  // (The host IS covered in this scenario — they haven't been seen since the
+  // table was created — so the assertion is about Dave's seat specifically,
+  // not about the table being untouched.)
+  const watched = markSeen(t, { playerId: "p-dave", now: T0 + AWAY_AFTER_MS - 1 });
+  const afterWatching = coverIdleSeats(watched, T0 + AWAY_AFTER_MS + 1);
+  check("a player who is merely watching is not covered",
+    afterWatching.seats[seat]?.kind === "human",
+    `kind=${afterWatching.seats[seat]?.kind}`);
+  check("...while an idle player at the same table still is",
+    afterWatching.seats[seatOf(afterWatching, "p-host")]?.kind === "away");
+
+  // The host has never been seen since the table was created; they get the
+  // benefit of a full window rather than being covered instantly.
+  const fresh = createTable({ ...host, now: T0 });
+  check("a brand-new table covers nobody", coverIdleSeats(fresh, T0 + 1000) === fresh);
+}
+
+{
+  // The point of all of it: an away seat is AI-driven, so play continues.
+  let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  t = startHand(t, T0);
+  const idle = coverIdleSeats(t, T0 + AWAY_AFTER_MS + 1);
+  const humansPresent = idle.seats.filter((s) => s.kind === "human").length;
+  check("everyone idle means no seat blocks play", humansPresent === 0);
+  check("but every claimed seat still has an owner",
+    idle.seats.filter((s) => s.playerId).length === 2);
 }
 
 /* ------------------------- Versioning + CAS store ------------------------- */

@@ -38,7 +38,7 @@ import {
   handStrength, aiBuryAndCall, aiChooseCard, assignPartner, applyPlay,
   resolveTrick, sortHand,
 } from "./engine.js";
-import { commit, startHand, atHandBoundary } from "./table.js";
+import { commit, startHand, atHandBoundary, coverIdleSeats } from "./table.js";
 
 // Ceiling on actions per advance. A whole hand is bounded well under this:
 // 5 pick decisions + 30 card plays + 6 trick resolutions = 41. The cap is not
@@ -57,7 +57,10 @@ const PICK_STRENGTH = 10;
 // down to 8 rather than throwing the hand in.
 const LAST_SEAT_PICK_STRENGTH = 8;
 
-const isAISeat = (table, i) => table.seats[i]?.kind === "ai";
+// "away" counts as AI-driven: the seat still belongs to an absent player, but
+// the AI plays it so the table doesn't stall waiting on someone whose phone
+// locked (COM-3.4). Only a seat whose player is actually present blocks play.
+const isAISeat = (table, i) => table.seats[i]?.kind !== "human";
 
 // The solo loop can hardcode "is it seat 0's turn?" because seat 0 is the only
 // human. Here the mix is arbitrary — 1 human + 4 AI through 5 humans + 0 AI —
@@ -225,7 +228,10 @@ export const MAX_REDEALS = 4;
  * @param {number} now  caller-supplied timestamp; never reads a clock
  */
 export function advanceTable(table, now) {
-  let t = advanceAI(table, now);
+  // Cover anyone who has gone quiet BEFORE trying to advance, so a table
+  // blocked on an absent player un-sticks itself rather than sitting on a turn
+  // that will never be taken (COM-3.4).
+  let t = advanceAI(coverIdleSeats(table, now), now);
 
   for (let i = 0; i < MAX_REDEALS; i++) {
     const g = t.g;

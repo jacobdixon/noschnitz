@@ -54,7 +54,9 @@
    `close` on the request. Hold the promise, drive the clock, then await it
    (scripts/streamtest.mjs shows the pattern).
    ========================================================================= */
-import { seatOf } from "../../../src/table.js";
+import { seatOf, markSeen, coverIdleSeats } from "../../../src/table.js";
+import { advanceTable } from "../../../src/ai-runner.js";
+import { mutate } from "../../../src/store/mutate.js";
 import { redisFromEnv } from "../../../src/store/upstash.js";
 import { getStore } from "../../_lib/store.js";
 import { tableViewFor } from "../../_lib/redact.js";
@@ -311,7 +313,26 @@ export function createEventsHandler(options = {}) {
           return;
         }
 
-        if (now() - lastWriteAt >= heartbeatMs) write(`: ping ${now()}\n\n`);
+        if (now() - lastWriteAt >= heartbeatMs) {
+          write(`: ping ${now()}\n\n`);
+          // Presence rides the heartbeat rather than the poll. Watching a table
+          // is participation — before this, lastSeen was only refreshed by
+          // api/tables/[id]/state.js, which the streaming client never calls,
+          // so an attentive player looked idle from the moment they joined and
+          // COM-3.4's auto-cover would have flipped the whole table to AI
+          // mid-hand. Once per heartbeat, not once per poll: a write per tick
+          // per player would multiply the table's Redis cost for no benefit.
+          //
+          // The same pass covers anyone who HAS gone quiet and advances the
+          // table if that unblocks it, which is what stops a table stalling
+          // when the absent player was the only one anybody was waiting on and
+          // nobody else is sending requests.
+          await mutate(store, id, (t) => {
+            const seen = markSeen(t, { playerId, now: now() });
+            const covered = coverIdleSeats(seen, now());
+            return covered === seen ? seen : advanceTable(covered, now());
+          });
+        }
       } catch {
         // A transient store failure isn't the client's problem to interpret —
         // hand off exactly like a lifetime expiry and let it come back.

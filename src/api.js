@@ -67,6 +67,11 @@ export const bury = (id, playerId, cards, calledSuit) =>
 export const playCard = (id, playerId, card) =>
   request(`/api/tables/${encodeURIComponent(id)}/play`, { method: "POST", body: { playerId, card } });
 
+// COM-3.1 — keeps the seat, hands play to the AI. Reclaiming needs no call:
+// rejoining the table takes the seat back (see joinTable's reclaim path).
+export const stepAway = (id, playerId) =>
+  request(`/api/tables/${encodeURIComponent(id)}/away`, { method: "POST", body: { playerId } });
+
 export const leaveTable = (id, playerId) =>
   request(`/api/tables/${encodeURIComponent(id)}/leave`, { method: "POST", body: { playerId } });
 

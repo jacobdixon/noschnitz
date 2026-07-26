@@ -639,6 +639,48 @@ for (let humans = 0; humans <= 5; humans++) {
     `${problems.advances} advances, ${problems.aiPlays} AI cards`);
 }
 
+/* --------------- COM-3.4: away seats must be AI-driven -------------------- */
+{
+  // The point of covering an absent player is that play CONTINUES. If advanceAI
+  // still treats an away seat as a human it must wait for, the table stalls
+  // exactly as it did before — the seat just has a different label on it.
+  //
+  // This case exists because reverting isAISeat to `kind === "ai"` passed every
+  // other assertion in this file: the feature's whole mechanism was untested.
+  let t = joinTable(createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: 1 }),
+    { playerId: "p-dave", name: "Dave", now: 1 }).table;
+  t = startHand(t, 1);
+
+  // Both humans present: advanceAI must stop and wait for whichever of them
+  // owes the next decision.
+  const withHumans = advanceAI(t, 2);
+  const gW = withHumans.g;
+  const seatToActW = gW.phase === "picking" ? gW.pickTurn : gW.turn;
+  check("COM-3.4 baseline: a present human still blocks play",
+    withHumans.seats[seatToActW]?.kind === "human",
+    `stopped on ${withHumans.seats[seatToActW]?.kind}`);
+
+  // Same table, everyone away. Nothing may block, so the AI must carry the
+  // hand all the way to its end unaided.
+  const allAway = { ...t, seats: t.seats.map((s) => (s.kind === "human" ? { ...s, kind: "away" } : s)) };
+  const driven = advanceAI(allAway, 3);
+  check("an away seat does not block play", driven !== allAway);
+  check("with everyone away the AI plays the hand out",
+    driven.g.phase === "handEnd" || (driven.g.phase === "picking" && driven.g.passes >= 5),
+    `phase=${driven.g.phase} passes=${driven.g.passes} tricks=${driven.g.tricksDone}`);
+  check("covering never rewrites who owns the seat",
+    driven.seats.filter((x) => x.playerId).length === allAway.seats.filter((x) => x.playerId).length);
+
+  // One away, one present: still blocks on the present player.
+  const oneAway = { ...t, seats: t.seats.map((s, i) => (i === 0 ? { ...s, kind: "away" } : s)) };
+  const partial = advanceAI(oneAway, 4);
+  const gP = partial.g;
+  const seatToAct = gP.phase === "picking" ? gP.pickTurn : gP.turn;
+  check("a present human still blocks even when another seat is covered",
+    gP.phase === "handEnd" || partial.seats[seatToAct]?.kind === "human",
+    `stopped on ${partial.seats[seatToAct]?.kind} in ${gP.phase}`);
+}
+
 /* ------------------------------- Report --------------------------------- */
 
 console.log(`${passed} passed, ${failures.length} failed`);
