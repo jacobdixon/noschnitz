@@ -7,7 +7,11 @@ import {
 
 import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 
-export default function Sheepshead() {
+// `onPlayWithFriends` is optional: when supplied, a header button offers the
+// multiplayer table. Passed in as a prop rather than imported so this file
+// keeps no dependency on the networked half — the solo game must go on working
+// with no server at all.
+export default function Sheepshead({ onPlayWithFriends }) {
   const [g, setG] = useState(() => freshHand(Math.floor(Math.random() * 5), [0, 0, 0, 0, 0], 1));
   const [showScores, setShowScores] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -220,6 +224,11 @@ export default function Sheepshead() {
           v{__APP_VERSION__}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          {onPlayWithFriends && (
+            <button onClick={onPlayWithFriends} style={{ ...btnGhost, borderColor: felt.brass, color: felt.brass }}>
+              Friends
+            </button>
+          )}
           <button onClick={() => setShowHelp(true)} style={btnGhost}>Trump</button>
           <button onClick={() => setShowScores(true)} style={btnGhost}>Scores</button>
         </div>

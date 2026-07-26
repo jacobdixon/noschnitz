@@ -138,23 +138,20 @@ function Home({ onTable }) {
     }
   };
 
+  // The entry point lives in the solo game's own header, next to Trump and
+  // Scores. It was first floated over the bottom-left corner, which put a
+  // translucent button directly on top of the player's own cards — visually
+  // illegible against the cream card faces, and covering a card besides.
   return (
     <>
-      <Sheepshead />
-      {/* Floated over the solo game rather than pushed into its layout, which
-          is a locked no-scroll viewport with no room to spare. */}
-      <div style={{ position: "fixed", left: 10, bottom: 10, zIndex: 15 }}>
-        <button
-          style={{ ...btnPlain, fontSize: 14, padding: "7px 12px", opacity: 0.92 }}
-          disabled={busy}
-          onClick={create}
-        >
-          {busy ? "Setting up…" : "Play with friends"}
-        </button>
-        {err && (
-          <div style={{ color: felt.red, fontSize: 12, marginTop: 6, maxWidth: 200 }}>{err}</div>
-        )}
-      </div>
+      <Sheepshead onPlayWithFriends={busy ? undefined : create} />
+      {err && (
+        <div style={{
+          position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 15,
+          background: "#000000cc", color: felt.red, fontSize: 13,
+          padding: "8px 12px", textAlign: "center",
+        }}>{err}</div>
+      )}
     </>
   );
 }
