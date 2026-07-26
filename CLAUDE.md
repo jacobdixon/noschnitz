@@ -27,6 +27,28 @@ Duane, Patty — Wisconsin-themed, 4-5 chars each). Source at
   are already filed and labeled (`feature: multiplayer` / `feature: community`,
   `epic`/`story`, `now`). That's the working board; `ROADMAP.md` is the narrative.
 
+## Branch + deploy discipline (v2 phase — read before deploying anything)
+The solo game is live at **noschnitz.com** and stays live, untouched, for the whole
+multiplayer build. Protecting it is the point of this setup.
+
+- **`master` = production = the solo game.** Frozen at `v0.7.3` (tagged, with a
+  GitHub release). It is protected by a ruleset: no direct pushes, PR required.
+  Nothing lands there until v2 is something we'd actually put in front of the group.
+- **`v2` = the multiplayer + community rewrite.** All work happens here or on
+  per-issue branches (`mp-1.1-table-links`, `com-1.2-mute-toggle`, …) merged into
+  `v2`. Use the issue ID from `ROADMAP.md` in the branch name and commit message.
+- **Never run `vercel --prod`.** Not from a terminal, not from an agent session.
+  Production deploys happen exactly one way: merging a PR into `master`. Pushing
+  `v2` gets you a Vercel preview automatically — that's the URL to share and test.
+- **If prod ever breaks**, don't debug forward — use Vercel's Instant Rollback to
+  the last good production deployment, then fix on a branch. `v0.7.3` is always a
+  valid rollback target.
+- **Env vars must be scoped Preview vs. Production separately** the moment v2 adds
+  a real-time backend. Preview tables and live tables must never share a state
+  store. Set this up with the first backend commit, before there's data to untangle.
+- **Cutover**: when v2 is ready, PR `v2` → `master`, merge, tag `v1.0.0`. Solo play
+  survives as the 1-human + 4-AI case (MP-2.4), not as a separate maintained fork.
+
 ## Conventions established this session (keep following them)
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
