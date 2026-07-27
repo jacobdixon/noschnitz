@@ -16,7 +16,9 @@
 
    Usage: node scripts/aiskilltest.mjs
    ========================================================================= */
-import { aiChooseCard, legalPlays, cid, isTrump, trumpPower } from "../src/engine.js";
+import {
+  aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, SCHMEAR_CONFIDENCE,
+} from "../src/engine.js";
 
 let passed = 0;
 const failures = [];
@@ -32,6 +34,7 @@ const C = (rank, suit) => ({ rank, suit });
 function position({
   hands, trick = [], picker, partner = null, partnerRevealed = false,
   calledSuit = null, calledAcePlayed = true, tricksDone = 0, leader = 0,
+  played = [],
 }) {
   return {
     phase: "playing",
@@ -49,7 +52,7 @@ function position({
     alone: partner === null,
     pickTurn: 0,
     passes: 0,
-    played: [],
+    played,
     trick,
     leader,
     turn: 0,
@@ -347,6 +350,126 @@ const topTrumpDown = { player: 0, card: C("Q", "C") };
   const pick = aiChooseCard(g, 4);
   check("partner still schmears to the picker before the reveal",
     cid(pick) === "AH", `played ${cid(pick)}`);
+}
+
+/* ------ Forced into trump: spend the fat one, not the powerful one -------- */
+// Reported 2026-07-27 from expert play. Patty picked and went ALONE, then led
+// J-hearts on trick 2. Play ran Patty(4) -> You(0) -> Gus(1) -> Bunny(2) ->
+// Duane(3), and You had already dropped Q-clubs, so the trick was unbeatable
+// and belonged to the defenders before any AI seat acted. Every seat had to
+// follow trump. Duane threw Q-diamonds (3 points) while holding the 10 (10
+// points): "no points/power issue".
+//
+// The rule "trump is never schmear material" (0.8.0) was written for the free
+// choice, where keeping trump beats paying with it. With trump led there is no
+// free choice — a trump is going regardless — and the old code fell through to
+// "cheapest by card points", which is precisely backwards: it spends the 4th
+// highest trump in the game to save a card whose only value is the points it
+// would have banked.
+const alonePicker = { picker: 4, partner: null, partnerRevealed: false, calledSuit: null, calledAcePlayed: false };
+const trick2 = [
+  { player: 4, card: C("J", "H") },
+  { player: 0, card: C("Q", "C") },
+];
+
+{
+  // Duane, last to play, holding Q-D / K-D / 10-D.
+  const g = position({
+    hands: withHand(3, [C("Q", "D"), C("A", "H"), C("K", "D"), C("A", "C"), C("10", "D")]),
+    trick: [...trick2, { player: 1, card: C("J", "S") }, { player: 2, card: C("7", "D") }],
+    ...alonePicker, tricksDone: 1, leader: 4, played: [C("10", "S")],
+  });
+  const legal = legalPlays(g, 3);
+  check("Duane must follow trump", legal.length === 3 && legal.every(isTrump),
+    `legal=${legal.map(cid).join(",")}`);
+  check("the trick is already certain — the only opponent has played",
+    trickSecurity(g, 3) === 1, `security=${trickSecurity(g, 3)}`);
+
+  const pick = aiChooseCard(g, 3);
+  check("Duane does not throw the Queen when forced into trump", cid(pick) !== "QD", `played ${cid(pick)}`);
+  check("Duane spends the fat diamond instead", cid(pick) === "10D", `played ${cid(pick)}`);
+}
+
+{
+  // Gus, third to act in the same trick, holding J-spades and Q-spades — both
+  // power trump, nothing fat. He played the Jack, and that stays right: when
+  // Queens and Jacks are all there is, give up the weakest.
+  const g = position({
+    hands: withHand(1, [C("J", "S"), C("8", "H"), C("Q", "S"), C("7", "C"), C("10", "H")]),
+    trick: trick2, ...alonePicker, tricksDone: 1, leader: 4, played: [C("9", "S")],
+  });
+  const pick = aiChooseCard(g, 1);
+  check("Gus gives up the weakest power trump when he holds nothing fat",
+    cid(pick) === "JS", `played ${cid(pick)}`);
+}
+
+{
+  // Bunny, fourth, holding 7-diamonds and J-clubs. The 7 is fat by category but
+  // worth nothing, and it's still the right card — the Jack keeps its power.
+  const g = position({
+    hands: withHand(2, [C("7", "D"), C("9", "H"), C("J", "C"), C("9", "C"), C("8", "S")]),
+    trick: [...trick2, { player: 1, card: C("J", "S") }],
+    ...alonePicker, tricksDone: 1, leader: 4, played: [C("A", "S")],
+  });
+  const pick = aiChooseCard(g, 2);
+  check("Bunny sheds the worthless diamond and keeps the Jack",
+    cid(pick) === "7D", `played ${cid(pick)}`);
+}
+
+/* --------- Schmear only into a trick our side is likely to keep ---------- */
+// A teammate holding the trick is not the same as our side taking it. When
+// opponents are still to act and the cards that beat the winner are unaccounted
+// for, paying points in is a losing bet — sit on them and wait instead.
+{
+  // Teammate led the club Ace. It cannot be beaten in clubs, but every trump is
+  // still out there and both picker-team seats have yet to play, so the trick
+  // is very likely to be trumped away. Holding 10-clubs and 7-clubs, the 10
+  // stays home.
+  const g = position({
+    hands: [
+      [C("Q", "C"), C("Q", "S"), C("J", "C"), C("A", "D"), C("10", "D")], // picker, unseen to us
+      [C("Q", "H"), C("Q", "D"), C("J", "S"), C("J", "H"), C("K", "D")],  // partner, unseen to us
+      [C("7", "S")], [C("7", "H")],
+      [C("10", "C"), C("7", "C"), C("9", "S"), C("8", "S"), C("9", "H")], // us
+    ],
+    trick: [{ player: 3, card: C("A", "C") }],
+    picker: 0, partner: 1, partnerRevealed: true, calledSuit: "C", calledAcePlayed: true,
+    tricksDone: 1, leader: 3,
+    played: [C("K", "C"), C("9", "C"), C("8", "C"), C("A", "H"), C("10", "H")],
+  });
+  const security = trickSecurity(g, 4);
+  check("trick reads as unsafe with every trump unaccounted for and two opponents to act",
+    security < SCHMEAR_CONFIDENCE, `security=${security.toFixed(3)} vs threshold ${SCHMEAR_CONFIDENCE}`);
+  const pick = aiChooseCard(g, 4);
+  check("holds the 10 back rather than feeding a trick that will be trumped",
+    cid(pick) === "7C", `played ${cid(pick)}`);
+}
+
+{
+  // Same shape, but every trump has already been played. Nothing can beat the
+  // club Ace any more, so the 10 goes on it even with opponents still to act.
+  const allTrump = [
+    C("Q", "C"), C("Q", "S"), C("Q", "H"), C("Q", "D"),
+    C("J", "C"), C("J", "S"), C("J", "H"), C("J", "D"),
+    C("A", "D"), C("10", "D"), C("K", "D"), C("9", "D"), C("8", "D"), C("7", "D"),
+  ];
+  const g = position({
+    hands: [
+      [C("K", "S"), C("9", "S"), C("8", "S")],
+      [C("K", "H"), C("9", "H"), C("8", "H")],
+      [C("7", "S")], [C("7", "H")],
+      [C("10", "C"), C("7", "C"), C("8", "C")], // us
+    ],
+    trick: [{ player: 3, card: C("A", "C") }],
+    picker: 0, partner: 1, partnerRevealed: true, calledSuit: "C", calledAcePlayed: true,
+    tricksDone: 3, leader: 3, played: [...allTrump, C("A", "S")],
+  });
+  const security = trickSecurity(g, 4);
+  check("trick reads as certain once nothing left can beat it",
+    security === 1, `security=${security}`);
+  const pick = aiChooseCard(g, 4);
+  check("schmears the 10 when the Ace genuinely cannot be beaten",
+    cid(pick) === "10C", `played ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);

@@ -6,6 +6,50 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.12.0] - 2026-07-27
+- Schmearing is rebuilt around two questions the AI wasn't asking: *is this
+  trick actually ours to win*, and *which card can I least afford to keep*.
+  Reported from expert play — a loner led a trump, the trick was already
+  unbeatable in a defender's hand, and Duane threw Q-diamonds while holding the
+  10. "No points/power issue."
+  - **Forced trump.** 0.8.0's "a schmear is paid in fail points only" was
+    written for the free choice, where keeping trump beats paying with it. When
+    trump is led there is no free choice — a trump is going regardless — and the
+    old code fell through to "cheapest by card points", which is exactly
+    backwards. Trump splits cleanly: Queens and Jacks are 3 and 2 points and all
+    the power, while every point that lives in trump lives in the diamonds. So
+    with no free choice the AI now spends the fattest diamond, which is better
+    on both counts at once — seven more points banked AND the stronger card
+    kept. Queens and Jacks are parted with only when they're all that's left,
+    weakest first.
+  - **Trick security.** The old safety test asked whether the winning card was
+    a Jack or better. That's the wrong question: the danger isn't a card, it's a
+    seat. `trickSecurity()` now returns the chance our side keeps the trick —
+    certain when no opponent is left to act, certain when nothing unaccounted
+    for beats the winner, and otherwise hypergeometric over the cards this seat
+    can't see. Below `SCHMEAR_CONFIDENCE` the AI declines to pay in, which lets
+    the two better options downstream fire on their own: overtake the teammate,
+    or sit on the points and wait.
+  - Measured over 3x200,000 hands. **Against a loner the picker's win rate falls
+    67.4-67.6% -> 61.8-62.4%** — a 5.4pp swing, non-overlapping by a wide
+    margin. The whole effect is defenders: a lone picker has no teammate, so the
+    schmear branch never fires for them. Partnered hands are unchanged
+    (61.9-62.1% -> 61.9-62.1%), which is the intended blast radius and doubles
+    as a control. Schneider rate 23.5-23.7% -> 22.6%, as fewer loners run away
+    with a hand.
+  - `SCHMEAR_CONFIDENCE` is set on principle, not measurement: swept 0.50 to
+    0.95 and the aggregate could not tell the values apart, every one landing
+    inside the others' spread. Not because it's inert — 41.5% of security
+    evaluations come back strictly between 0 and 1 — but because in most of
+    those middle cases there's nothing pointy in hand and both branches play the
+    same card. Set to 0.85 because the error is asymmetric: a bad schmear hands
+    points to the picker, a missed one usually only defers them.
+  - `npm test` grows to 31 assertions, including all three AI seats from the
+    reported trick. Only Duane's play changes; Gus (holding two power trump,
+    correctly shedding the Jack) and Bunny (shedding a worthless diamond over a
+    Jack) were already right and are pinned so they stay that way. Against the
+    old engine three behaviours fail. (`ea94790`)
+
 ## [0.11.2] - 2026-07-27
 - The buried pair in the recap is shown as rank-and-suit glyphs rather than two
   card faces — the same shorthand the grid below already uses.
