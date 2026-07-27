@@ -7,6 +7,7 @@ import {
 
 import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { Felt, HandFan, RoleBadges, DealerButton, SEAT_POS } from "./felt.jsx";
+import { TableHeader } from "./header.jsx";
 
 // The house rules this table plays by, shown under the title for the whole
 // game. A list rather than a sentence: the planned version of that line lets
@@ -23,7 +24,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const recapCaptureRef = useRef(null);
 
   /* ---------- engine loop ---------- */
@@ -224,116 +224,25 @@ export default function Sheepshead({ onPlayWithFriends }) {
       display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto",
       borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
-      {/* Header */}
-      <div style={{ flexShrink: 0, position: "relative", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
-            SHEEPSHEAD
-          </div>
-          <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
-            v{__APP_VERSION__}
-          </div>
-          <button
-            onClick={() => setShowMenu((v) => !v)}
-            aria-label="Menu"
-            aria-haspopup="menu"
-            aria-expanded={showMenu}
-            style={{ ...btnGhost, display: "flex", alignItems: "center", padding: "5px 9px" }}
-          >
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M1 1h14M1 6h14M1 11h14" />
-            </svg>
-          </button>
-        </div>
-
-        {/* The house rules, above the rail and there for the whole game. Kept as
-            data rather than one sentence because the next version of this line
-            lets you change them, and a rule you can toggle has to be an
-            addressable thing rather than a substring. Not a button yet — a
-            control that does nothing when you press it reads as broken, so it
-            stays text until it has somewhere to go. */}
-        {/* Wraps rather than squeezes. The rules and the badge together need
-            356px and a 375px phone gives 339, so something has to give — and
-            it must not be the rules line, which is the permanent thing. The
-            badge drops to a second row instead. That changes the header's
-            height, which is only safe because a doubler is set when the hand is
-            dealt, never mid-hand: the layout settles before a card is played. */}
-        <div style={{ marginTop: 4, display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 4, columnGap: 8 }}>
-          <div style={{
-            flexShrink: 0, fontSize: 11, letterSpacing: ".04em",
-            color: felt.creamDim, opacity: 0.75, userSelect: "none", whiteSpace: "nowrap",
-          }}>
-            {HOUSE_RULES.join(" · ")}
-          </div>
-          {/* The stake rides with the rules rather than on the table. It was
-              briefly at the table's top centre, which collides: the seats sit
-              at 4% of the table's height, so on a 667px-tall phone they start
-              at y=14 while the badge reaches y=19, and there is no room to put
-              it between the two top seats either — that gap is ~50px and the
-              badge is ~95px. Up here it is fixed chrome, it cannot collide with
-              anything the game draws, and it sits next to the rules that
-              explain what doubling means. */}
-          {(g.doubler || 1) > 1 && (
-            <span style={{
-              marginLeft: "auto", flexShrink: 0,
-              color: "#2A2108", background: felt.brass,
-              fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
-              padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
-            }}>
-              Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
-            </span>
-          )}
-        </div>
-
-        {showMenu && (
-          <>
-            {/* Catches the click that dismisses the menu. Sits under the menu
-                but over everything else, so the next tap anywhere closes it
-                instead of also hitting a card. */}
-            <div onClick={() => setShowMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
-            <div role="menu" style={{
-              position: "absolute", right: 12, top: "calc(100% - 4px)", zIndex: 16,
-              background: felt.bgDeep, border: `2px solid ${felt.rail}`, borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,.5)", overflow: "hidden", minWidth: 150,
-            }}>
-              {[
-                ["Trump order", () => setShowHelp(true)],
-                ["Scores", () => setShowScores(true)],
-                // Only when a host supplied a handler — the solo game has no
-                // dependency on the networked half and must keep working with
-                // no server at all.
-                //
-                // Labelled for what it does TODAY: it starts a fresh table, so
-                // the hand in progress is left behind. Once a table can be
-                // seeded with the running score, this becomes "Invite others"
-                // and the game carries over.
-                ...(onPlayWithFriends ? [["Play with friends", onPlayWithFriends]] : []),
-              ].map(([label, open], i) => (
-                <button
-                  key={label}
-                  role="menuitem"
-                  onClick={() => { setShowMenu(false); open(); }}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left",
-                    background: "transparent", color: felt.cream,
-                    border: "none", borderTop: i === 0 ? "none" : "1px solid #ffffff18",
-                    padding: "11px 14px", fontSize: 15, fontWeight: 600, cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* The contract strip is gone. Everything it carried now lives where the
-          thing it describes already is: the dealer wears a button, the called
-          suit rides on the picker's badge stack, and "picked"/"alone" were
-          always duplicated by those same badges. That hands its ~28px back to
-          the table, which is the part of the screen you actually look at. */}
+      {/* Header lives in header.jsx alongside the felt, so a table renders
+          the same chrome rather than a second copy. The menu is passed as data
+          because that is where the two halves genuinely differ — a table adds
+          Invite and, later, a profile. */}
+      <TableHeader
+        rules={HOUSE_RULES}
+        doubler={g.doubler || 1}
+        menuItems={[
+          { label: "Trump order", onSelect: () => setShowHelp(true) },
+          { label: "Scores", onSelect: () => setShowScores(true) },
+          // Only when a host supplied a handler — the solo game keeps no
+          // dependency on the networked half and must work with no server.
+          // Labelled for what it does today: it starts a fresh table, leaving
+          // the hand in progress behind. Once a table can be seeded with the
+          // running score this becomes "Invite others" and the game carries
+          // over.
+          ...(onPlayWithFriends ? [{ label: "Play with friends", onSelect: onPlayWithFriends }] : []),
+        ]}
+      />
 
       {/* Table. The felt lives in felt.jsx so the multiplayer table renders
           from the same components rather than a second copy that drifts —
