@@ -4,3 +4,4 @@ dist
 *.local
 .vercel
 vite.config.js.timestamp-*.mjs
+.env*

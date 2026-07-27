@@ -799,3 +799,60 @@ export function gradeHandPlays(g) {
     worst: worst ? { trick: worst.trickIdx, player: worst.player, card: worst.card } : null,
   };
 }
+
+/* --------------------------- Per-seat redacted views --------------------------- */
+// In solo play the client holding the whole `g` is harmless: the only human is
+// seat 0 and the four AI opponents read the same object. With human opponents
+// it is a cheat vector — anything shipped to a browser is readable in devtools.
+// `viewFor` builds the state a single seat is entitled to see, and is the ONLY
+// thing a server may send to a client. Three redactions here are subtler than
+// "hide the other hands":
+//
+//   - `g.blind` stays populated after the picker takes it (the cards are merged
+//     into their hand, the pile isn't cleared), so it leaks two known cards to
+//     everyone else unless explicitly dropped.
+//   - `g.partner` is assigned the moment the ace is called, long before the
+//     table may know it. The partner knows (they hold the called ace); the
+//     picker does not, until the ace falls. Everyone learns on reveal.
+//   - `g.alone` conflates "picker declared alone", which is public, with "the
+//     called ace turned out to be buried or in the blind", which is secret —
+//     see `assignPartner`. Passing it through tells defenders there's no
+//     partner the instant the suit is called. The view derives the public fact
+//     instead: alone is only visible when no suit was called at all.
+//
+// Hand contents aside, everything already public at a real table (the current
+// trick, resolved tricks, points taken, whose turn it is) passes through as-is.
+export function viewFor(g, seat) {
+  const revealed = g.phase === "handEnd";
+  const isPicker = seat === g.picker;
+
+  // The partner is known to themselves from the moment the suit is called, to
+  // the picker and defenders only once the called ace has been played.
+  let partner = null;
+  if (revealed || g.partnerRevealed) partner = g.partner;
+  else if (g.partner !== null && seat === g.partner) partner = g.partner;
+
+  return {
+    ...g,
+
+    // Who this view belongs to. Clients render from this rather than assuming
+    // seat 0 is "you", which is what the solo UI does today.
+    you: seat,
+
+    // Own hand only. Counts stay visible so the UI can still fan face-down
+    // cards for the other four seats.
+    hands: g.hands.map((h, i) => (i === seat || revealed ? h : null)),
+    handCounts: g.hands.map((h) => h.length),
+
+    // The picker has these cards in hand anyway; nobody else may see them.
+    blind: isPicker || revealed ? g.blind : null,
+    buried: isPicker || revealed ? g.buried : null,
+
+    partner,
+    alone: revealed ? g.alone : g.calledSuit === null && g.phase === "playing",
+
+    // Purely a UI scratch field for the local player's card selection; it has
+    // no business crossing the wire.
+    selected: undefined,
+  };
+}
