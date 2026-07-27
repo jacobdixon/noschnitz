@@ -323,12 +323,34 @@ export function createEventsHandler(options = {}) {
         // has nothing to do with whether you are still there.
         if (now() - lastPresenceAt >= presenceMs) {
           lastPresenceAt = now();
-          await mutate(store, id, (t) => {
+          const res = await mutate(store, id, (t) => {
             const seen = markSeen(t, { playerId, now: now() });
             const covered = coverIdleSeats(seen, now());
             return covered === seen ? seen : advanceTable(covered, now());
           });
           if (closed) return;
+
+          // Presence has to be BROADCAST, not just written. markSeen
+          // deliberately doesn't bump the version — a presence ping shouldn't
+          // collide with a play, and shouldn't push full state to everybody
+          // every few seconds — but the stream only sends on a version change,
+          // so those writes reached the store and nobody else. Every other
+          // client held a frozen lastSeen while its own clock kept advancing,
+          // so the idle counter grew without limit: a player sitting right
+          // there would read as "idle 4m", and the Remove button offered on
+          // that basis was refused by a server looking at the real value.
+          //
+          // A dedicated frame fixes it without the version churn: just the
+          // per-seat timestamps, plus a server clock reading that is a far
+          // better skew source than updatedAt because it arrives every
+          // heartbeat rather than only when the table changes.
+          if (res?.table?.seats) {
+            sendEvent("presence", {
+              at: now(),
+              lastSeen: res.table.seats.map((x) => x.lastSeen ?? null),
+              kinds: res.table.seats.map((x) => x.kind),
+            });
+          }
         }
 
         // Not `>`: a table that expired and was recreated under the same code

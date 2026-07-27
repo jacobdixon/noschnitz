@@ -60,7 +60,11 @@ function useTick(ms = 1000) {
 // times are computed in the server's frame.
 function useServerNow(table) {
   const [skew, setSkew] = useState(0);
-  const stamp = table?.updatedAt;
+  // `serverAt` rides the presence frame and therefore arrives every heartbeat,
+  // where updatedAt only moves when the table itself changes. On a quiet table
+  // updatedAt goes stale and the skew derived from it drifts, which is half of
+  // why idle counters used to run away.
+  const stamp = table?.serverAt ?? table?.updatedAt;
   useEffect(() => {
     if (stamp) setSkew(Date.now() - stamp);
   }, [stamp]);

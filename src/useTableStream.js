@@ -118,6 +118,30 @@ export function useTableStream(tableId, playerId) {
       // The scheduled end-of-shift handoff. Expected, so: no error, no
       // backoff, no flicker in the UI — reopen straight away carrying the
       // version we hold.
+      // Presence arrives on its own frame because it is written WITHOUT a
+      // version bump (see the note in the events endpoint). Merged into the
+      // held table rather than replacing it: this must not disturb the version,
+      // the game state, or anything the paced trick cursor is tracking.
+      es.addEventListener("presence", (ev) => {
+        let data;
+        try { data = JSON.parse(ev.data); } catch { return; }
+        if (!data || !Array.isArray(data.lastSeen)) return;
+        setTable((prev) => {
+          if (!prev?.seats) return prev;
+          return {
+            ...prev,
+            // A fresh server clock reading every heartbeat, which is what the
+            // idle display corrects its skew against.
+            serverAt: data.at,
+            seats: prev.seats.map((s, i) => ({
+              ...s,
+              lastSeen: data.lastSeen[i] ?? s.lastSeen,
+              kind: data.kinds?.[i] ?? s.kind,
+            })),
+          };
+        });
+      });
+
       es.addEventListener("reconnect", () => {
         if (cancelled || source !== es) return;
         scheduleReopen(0);

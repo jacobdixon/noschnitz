@@ -589,6 +589,62 @@ function open(store, reqOpts, handlerOpts = {}) {
     after >= T0 + 20000, `lastSeen advanced to ${after - T0}ms`);
 }
 
+
+/* ------------- Presence must be BROADCAST, not just written -------------- */
+{
+  // The bug this exists for, seen live: a player sitting right there read as
+  // "idle 4m" on everyone else's screen, and the Remove button offered on that
+  // basis was refused by a server looking at the real value.
+  //
+  // markSeen deliberately does not bump the version — a presence ping must not
+  // collide with a play, nor push full state to everybody every few seconds —
+  // but the stream only sends on a version change. So presence writes reached
+  // the store and nobody else: every other client held a frozen lastSeen while
+  // its own clock kept advancing, so the idle counter grew without limit.
+  const store = createMemoryStore({ now: () => T0 });
+  let table = createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: T0, id: "pres1234" });
+  table = joinTable(table, { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  await store.create(table);
+
+  const { res, clock } = open(store, { id: "pres1234", playerId: "p-dave" });
+  await settle();
+
+  const versionBefore = (await store.get("pres1234")).version;
+
+  // Quiet table: nothing changes except time passing and heartbeats firing.
+  for (let i = 0; i < 2; i++) { await clock.advance(20000); await settle(); }
+
+  const frames = parseFrames(res.text);
+  const presence = frames.filter((f) => f.event === "presence");
+  check("presence frames are broadcast on a quiet table", presence.length > 0,
+    `got ${presence.length} presence frames`);
+
+  if (presence.length === 0) {
+    failures.push(`presence: none emitted — frames were [${frames.map((f) => f.event || "comment").join(",")}]`);
+  }
+  const latest = presence[presence.length - 1] || { data: {} };
+  check("a presence frame carries per-seat lastSeen",
+    Array.isArray(latest?.data?.lastSeen) && latest.data.lastSeen.length === 5);
+  check("a presence frame carries a server clock reading",
+    typeof latest?.data?.at === "number");
+  check("a presence frame carries seat kinds, so cover becomes visible",
+    Array.isArray(latest?.data?.kinds) && latest.data.kinds.length === 5);
+
+  const daveSeat = (await store.get("pres1234")).seats.findIndex((x) => x.playerId === "p-dave");
+  check("the watcher's own presence is what advances",
+    (latest.data.lastSeen?.[daveSeat] ?? 0) > T0,
+    `lastSeen ${latest.data.lastSeen?.[daveSeat]} vs ${T0}`);
+
+  // The whole point of a separate frame: no version churn, so nothing that
+  // tracks the version (the paced trick cursor, caughtUp) gets disturbed.
+  check("broadcasting presence does not bump the version",
+    (await store.get("pres1234")).version === versionBefore,
+    `${versionBefore} -> ${(await store.get("pres1234")).version}`);
+  check("and no full state frame was sent for it",
+    frames.filter((f) => f.event === "state").length === 1,
+    `state frames=${frames.filter((f) => f.event === "state").length}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");
