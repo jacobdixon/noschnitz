@@ -28,7 +28,7 @@ corresponds to the entries below.
     outside click with no stray backdrop left behind, and sits inside the table
     edge (203-357px within a 375px root). The rules line measures 230px of text
     in 339px of space at phone width — one line, with room for a fourth rule.
-    (`PENDING`)
+    (`1ee2bb4`)
 
 ## [0.14.0] - 2026-07-27
 - Two house scoring rules, both on by default: **double on the bump** and a
