@@ -6,6 +6,44 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.13.0] - 2026-07-27
+- Taking a trick off your own side now has to buy something. Reported from
+  expert play: Gus picked, his partner Duane led Q-hearts, Gus overtook with
+  Q-spades — and Bunny's Q-clubs took it anyway.
+  - The number that settles it: from Gus's seat, Q-hearts and Q-spades were
+    beaten by exactly the same one unaccounted-for card, Q-clubs. Q-spades was
+    in his own hand, so it threatened nothing. Overtaking moved the trick from
+    his partner's Queen onto his own better one without improving its odds by a
+    single point — measured at 0.737 either way. Reaching the winners branch
+    means "I can win", and the old code read that as "I should win".
+  - `securityAfterPlay()` answers what the trick's security becomes if I play a
+    given card. When a teammate is holding it, the AI now overtakes only if that
+    difference clears `OVERTAKE_MIN_GAIN`; otherwise it lets the trick ride and
+    sheds its weakest card. In the reported position Gus keeps both Queens and
+    throws J-spades.
+  - **The first version of this was a net loss and was scrapped.** Applied
+    wherever `knowsTeammate()` was true, it cost defenders 0.6pp in partnered
+    hands (picker win rate 62.0-62.2% -> 62.6-62.8%), and got worse the higher
+    the threshold went. knowsTeammate() calls every unrevealed seat a teammate,
+    so the brake was talking defenders out of taking tricks off the picker's
+    hidden partner — the same 2:1 asymmetry that made speculative schmearing
+    worth *keeping* in 0.9.0, pointing the other way. Gating it on the
+    partnership actually being known reversed the result.
+  - Measured over 3x200,000 hands with the gate in place. Picker win rate
+    62.0-62.3% -> **61.4-61.5%** overall, and both halves improve on their own:
+    alone 61.9-62.5% -> 61.4-61.5%, partnered 62.0-62.2% -> 61.4-61.5%. No
+    range overlaps. Most of the partnered gain is post-reveal, where defenders
+    stop spending power to overtake each other.
+  - `OVERTAKE_MIN_GAIN` swept at 0.05 / 0.15 / 0.30 / 0.50. Set to 0.15: it
+    wins on partnered hands, which are roughly 70% of picked hands, and on the
+    overall rate. 0.30 is marginally better against loners and worse everywhere
+    else.
+  - `npm test` grows to 37 assertions, pinning the reported position from Gus's
+    real hand (8S QS 7H QD JC JS) including the security-equality that makes the
+    overtake pointless, plus a guard that the brake doesn't seize: with the top
+    trump in hand and a coin-flip trick, it still takes it. Against the previous
+    engine the two behavioural assertions fail. (`e1ca4e4`)
+
 ## [0.12.0] - 2026-07-27
 - Schmearing is rebuilt around two questions the AI wasn't asking: *is this
   trick actually ours to win*, and *which card can I least afford to keep*.

@@ -289,6 +289,20 @@ export function trickSecurity(g, viewer) {
   return safe;
 }
 
+// What the trick's security becomes if `idx` plays `card` into it — i.e. the
+// chance that whoever is winning *after* that card lands still has it at the
+// end. Comparing this against the security of leaving the trick alone is how
+// the AI decides whether taking a trick off its own side actually buys
+// anything.
+export function securityAfterPlay(g, idx, card) {
+  const next = {
+    ...g,
+    trick: [...g.trick, { player: idx, card }],
+    hands: g.hands.map((h, i) => (i === idx ? h.filter((c) => cid(c) !== cid(card)) : h)),
+  };
+  return trickSecurity(next, idx);
+}
+
 /* ------------------------- Endgame exact solver ------------------------- */
 // With 2 tricks (<=2 cards per hand) left, the remaining game tree is tiny —
 // at most 2 legal cards per player per decision, 10 decisions total, so it's
@@ -354,6 +368,14 @@ export function solveEndgameCard(g) {
 // mistake. Worth revisiting if a real hand shows the AI passing up good
 // schmears rather than making bad ones.
 export const SCHMEAR_CONFIDENCE = 0.85;
+
+// How much safer taking a trick off our own side has to make it before it's
+// worth the card. Reported from expert play: the partner led Q-hearts, the
+// picker overtook with Q-spades, and Q-clubs took it anyway. From the picker's
+// seat Q-hearts and Q-spades were beaten by exactly the same one outstanding
+// card, so the overtake bought nothing at all — it just moved the trick from
+// his partner's third-best trump onto his own second-best, and lost both.
+export const OVERTAKE_MIN_GAIN = 0.15;
 
 export function aiChooseCard(g, idx) {
   // Last two tricks: solve exactly rather than using heuristics.
@@ -424,9 +446,10 @@ export function aiChooseCard(g, idx) {
   if (mateWinning) {
     // Only pay into a trick our side is actually likely to keep. Below this the
     // points are more often than not being handed to the picker, and the two
-    // better options are already downstream: overtake the teammate (the winners
-    // branch) or sit on the points and wait (the dump at the bottom).
-    const trickLooksSafe = trickSecurity(g, idx) >= SCHMEAR_CONFIDENCE;
+    // better options are both below: overtake the teammate, or sit on the
+    // points and wait.
+    const asIs = trickSecurity(g, idx);
+    const trickLooksSafe = asIs >= SCHMEAR_CONFIDENCE;
 
     // Until the called ace falls, a defender's "teammate" is a guess — the seat
     // winning may well be the picker's partner, and paying points to the wrong
@@ -482,6 +505,42 @@ export function aiChooseCard(g, idx) {
       // teammate — cheapest by card points first, so a Queen is the last trump
       // we would ever part with.
       return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+    }
+
+    // The trick isn't safe enough to pay into, so the choice is between taking
+    // it off our own side and letting it ride. Taking it is only worth a card
+    // if it actually makes the trick safer.
+    //
+    // Gated on the partnership being *known*, and that gate is load-bearing.
+    // knowsTeammate() calls every unrevealed seat a teammate, which is the right
+    // default for deciding who to fight but a bad basis for standing down: one
+    // of those "teammates" is the picker's partner. Measured over 3x200,000
+    // hands, applying this brake on a guess costs defenders 0.6pp in partnered
+    // hands (62.0-62.2% -> 62.6-62.8% picker win rate) — the same 2:1 asymmetry
+    // that made speculative schmearing worth keeping in 0.9.0, pointing the
+    // other way. Where the partnership is actually known it's a clear gain.
+    //
+    // Reported from expert play: the partner led Q-hearts and the picker
+    // overtook with Q-spades. From the picker's seat both of those Queens were
+    // beaten by exactly one unaccounted-for card — Q-clubs — so the overtake
+    // moved the trick from his partner's Queen onto his own better one without
+    // improving its odds by a single point, and Q-clubs took it anyway. The old
+    // code did this because reaching the winners branch below means "I can win",
+    // which it treated as "I should win".
+    if (winners.length && teammateIsCertain) {
+      let best = null;
+      for (const c of winners) {
+        const gain = securityAfterPlay(g, idx, c) - asIs;
+        const better =
+          !best ||
+          gain > best.gain + 1e-9 ||
+          (Math.abs(gain - best.gain) <= 1e-9 && power(c) < power(best.card));
+        if (better) best = { card: c, gain };
+      }
+      if (best.gain < OVERTAKE_MIN_GAIN) {
+        return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+      }
+      return best.card;
     }
   }
   if (winners.length) {

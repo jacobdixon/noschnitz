@@ -17,7 +17,8 @@
    Usage: node scripts/aiskilltest.mjs
    ========================================================================= */
 import {
-  aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, SCHMEAR_CONFIDENCE,
+  aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
+  SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -470,6 +471,77 @@ const trick2 = [
   const pick = aiChooseCard(g, 4);
   check("schmears the 10 when the Ace genuinely cannot be beaten",
     cid(pick) === "10C", `played ${cid(pick)}`);
+}
+
+/* ---------- Taking a trick off our own side has to buy something ---------- */
+// Reported 2026-07-27 from expert play. Gus picked, Duane was his partner, and
+// Duane led Q-hearts on trick 2. Gus overtook with Q-spades — and Bunny's
+// Q-clubs took it anyway.
+//
+// The number that settles it: from Gus's seat, Q-hearts and Q-spades are beaten
+// by exactly the same one unaccounted-for card, Q-clubs (Q-spades itself is in
+// his hand, so it isn't a threat to anything). Overtaking therefore moves the
+// trick from his partner's Queen onto his own better one without improving its
+// odds by a single point. Reaching the winners branch means "I can win", and
+// the old code read that as "I should win".
+{
+  const gusHand = [C("Q", "S"), C("7", "H"), C("Q", "D"), C("J", "C"), C("J", "S")];
+  const g = position({
+    hands: [[C("7", "C")], gusHand, [C("Q", "C"), C("K", "C"), C("K", "H"), C("9", "C"), C("8", "C")],
+            [C("A", "D"), C("10", "H"), C("J", "H"), C("A", "H"), C("A", "S")], [C("9", "H")]],
+    trick: [
+      { player: 3, card: C("Q", "H") },
+      { player: 4, card: C("9", "D") },
+      { player: 0, card: C("8", "D") },
+    ],
+    picker: 1, partner: 3, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 1, leader: 3,
+    played: [C("K", "S"), C("8", "S"), C("7", "S"), C("10", "S"), C("9", "S")],
+  });
+
+  const asIs = trickSecurity(g, 1);
+  const taken = securityAfterPlay(g, 1, C("Q", "S"));
+  check("Q-spades is the only card Gus holds that beats Q-hearts",
+    legalPlays(g, 1).filter((c) => trumpPower(c) > trumpPower(C("Q", "H"))).length === 1);
+  check("overtaking buys nothing — both Queens die to the same outstanding card",
+    Math.abs(taken - asIs) < 1e-9, `leave=${asIs.toFixed(3)} take=${taken.toFixed(3)}`);
+
+  const pick = aiChooseCard(g, 1);
+  check("Gus does not spend Q-spades to overtake his own partner",
+    cid(pick) !== "QS", `played ${cid(pick)}`);
+  check("Gus lets the trick ride and sheds his weakest trump",
+    cid(pick) === "JS", `played ${cid(pick)}`);
+}
+
+{
+  // The brake must not seize. Same shape, but here the teammate is holding the
+  // trick with a fail card and this seat has the top trump in the game: taking
+  // it turns a coin-flip into a certainty, which is worth the Queen.
+  const g = position({
+    hands: [
+      [C("7", "D"), C("8", "D")],                  // You, already played K-clubs
+      [C("Q", "C"), C("8", "H"), C("7", "H")],     // Gus, to act
+      [C("9", "C"), C("8", "C"), C("Q", "S")],     // Bunny, the one opponent left
+      [C("A", "D"), C("10", "H")],                 // Duane, led the club Ace
+      [C("J", "H"), C("7", "C")],                  // Patty
+    ],
+    trick: [
+      { player: 3, card: C("A", "C") },
+      { player: 4, card: C("10", "C") },
+      { player: 0, card: C("K", "C") },
+    ],
+    picker: 1, partner: 3, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 2, leader: 3,
+    played: [C("K", "S"), C("8", "S"), C("7", "S"), C("10", "S"), C("9", "S"),
+             C("A", "S"), C("J", "S"), C("9", "H"), C("K", "H"), C("10", "D")],
+  });
+  const asIs = trickSecurity(g, 1);
+  const taken = securityAfterPlay(g, 1, C("Q", "C"));
+  check("taking this one genuinely helps", taken - asIs >= OVERTAKE_MIN_GAIN,
+    `leave=${asIs.toFixed(3)} take=${taken.toFixed(3)}`);
+  const pick = aiChooseCard(g, 1);
+  check("still overtakes when it converts the trick to a certainty",
+    cid(pick) === "QC", `played ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
