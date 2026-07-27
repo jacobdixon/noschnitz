@@ -48,7 +48,7 @@ corresponds to the entries below.
     reported trick. Only Duane's play changes; Gus (holding two power trump,
     correctly shedding the Jack) and Bunny (shedding a worthless diamond over a
     Jack) were already right and are pinned so they stay that way. Against the
-    old engine three behaviours fail. (`PENDING`)
+    old engine three behaviours fail. (`ea94790`)
 
 ## [0.11.2] - 2026-07-27
 - The buried pair in the recap is shown as rank-and-suit glyphs rather than two
