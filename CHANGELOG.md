@@ -35,7 +35,7 @@ corresponds to the entries below.
   rejected variant is asserted in the test suite so it doesn't get "fixed" later.
 - `npm test` grows to 21 assertions. Against the old engine exactly one fails —
   the opening-trick loner case — with the other 20 passing, so the new
-  behaviour is pinned and the guards are confirmed to be guards. (`PENDING`)
+  behaviour is pinned and the guards are confirmed to be guards. (`162ba87`)
 
 ## [0.8.0] - 2026-07-26
 - AI now protects its trump power instead of throwing Queens away as schmear.
