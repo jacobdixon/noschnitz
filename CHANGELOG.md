@@ -6,6 +6,45 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.0] - 2026-07-27
+- The play-area header is gone, and everything it carried moved to the thing it
+  describes.
+  - The dealer wears a poker-style **D button** beside their avatar; seat 0 has
+    no avatar on the table, so it sits in the YOUR HAND row instead. The called
+    suit rides on the **picker's badge stack**, where it belongs — they chose
+    it. "picked" and "alone" were already duplicated by those same badges, so
+    the strip was restating three things and owning one.
+  - That hands ~38px back to the table, which is the part of the screen you
+    actually look at.
+  - The Doubler badge moves up into the header, beside the house rules. It was
+    briefly at the table's top centre, and that collides: the seats sit at 4% of
+    the table's height, so on a 667px-tall phone they start at y=14 while the
+    badge reaches y=19, overlapping two of them. There is no room between the
+    two top seats either — that gap is ~50px and the badge is ~95px. In the
+    header it is fixed chrome that cannot collide with anything the game draws,
+    and it sits next to the rule that explains what doubling means. The row
+    wraps rather than squeezing the rules line, since the two together need
+    356px against a phone's 339 — and that height change is only safe because a
+    doubler is set when the hand is dealt, never mid-hand.
+- The recap now stamps **the build number inside the shared screenshot**:
+  "Hand 3 · v0.16.0". That image is the format hands actually get reported in,
+  and a reported hand is evidence about a specific AI build — without the
+  version in the picture, "the AI misplayed this" can't be matched against what
+  the AI was at the time. Hand number moved inside the capture region with it;
+  only the Share button stays outside.
+- Two long-standing wording bugs, both noticed in passing and held for this
+  pass:
+  - The status line said "You takes the trick" — seat 0 is named "You", and it
+    was being interpolated into a third-person sentence.
+  - The hand-end and recap headings said "Pickers win" even when the picker went
+    alone, which is wrong on exactly the hands where the win is most impressive.
+    Now "Picker wins". Both call sites fixed together.
+- Verified in the browser at 375px: contract strip gone (the root is down to
+  four children), table grew to 507px, exactly one dealer button renders, all
+  four seat columns sit inside the table edge with no horizontal overflow, and
+  the recap capture region contains the version while the Share button stays
+  out of it. (`e21ef8c`)
+
 ## [0.15.0] - 2026-07-27
 - The header now states the house rules, and the two buttons that lived up
   there have moved into a menu.

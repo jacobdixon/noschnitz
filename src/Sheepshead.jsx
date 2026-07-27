@@ -281,11 +281,57 @@ export default function Sheepshead() {
     3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
     4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
   };
+  // Seat 0 is "You", so anything that reads back a seat name needs the
+  // second person or it comes out as "You takes the trick".
+  const takesTheTrick = (i) => (i === 0 ? "You take the trick" : `${NAMES[i]} takes the trick`);
+
+  // A lone picker is one person, so "Pickers win" is wrong on exactly the hands
+  // where the win is most impressive.
+  const outcomeHeadline = () => {
+    if (!g.result.pickerWins) return "Defenders win";
+    return g.alone || g.partner === null ? "Picker wins" : "Pickers win";
+  };
+
+  // The called suit belongs to the picker — they chose it — so it rides on their
+  // badge stack rather than in a strip of its own. Hearts is the only callable
+  // red suit (diamonds are trump), and `felt.red` is tuned for cream card faces,
+  // so it gets the lighter red that reads on felt.
+  const calledChip = () => (
+    <Badge compact>
+      Called{" "}
+      <span style={{ color: g.calledSuit === "H" ? felt.scoreDown : felt.cream, fontWeight: 900 }}>
+        {SUIT_SYM[g.calledSuit]}
+      </span>
+    </Badge>
+  );
+
   const roleTag = (i) => {
-    if (g.picker === i) return <Badge gold>Picker{g.alone ? " · Alone" : ""}</Badge>;
+    if (g.picker === i) return (
+      <>
+        <Badge gold>Picker{g.alone ? " · Alone" : ""}</Badge>
+        {g.calledSuit && calledChip()}
+      </>
+    );
     if (g.partnerRevealed && g.partner === i) return <Badge gold>Partner</Badge>;
     return null;
   };
+
+  // Poker-style dealer button. Seats 1-4 wear it beside their avatar; seat 0
+  // has no avatar on the table, so it sits in the YOUR HAND row instead.
+  const dealerButton = () => (
+    <span
+      title="Dealer"
+      aria-label="Dealer"
+      style={{
+        width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+        background: felt.cream, color: "#2A2108",
+        border: `1.5px solid ${felt.brassDim}`, boxShadow: "0 1px 3px rgba(0,0,0,.5)",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "Georgia, serif", fontWeight: 900, fontSize: 11, lineHeight: 1,
+        userSelect: "none",
+      }}
+    >D</span>
+  );
 
   const statusLine = () => {
     if (g.phase === "picking") {
@@ -295,7 +341,7 @@ export default function Sheepshead() {
     if (g.phase === "bury") return `Bury two cards (${g.selected.length}/2)`;
     if (g.phase === "call") return g.message;
     if (g.phase === "playing") {
-      if (g.trick.length === 5) return `${NAMES[trickWinner(g.trick)]} takes the trick`;
+      if (g.trick.length === 5) return takesTheTrick(trickWinner(g.trick));
       return g.turn === 0 ? "Your play." : `${NAMES[g.turn]}'s play…`;
     }
     return "";
@@ -337,8 +383,37 @@ export default function Sheepshead() {
             addressable thing rather than a substring. Not a button yet — a
             control that does nothing when you press it reads as broken, so it
             stays text until it has somewhere to go. */}
-        <div style={{ marginTop: 4, fontSize: 11, letterSpacing: ".04em", color: felt.creamDim, opacity: 0.75, userSelect: "none" }}>
-          {HOUSE_RULES.join(" · ")}
+        {/* Wraps rather than squeezes. The rules and the badge together need
+            356px and a 375px phone gives 339, so something has to give — and
+            it must not be the rules line, which is the permanent thing. The
+            badge drops to a second row instead. That changes the header's
+            height, which is only safe because a doubler is set when the hand is
+            dealt, never mid-hand: the layout settles before a card is played. */}
+        <div style={{ marginTop: 4, display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 4, columnGap: 8 }}>
+          <div style={{
+            flexShrink: 0, fontSize: 11, letterSpacing: ".04em",
+            color: felt.creamDim, opacity: 0.75, userSelect: "none", whiteSpace: "nowrap",
+          }}>
+            {HOUSE_RULES.join(" · ")}
+          </div>
+          {/* The stake rides with the rules rather than on the table. It was
+              briefly at the table's top centre, which collides: the seats sit
+              at 4% of the table's height, so on a 667px-tall phone they start
+              at y=14 while the badge reaches y=19, and there is no room to put
+              it between the two top seats either — that gap is ~50px and the
+              badge is ~95px. Up here it is fixed chrome, it cannot collide with
+              anything the game draws, and it sits next to the rules that
+              explain what doubling means. */}
+          {(g.doubler || 1) > 1 && (
+            <span style={{
+              marginLeft: "auto", flexShrink: 0,
+              color: "#2A2108", background: felt.brass,
+              fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
+              padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+            }}>
+              Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
+            </span>
+          )}
         </div>
 
         {showMenu && (
@@ -376,51 +451,34 @@ export default function Sheepshead() {
         )}
       </div>
 
-      {/* Contract strip */}
-      {/* No `width: 100%` here. The strip is a flex item in a column, so it
-          already stretches; adding it on top of 12px of horizontal padding
-          under content-box sizing made the strip 387px wide inside a 363px
-          box. The root clips overflow, so the extra 24px was invisible for as
-          long as nothing was right-aligned — the Doubler badge was the first
-          thing to land in it and got cut in half. */}
-      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28 }}>
-        <span>Dealer: {NAMES[g.dealer]}</span>
-        {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
-        {g.calledSuit && (
-          <span style={{ color: felt.brass, fontWeight: 700 }}>
-            · Called: {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
-          </span>
-        )}
-        {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
-        {/* Sits at the end of the contract strip and stays put for the whole
-            hand: the stake is part of the contract, and it's inherited from a
-            hand nobody picked, so there's no other moment it would be
-            explained. Pushed right so it reads as a stake rather than another
-            fact about the deal. */}
-        {(g.doubler || 1) > 1 && (
-          <span style={{
-            marginLeft: "auto", color: "#2A2108", background: felt.brass,
-            fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
-            padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
-          }}>
-            Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
-          </span>
-        )}
-      </div>
+      {/* The contract strip is gone. Everything it carried now lives where the
+          thing it describes already is: the dealer wears a button, the called
+          suit rides on the picker's badge stack, and "picked"/"alone" were
+          always duplicated by those same badges. That hands its ~28px back to
+          the table, which is the part of the screen you actually look at. */}
 
       {/* Table */}
       <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
         {[1, 2, 3, 4].map((i) => (
           <div key={i} style={{ position: "absolute", ...seatPos[i], display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 84 }}>
-            <div style={{
-              width: 44, height: 44, borderRadius: "50%", background: felt.chip,
-              border: `2px solid ${g.phase === "playing" && g.turn === i ? felt.brass : (g.phase === "picking" && g.pickTurn === i ? felt.brass : "#ffffff2e")}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
-              boxShadow: (g.turn === i || g.pickTurn === i) ? `0 0 10px ${felt.brass}66` : "none",
-              transition: "border .2s, box-shadow .2s",
-            }}>
-              {NAMES[i][0]}
+            {/* Avatar and dealer button share a positioning context so the
+                button can sit against the avatar's edge the way it sits by a
+                player's elbow at a real table, without disturbing the column
+                below it. */}
+            <div style={{ position: "relative", width: 44, height: 44 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: "50%", background: felt.chip,
+                border: `2px solid ${g.phase === "playing" && g.turn === i ? felt.brass : (g.phase === "picking" && g.pickTurn === i ? felt.brass : "#ffffff2e")}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
+                boxShadow: (g.turn === i || g.pickTurn === i) ? `0 0 10px ${felt.brass}66` : "none",
+                transition: "border .2s, box-shadow .2s",
+              }}>
+                {NAMES[i][0]}
+              </div>
+              {g.dealer === i && (
+                <span style={{ position: "absolute", right: -7, bottom: -2 }}>{dealerButton()}</span>
+              )}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
             {/* Running score rather than cards remaining. Everyone still
@@ -504,6 +562,7 @@ export default function Sheepshead() {
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
+          {g.dealer === 0 && dealerButton()}
           {roleTag(0)}
           <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </div>
@@ -550,7 +609,7 @@ export default function Sheepshead() {
         <Modal>
           <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-            {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
+            {outcomeHeadline()} {g.result.label && `— ${g.result.label}`}
           </div>
           <div style={{ fontSize: 16, marginBottom: 10, color: felt.creamDim }}>
             {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
@@ -594,8 +653,13 @@ export default function Sheepshead() {
       {/* Hand recap modal */}
       {g.phase === "handEnd" && showRecap && (
         <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
+          {/* Only the Share button lives outside the capture now. Hand number
+              and build moved inside it, because this screenshot is the format
+              hands actually get reported in — and a reported hand is evidence
+              about a specific AI build. Without the version stamped into the
+              image, "the AI misplayed this" can't be matched to what the AI was
+              at the time. */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
             <button
               onClick={handleShareRecap}
               aria-label="Share this recap"
@@ -610,6 +674,10 @@ export default function Sheepshead() {
             </button>
           </div>
           <div ref={recapCaptureRef} style={{ background: felt.bgDeep }}>
+          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>
+            Hand {g.handNum}
+            <span style={{ opacity: 0.55 }}> · v{__APP_VERSION__}</span>
+          </div>
           {/* The hand-end summary is repeated here, and sits inside the capture
               region on purpose: a recap gets shared to argue about a hand, and
               the trick grid alone doesn't say who won or by how much. The
@@ -617,7 +685,7 @@ export default function Sheepshead() {
               part of the hand nobody at the table ever gets to see, and the
               recap is the only place they can be shown. */}
           <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-            {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
+            {outcomeHeadline()} {g.result.label && `— ${g.result.label}`}
           </div>
           <div style={{ fontSize: 15, color: felt.creamDim, marginBottom: 8 }}>
             {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
