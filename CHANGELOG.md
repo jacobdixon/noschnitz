@@ -23,7 +23,7 @@ corresponds to the entries below.
     where the other four hands are absent.
   - Verified behaviour-identical by measuring the rendered result against
     unmodified master rather than by inspection. `Sheepshead.jsx` drops from
-    800 to 676 lines. (`__PENDING__`)
+    800 to 676 lines. (`848c7d4`)
 
 ## [0.16.1] - 2026-07-27
 - Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer
