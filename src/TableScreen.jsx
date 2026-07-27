@@ -24,6 +24,7 @@ import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx"
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
 import { fanOverlap } from "./fan.js";
+import { Felt, HandFan } from "./felt.jsx";
 import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
 
@@ -92,7 +93,6 @@ function formatIdle(ms) {
 }
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
-const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
 
 // Horizontal padding on the hand row, subtracted from the viewport to get the
 // width the fan actually has to fit inside.
@@ -114,74 +114,26 @@ function useViewportWidth() {
   return w;
 }
 
-// Both tables below are lifted verbatim from the solo game, by screen position
-// rather than absolute seat. They are already tuned so avatars and played
-// cards don't collide at phone sizes — an earlier attempt here invented its
-// own percentages and put the trick pile straight on top of the side seats.
+// What the felt should draw right now, which is deliberately not what the
+// server most recently said.
 //
-// The important one is TRICK_POS: a played card lands pulled inward from its
-// own player's seat, so you can see at a glance who played what. Rendering the
-// trick as a neutral centred row loses that, and with it most of the
-// readability of the game.
-const SEAT_POS = {
-  1: { left: "2%", top: "46%" },
-  2: { left: "20%", top: "4%" },
-  3: { right: "20%", top: "4%" },
-  4: { right: "2%", top: "46%" },
-};
-const TRICK_POS = {
-  0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
-  1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
-  2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
-  3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
-  4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
-};
-
-function Avatar({ seat, table, isTurn, serverNow, onClick }) {
-  const s = table.seats[seat];
-  const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
-  const showIdle = idle > IDLE_HINT_MS && s.kind !== "ai";
-  const g = table.g;
-  const initial = (s.name || "?").trim()[0]?.toUpperCase() || "?";
-  const isPicker = g && g.picker === seat;
-  const isPartner = g && g.partner === seat;
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-        cursor: onClick ? "pointer" : "default",
-        WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
-      }}
-    >
-      <div style={{
-        width: 46, height: 46, borderRadius: "50%", background: felt.chip,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 800, color: felt.cream,
-        border: `2px solid ${isTurn ? felt.brass : "#ffffff22"}`,
-        boxShadow: isTurn ? `0 0 12px ${felt.brass}` : "none",
-      }}>{initial}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: felt.cream, whiteSpace: "nowrap" }}>
-        {s.name}
-      </div>
-      <div style={{ fontSize: 10, color: felt.creamDim, whiteSpace: "nowrap" }}>
-        {/* MP-2.2 which seats are people vs house AI, and COM-3.3 the third
-            case: a real player's seat the AI is covering while they're away.
-            Worth distinguishing — "Dave is being covered" and "Dave was never
-            here" are different social facts at a card table. */}
-        {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "•"}{" "}
-        {g ? `${g.handCounts?.[seat] ?? 0}🂠` : ""}
-      </div>
-      {showIdle && (
-        <div style={{ fontSize: 10, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim }}>
-          idle {formatIdle(idle)}
-        </div>
-      )}
-      {isPicker && <Badge gold compact>Picker</Badge>}
-      {isPartner && <Badge gold compact>Partner</Badge>}
-    </div>
-  );
+// Two differences, both about time. The trick shown is the paced frame rather
+// than g.trick — the server resolves every AI seat inside one request, so its
+// trick jumps by four cards at once and has usually been cleared again before
+// the client sees it. And the card you just played is on the table before the
+// server has confirmed it.
+//
+// Synthesising a state keeps Felt ignorant of both: it renders a game, and this
+// decides which game that is. Masking `turn` while the reveal catches up also
+// stops the active-seat glow racing ahead of the cards.
+function displayState(g, frame, optimistic, caughtUp) {
+  const trick = [
+    ...frame.cards,
+    ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
+      ? [optimistic]
+      : []),
+  ];
+  return { ...g, trick, turn: caughtUp ? g.turn : -1, pickTurn: caughtUp ? g.pickTurn : -1 };
 }
 
 /* ------------------------- Sharing the table link -------------------------- */
@@ -739,72 +691,38 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         </span>
       </div>
 
-      {/* Felt — absolute positions matching the solo game, rotated so you are
-          always at the bottom. */}
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        {table.seats.map((_, seat) => {
-          const pos = SEAT_POS[rotate(seat, mySeat)];
-          if (!pos) return null; // position 0 is you — rendered as your hand
+      {/* The felt is the solo game's, rendered from src/felt.jsx. Everything
+          multiplayer needs on top of it hangs off two seams the component
+          already has: seatExtra for presence, and onSeatClick for the player
+          card. What the table gains by sharing it — running scores and trick
+          counts per seat, the dealer button, the trick-winner banner — it
+          previously just didn't have. */}
+      <Felt
+        g={displayState(g, frame, optimistic, caughtUp)}
+        names={table.seats.map((s) => s.name)}
+        mySeat={mySeat}
+        onSeatClick={(seat) => setSeatModal(seat)}
+        seatExtra={(seat) => {
+          const s = table.seats[seat];
+          const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
+          const showIdle = idle > IDLE_HINT_MS && s.kind !== "ai";
           return (
-            <div key={seat} style={{
-              position: "absolute", ...pos, width: 84,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-            }}>
-              <Avatar
-                seat={seat}
-                table={table}
-                isTurn={g.turn === seat && caughtUp}
-                serverNow={serverNow}
-                onClick={() => setSeatModal(seat)}
-              />
-            </div>
+            <>
+              <div style={{ fontSize: 10, color: felt.creamDim, whiteSpace: "nowrap" }}>
+                {/* MP-2.2 which seats are people vs house AI, and COM-3.3 the
+                    third case: a real player's seat the AI is covering while
+                    they're away. */}
+                {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "\u00b7"}
+              </div>
+              {showIdle && (
+                <div style={{ fontSize: 10, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim }}>
+                  idle {formatIdle(idle)}
+                </div>
+              )}
+            </>
           );
-        })}
-
-        {/* Each card sits by the player who played it, revealed one at a time.
-            The optimistic stand-in joins them until the real card is revealed
-            — suppressed once the trick has been swept, so a card you played
-            can't reappear on an empty felt. */}
-        {[
-          ...frame.cards,
-          ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
-            ? [optimistic]
-            : []),
-        ].map((p) => (
-          <div key={cid(p.card)} style={{
-            position: "absolute", ...TRICK_POS[rotate(p.player, mySeat)], zIndex: 2,
-          }}>
-            <Card card={p.card} small />
-          </div>
-        ))}
-
-        {frame.complete && (
-          <div style={{
-            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            background: "#000000aa", padding: "4px 12px", borderRadius: 6,
-            fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
-          }}>
-            {table.seats[frame.winner]?.name} +{frame.cards.reduce((s, p) => s + cardPts(p.card), 0)}
-          </div>
-        )}
-
-        {/* Blind marker while nobody has picked yet, as in the solo game. */}
-        {g.phase === "picking" && (
-          <div style={{
-            position: "absolute", left: "50%", top: "44%", transform: "translate(-50%,-50%)",
-            display: "flex", gap: 6,
-          }}>
-            <Card faceDown small /><Card faceDown small />
-          </div>
-        )}
-
-        <div style={{
-          position: "absolute", bottom: 6, left: 0, right: 0, textAlign: "center",
-          fontStyle: "italic", color: felt.creamDim, fontSize: 15,
-        }}>
-          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : " "}
-        </div>
-      </div>
+        }}
+      />
 
       {/* COM-3.2. Deliberately a banner rather than something tucked in a
           modal: a player who has just come back needs to find this without
@@ -837,6 +755,12 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           resized every time — most visibly as the last card of a trick landed
           and the deal button arrived. */}
       <div style={{ flexShrink: 0, minHeight: ACTION_MIN_HEIGHT }}>
+        {/* Where solo keeps it: above the actions, not floating inside the
+            felt. Held blank until the reveal catches up, so it can't announce
+            a turn before the cards that caused it have landed. */}
+        <div style={{ fontSize: 16, padding: "7px 12px 0", textAlign: "center", color: felt.creamDim, fontStyle: "italic" }}>
+          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : "\u00a0"}
+        </div>
       {g.phase === "picking" && g.pickTurn === mySeat && (
         <Actions>
           <button style={btnGold} disabled={busy} onClick={() => act(() => api.pick(tableId, playerId, "pick"))}>
