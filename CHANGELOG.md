@@ -42,7 +42,7 @@ corresponds to the entries below.
     real hand (8S QS 7H QD JC JS) including the security-equality that makes the
     overtake pointless, plus a guard that the brake doesn't seize: with the top
     trump in hand and a coin-flip trick, it still takes it. Against the previous
-    engine the two behavioural assertions fail. (`PENDING`)
+    engine the two behavioural assertions fail. (`e1ca4e4`)
 
 ## [0.12.0] - 2026-07-27
 - Schmearing is rebuilt around two questions the AI wasn't asking: *is this
