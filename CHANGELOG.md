@@ -24,7 +24,7 @@ corresponds to the entries below.
     the whole hand.
   - Also settles a smaller 8px shift nobody had reported, between the burying
     fan (8 cards at 0.9 scale, 83px) and normal play (91px). Both now measure
-    101px including the row's padding. (`PENDING`)
+    101px including the row's padding. (`c6460fa`)
 
 ## [0.9.0] - 2026-07-27
 - Defenders now gang up on a lone picker properly. Against someone who went
