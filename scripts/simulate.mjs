@@ -42,8 +42,8 @@ function playTrick(g) {
   return resolveTrick(g);
 }
 
-function playHand(dealer, scores, handNum) {
-  let g = freshHand(dealer, scores, handNum);
+function playHand(dealer, scores, handNum, doubler = 1) {
+  let g = freshHand(dealer, scores, handNum, doubler);
   g = playPicking(g);
   if (g.phase !== "playing") return { thrownIn: true, scores: g.scores };
   while (g.phase === "playing" && g.tricksDone < 6) {
@@ -61,12 +61,18 @@ function simulate(numHands) {
   let aloneCount = 0, aloneWins = 0, aloneNetScore = 0;
   let partneredCount = 0, partneredWins = 0, partneredNetScore = 0;
 
+  // A passed-out hand doubles the next one, so the stake has to ride across
+  // iterations — scoring stats are wrong without it.
+  let doubler = 1;
+
   for (let i = 0; i < numHands; i++) {
     const scoresBefore = scores;
-    const res = playHand(dealer, scores, handNum);
+    const res = playHand(dealer, scores, handNum, doubler);
     if (res.thrownIn) {
       thrownIn++;
+      doubler *= 2;
     } else {
+      doubler = 1;
       picked++;
       const { result, alone: wentAlone, picker } = res.g;
       scores = res.g.scores;

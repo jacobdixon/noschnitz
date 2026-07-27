@@ -6,6 +6,140 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.1] - 2026-07-27
+- Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer
+  branch. No behaviour change to the solo game beyond the two mobile fixes noted
+  below; this is groundwork for bringing the two versions together.
+  - The two branches had been fighting over one file. `v2` was +27 commits, but
+    almost all of it is additive — 22 new files that can't collide. Measured
+    against the merge base, `v2`'s own changes to `Sheepshead.jsx` were
+    **+19 / -121**, and the -121 was entirely lifting `felt`, `Card`, `Badge`,
+    `Modal` and the button styles into `ui.jsx`. It had made essentially no
+    behavioural change to the solo screen. `engine.js` was +57 with zero
+    deletions, which is why engine merges have always resolved themselves and
+    only `Sheepshead.jsx` ever conflicted.
+  - So the whole merge tax came from one structural refactor that master didn't
+    have. Master now has it, byte-identical.
+  - Measured with a trial merge into `v2` before and after: the conflict in
+    `Sheepshead.jsx` goes from **one 85-line hunk to two hunks totalling 12
+    lines** — and changes character, from "reconcile a refactor" to "master
+    added a constant, keep it". Getting from 25 lines to 12 meant adopting
+    `v2`'s exact comment text and blank lines where the two files overlap;
+    divergence there is divergence, even when it's only prose.
+  - It does not reach zero, and can't while `v2` is four commits behind: master
+    keeps adding content next to a region `v2` also edited. Once `v2` takes this
+    merge, both sides share the structure and later solo changes land in
+    disjoint regions.
+  - `Sheepshead.jsx` also gains the optional `onPlayWithFriends` prop and its
+    Friends button. Inert here — nothing passes it — but present so the file
+    matches its counterpart rather than differing by a feature.
+  - Carries across two mobile fixes that only existed on `v2`: `touchAction:
+    "manipulation"` on cards, removing the ~300ms double-tap delay browsers add
+    to undeclared touch targets, and `WebkitTouchCallout: "none"`, which stops
+    the "save image" callout firing when a thumb rests on a card.
+  - Bundle 56.48 -> 56.54 kB gzipped, which is the two touch properties and the
+    unused button. `npm test` 75/75 unchanged. (`8a9663d`)
+
+## [0.16.0] - 2026-07-27
+- The play-area header is gone, and everything it carried moved to the thing it
+  describes.
+  - The dealer wears a poker-style **D button** beside their avatar; seat 0 has
+    no avatar on the table, so it sits in the YOUR HAND row instead. The called
+    suit rides on the **picker's badge stack**, where it belongs — they chose
+    it. "picked" and "alone" were already duplicated by those same badges, so
+    the strip was restating three things and owning one.
+  - That hands ~38px back to the table, which is the part of the screen you
+    actually look at.
+  - The Doubler badge moves up into the header, beside the house rules. It was
+    briefly at the table's top centre, and that collides: the seats sit at 4% of
+    the table's height, so on a 667px-tall phone they start at y=14 while the
+    badge reaches y=19, overlapping two of them. There is no room between the
+    two top seats either — that gap is ~50px and the badge is ~95px. In the
+    header it is fixed chrome that cannot collide with anything the game draws,
+    and it sits next to the rule that explains what doubling means. The row
+    wraps rather than squeezing the rules line, since the two together need
+    356px against a phone's 339 — and that height change is only safe because a
+    doubler is set when the hand is dealt, never mid-hand.
+- The recap now stamps **the build number inside the shared screenshot**:
+  "Hand 3 · v0.16.0". That image is the format hands actually get reported in,
+  and a reported hand is evidence about a specific AI build — without the
+  version in the picture, "the AI misplayed this" can't be matched against what
+  the AI was at the time. Hand number moved inside the capture region with it;
+  only the Share button stays outside.
+- Two long-standing wording bugs, both noticed in passing and held for this
+  pass:
+  - The status line said "You takes the trick" — seat 0 is named "You", and it
+    was being interpolated into a third-person sentence.
+  - The hand-end and recap headings said "Pickers win" even when the picker went
+    alone, which is wrong on exactly the hands where the win is most impressive.
+    Now "Picker wins". Both call sites fixed together.
+- Verified in the browser at 375px: contract strip gone (the root is down to
+  four children), table grew to 507px, exactly one dealer button renders, all
+  four seat columns sit inside the table edge with no horizontal overflow, and
+  the recap capture region contains the version while the Share button stays
+  out of it. (`e21ef8c`)
+
+## [0.15.0] - 2026-07-27
+- The header now states the house rules, and the two buttons that lived up
+  there have moved into a menu.
+  - "Called Ace · No Leasters · Double on the Bump" sits under the title, above
+    the rail, and stays there all game. Two of those three were already true and
+    unstated; the third arrived in 0.14.0 and changes what a hand is worth, so
+    it needed saying somewhere permanent rather than being discovered when a set
+    picker paid double.
+  - Held as a list rather than one sentence. The planned version of that line
+    lets you change the rules, and a rule you can toggle has to be an
+    addressable thing rather than a substring. It is deliberately *not* a button
+    yet — a control that does nothing when pressed reads as broken, so it stays
+    text until it has somewhere to go.
+  - Trump and Scores become items under a hamburger. Two buttons was already
+    most of the header's width, and the rules line needed room; the menu also
+    gives the rules editor and anything after it a place to land that doesn't
+    cost width. Menu closes on select and on any click outside, tracks
+    `aria-expanded`, and its items carry `role="menuitem"`.
+  - Verified in the browser at 375px and desktop: menu opens, selects, closes on
+    outside click with no stray backdrop left behind, and sits inside the table
+    edge (203-357px within a 375px root). The rules line measures 230px of text
+    in 339px of space at phone width — one line, with room for a fourth rule.
+    (`1ee2bb4`)
+
+## [0.14.0] - 2026-07-27
+- Two house scoring rules, both on by default: **double on the bump** and a
+  **doubler after a passed-out hand**.
+  - *Double on the bump* — a set picker pays twice. The reason it works out:
+    the picking team wins about 61-62% of the hands it takes, which alone would
+    argue for something milder, but it also wins them *bigger* than it loses
+    them — average multiplier 1.49 winning against 1.17 losing, because it holds
+    the blind and the burial. Feed that asymmetry in and the break-even win rate
+    for picking lands at roughly 61%, right where the game actually runs.
+  - Measured over 200,000 hands: picker EV falls from **+1.27 to +0.10** per
+    picked hand overall (alone +2.04 -> +0.24, partnered +0.93 -> +0.04). What
+    that buys isn't fairness between seats — the game was always zero-sum, and
+    every seat picks about equally often. It's that at +1.27 picking was close
+    to free, so loose picking paid about as well as good picking. At +0.10 it's
+    a decision again.
+  - The current AI pick threshold needs no retuning: swept it, and
+    `handStrength >= 10` is the only setting where picking stays near neutral
+    under the new rule (>= 11 goes back to +0.39, >= 12 to +0.71).
+  - *Doubler* — nobody picks, the hand is thrown in, and the next one pays
+    double. Stacks if it happens twice running, shown as `DOUBLER ×4` and so on.
+    Carried on the game state rather than recomputed, since the hand that pays
+    it isn't the hand that caused it.
+  - Both stack with the existing multipliers, so a set no-schneider is 4x and a
+    set no-tricker is 6x. Winning big is *not* doubled — the bump is a penalty
+    on the picker, not a general multiplier.
+  - Adds `npm run scoringtest` (folded into `npm test`): 38 assertions on
+    constructed finished hands, kept in their own harness because "what is this
+    hand worth" fails for entirely different reasons than "which card should the
+    AI play". Every case also asserts the hand is zero-sum, which is the
+    invariant most likely to break quietly if a stake is ever applied to one
+    side only.
+- Fixes a long-standing layout bug the Doubler badge exposed: the contract strip
+  carried both `width: 100%` and 12px of horizontal padding under content-box
+  sizing, making it 387px wide inside a 363px box. The root clips overflow, so
+  the extra 24px was invisible for as long as nothing was right-aligned — the
+  badge was the first thing to land in it, and rendered cut in half. (`0de4e84`)
+
 ## [0.13.0] - 2026-07-27
 - Taking a trick off your own side now has to buy something. Reported from
   expert play: Gus picked, his partner Duane led Q-hearts, Gus overtook with
