@@ -41,7 +41,7 @@ corresponds to the entries below.
   carried both `width: 100%` and 12px of horizontal padding under content-box
   sizing, making it 387px wide inside a 363px box. The root clips overflow, so
   the extra 24px was invisible for as long as nothing was right-aligned — the
-  badge was the first thing to land in it, and rendered cut in half. (`PENDING`)
+  badge was the first thing to land in it, and rendered cut in half. (`0de4e84`)
 
 ## [0.13.0] - 2026-07-27
 - Taking a trick off your own side now has to buy something. Reported from
