@@ -13,6 +13,7 @@
    link" — no app, no signup, works in a mobile browser).
    ========================================================================= */
 import React, { useState, useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import Sheepshead from "./Sheepshead.jsx";
 import TableScreen from "./TableScreen.jsx";
 import { felt, btnGold, btnPlain } from "./ui.jsx";
@@ -47,10 +48,37 @@ export default function App() {
   //
   // With the flag off at build time this whole branch is dead code and Vite
   // strips it, so the multiplayer client isn't in the production bundle at all.
-  if (MULTIPLAYER_ENABLED && tableId) {
-    return <JoinGate tableId={tableId} onLeave={() => go("/", null)} />;
-  }
-  return <Home onTable={(id) => go(`/t/${id}`, id)} />;
+  const screen =
+    MULTIPLAYER_ENABLED && tableId
+      ? <JoinGate tableId={tableId} onLeave={() => go("/", null)} />
+      : <Home onTable={(id) => go(`/t/${id}`, id)} />;
+
+  return (
+    <>
+      {screen}
+      {/* Renders nothing. It sits at the root rather than inside either screen
+          so a page view is counted once wherever someone lands — the solo game
+          and a /t/<code> link are the same visit, and this component doesn't
+          remount when navigating between them.
+
+          Routing here is history.pushState with no router library, so the
+          automatic route detection has nothing to hook into; the path is
+          reported as-is. That is the behaviour we want anyway. A table code is
+          a bearer credential — anyone holding the link can sit down — so
+          collapsing /t/<code> to a single label is a feature, not a
+          limitation. See the note in vercel.json's rewrite. */}
+      <Analytics beforeSend={redactTableCode} />
+    </>
+  );
+}
+
+// Table codes never leave the browser. The link IS the credential, so a code in
+// an analytics URL is a credential in a third party's logs — and the codes are
+// short-lived and per-session, so the individual values are worth nothing to us
+// anyway. What we actually want to know is "how many people opened a table
+// link", which the collapsed form answers exactly.
+function redactTableCode(event) {
+  return { ...event, url: event.url.replace(/\/t\/[A-Za-z0-9-]+/, "/t/[code]") };
 }
 
 /* ---------------------------------------------------------------------------
