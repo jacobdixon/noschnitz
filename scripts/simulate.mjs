@@ -72,7 +72,7 @@ function simulate(numHands) {
       scores = res.g.scores;
       const pickerDelta = scores[picker] - scoresBefore[picker];
       if (result.pickerWins) pickerWins++;
-      if (result.label === "Schneider!") schneider++;
+      if (result.label === "No Schneider!") schneider++;
       if (result.label === "No-tricker!") noTricker++;
       teamPtsHist.push(result.teamPts);
       if (wentAlone) {

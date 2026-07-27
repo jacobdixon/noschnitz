@@ -6,6 +6,138 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.11.2] - 2026-07-27
+- The buried pair in the recap is shown as rank-and-suit glyphs rather than two
+  card faces — the same shorthand the grid below already uses.
+  - 0.11.0 rendered them as full cards, which made the two cards nobody played
+    the largest thing on a screen whose subject is the 30 cards that were. The
+    whole recap now reads in one visual language.
+  - The buried row goes from 132px to 18px, which pulls the trick grid back up
+    into view without scrolling on a phone.
+  - Verified at 375px on a finished hand: renders "BURIED A♥ 10♣", red suits in
+    the same red the grid uses, no card elements left in the row, no page
+    overflow. (`13a6ac2`)
+
+## [0.11.1] - 2026-07-27
+- The recap grid labels its columns once: "TRICK" now sits in the name column
+  as a row header, and each heading is just its number.
+  - Repeating the word six times spent width in the one place the grid is
+    tightest. At 375px every heading wrapped onto two lines, so the header row
+    was twice as tall as it needed to be and the numbers — the part you
+    actually read — were the smaller half of each cell.
+  - Numbers move to 12px semibold now that they stand alone; "TRICK" keeps the
+    11px uppercase treatment the headings had.
+  - Measured at 375px with a finished hand: the header row is a single 23px
+    line, all seven cells one line each, table 318px inside a 318px scroller —
+    no sideways scroll on the grid and no page overflow. (`c9ed246`)
+
+## [0.11.0] - 2026-07-27
+- The recap now opens with the hand-end summary — who won, the label, and the
+  points both ways — instead of just the word "Recap", and shows the two
+  buried cards in place of the old "(N buried)" count.
+  - The buried pair is the one part of a hand nobody at the table ever gets to
+    see. A count of their points was the least interesting thing about them;
+    the recap is the only screen that can actually show them, so it does, as
+    real cards rather than text.
+  - The summary sits inside the shared-screenshot region, which the trick grid
+    alone never did. A recap gets shared to argue about a hand, and the grid on
+    its own doesn't say who won or by how much — so the image now carries the
+    result with it. The Share button stays outside the capture, confirmed by
+    reading the captured element's text.
+  - "Hand N" and Share keep the top row; the summary and grid sit below.
+  - Verified in the browser at 375px on a finished hand: header, points line,
+    both buried cards, the six-trick grid and the legend all render inside the
+    capture region with no horizontal overflow. (`4413ec0`)
+
+## [0.10.1] - 2026-07-27
+- The 90-point result now reads "No Schneider!" rather than "Schneider!" — the
+  losing side failed to get out of schneider, so that's what it should say.
+  Applies to both sides of the same event: picker team held to 30 or less, or
+  defenders held to 30 or less.
+  - The label is produced in `scoreHand`, so this is one string in the engine
+    rather than a patch at the render site. `simulate.mjs` compared against the
+    old label with exact equality to count its schneider rate, and was updated
+    with it — left alone it would have silently reported 0.0% and quietly
+    broken one of the three metrics used to judge every AI change.
+  - Verified on constructed scoring positions: picker team 95/defenders 25 and
+    defenders 95/picker team 25 both label "No Schneider!" at 2x, an ordinary
+    70-50 win stays unlabelled at 1x, and a no-tricker still reads
+    "No-tricker!" at 3x. Simulated schneider rate holds at 23.6% across 50,000
+    hands, unchanged from before the rename.
+  - Layout-neutral at 375px. The heading already wrapped to two lines for every
+    labelled outcome before this change; measured against the modal's 299px
+    inner width, all five strings still render at two lines and 55px with no
+    horizontal overflow. (`5c9ac72`)
+
+## [0.10.0] - 2026-07-27
+- Each opponent's seat now shows their running score instead of how many cards
+  they're holding — green when they're up, red when they're down.
+  - The card count was dead weight: everyone still in the hand holds exactly as
+    many cards as you do, so it only ever repeated what your own hand already
+    told you. Where each player stands in the match is the thing you actually
+    glance up for, and it previously meant opening the Scores modal mid-hand.
+  - Score colours are a new pair in the theme rather than a reuse of the
+    existing `red`/`brass`: `red` is tuned for card pips on a cream card face
+    and goes muddy on dark felt. Zero is neutral cream, not green — nobody is
+    winning before a hand has been scored.
+  - Trick count stays, and now reads "1 trick" rather than "1 tricks". That
+    was a pre-existing wart, fixed here because it sits in the same span.
+  - Verified in the browser across a scored hand: +4 and +2 render green
+    (`#5BBE72`), -2 red (`#E0685C`), 0 neutral cream. At 375px the strip adds
+    no horizontal overflow — the widest seat text measures 63px inside the
+    84px seat column. (`ad67d4b`)
+
+## [0.9.1] - 2026-07-27
+- The table no longer lurches when you play your last card. The hand fan holds
+  its height whether or not it has cards in it, so the layout stays exactly as
+  it was with cards in front of you.
+  - The fan reserved no height of its own, and the table above it is
+    `flex: 1 1 auto`. Playing the sixth card emptied the fan and handed the
+    table 91px, so every seat and every card of the final trick jumped — right
+    at the moment you're watching the last trick resolve, and just before the
+    hand-end modal covers it.
+  - 91px because a `Card` is content-box: the declared 80px height plus 2x4
+    padding and 2x1.5 border. Pulled out as `CARD_ROW_H` next to the component
+    that defines those numbers, rather than left as a magic constant.
+  - Measured in the browser across a full auto-played hand. Before: the table
+    area held 661px for six cards down to one, then jumped to 752px at zero.
+    After: 661px at every card count including zero — one distinct value for
+    the whole hand.
+  - Also settles a smaller 8px shift nobody had reported, between the burying
+    fan (8 cards at 0.9 scale, 83px) and normal play (91px). Both now measure
+    101px including the row's padding. (`c6460fa`)
+
+## [0.9.0] - 2026-07-27
+- Defenders now gang up on a lone picker properly. Against someone who went
+  alone, the AI defenders were refusing to schmear on the opening trick, so the
+  loner got a free run at the trick that most often sets up the hand.
+  - Root cause was the guard added in 0.8.0, which stops a defender paying
+    points to a "teammate" who might turn out to be the picker's hidden partner.
+    It keyed off `partnerRevealed`, and when the picker goes alone there is no
+    called ace, so nothing ever reveals and the flag stays false all hand. The
+    guard was written for uncertainty, but an alone hand is the one case with
+    none: going alone is declared at pick time and shown all hand
+    ("Picker · Alone"), so every defender knows the other three seats are
+    teammates from the first card. Certainty now also comes from there being no
+    partner to be wrong about, not only from the ace having fallen.
+  - Measured over 5x200,000 simulated hands before and after. In alone hands the
+    picker's win rate drops 68.2-69.1% -> 67.4-67.8%; ranges don't overlap, so
+    it's a real shift rather than run-to-run noise. Partnered hands are
+    untouched (61.7-62.0% -> 61.9-62.1%, overlapping), which is the intended
+    blast radius and doubles as a control on the measurement.
+- Also measured and deliberately *not* changed: the same guard leaves defenders
+  free to schmear speculatively in partnered hands from trick 2 onward, where
+  they may hand points to the picker's hidden partner. Extending the guard
+  across the whole pre-reveal window looks like the same fix, and costs about
+  0.8pp: partnered picker win rate goes 61.7-62.0% -> 62.4-62.8%, again
+  non-overlapping. With the picker excluded, an unrevealed winner is a fellow
+  defender two times in three and the partner only one in three, and an Ace held
+  back gets trumped later often enough that pooling it beats hoarding it. The
+  rejected variant is asserted in the test suite so it doesn't get "fixed" later.
+- `npm test` grows to 21 assertions. Against the old engine exactly one fails —
+  the opening-trick loner case — with the other 20 passing, so the new
+  behaviour is pinned and the guards are confirmed to be guards. (`162ba87`)
+
 ## [0.8.0] - 2026-07-26
 - AI now protects its trump power instead of throwing Queens away as schmear.
   Reported from a real hand: with a Jack led and Q-clubs already down and

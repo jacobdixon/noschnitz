@@ -23,7 +23,16 @@ export const felt = {
   red: "#B3392F",
   black: "#28241E",
   chip: "#1B4D3B",
+  // Score colours are their own pair rather than reusing `red`/`brass`: `red`
+  // is tuned for card pips on a cream card face and goes muddy on dark felt.
+  scoreUp: "#5BBE72",
+  scoreDown: "#E0685C",
 };
+
+// Green when a player is up, red when they're down, neutral at dead even —
+// zero is neither, and colouring it green would read as "winning" before a
+// single hand has been scored.
+export const scoreColor = (n) => (n > 0 ? felt.scoreUp : n < 0 ? felt.scoreDown : felt.creamDim);
 
 export function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
   // Card box dimensions stay put (so the table/hand layout doesn't get
@@ -75,6 +84,13 @@ export function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 
     </div>
   );
 }
+
+// How much vertical space one full-size Card actually occupies. The card box is
+// content-box, so the declared height is only part of it: 80 (height) + 2x4
+// (padding) + 2x1.5 (border) = 91. Lives here next to Card because it is a fact
+// about Card's geometry — a hand row that reserves it keeps its height when the
+// hand empties instead of handing the table 91px mid-trick.
+export const CARD_ROW_H = 91;
 
 // `compact` is for the recap grid, where the badge sits in the name column of
 // a six-column table: at full size it widens that column enough to push the

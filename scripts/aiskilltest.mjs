@@ -209,6 +209,146 @@ const topTrumpDown = { player: 0, card: C("Q", "C") };
     cid(pick) === "QS", `played ${cid(pick)}`);
 }
 
+/* ------------- Against a loner, there is no partner to fear --------------- */
+// v0.8.0 stopped defenders from schmearing on the opening trick while the
+// partnership is still a guess. That guard keyed off `partnerRevealed`, which
+// is never set when the picker goes alone — there is no called ace to fall — so
+// it also muted defenders in the one situation with no uncertainty at all.
+// Going alone is declared at pick time and shown all hand ("Picker · Alone"),
+// so every defender knows from the first card that the other three seats are
+// teammates. That is exactly when pooling points matters most: a loner needs
+// 61 on their own, and defenders beat them by piling points onto each other.
+{
+  // Opening trick of an alone hand. Player 4 is winning with Q-diamonds and is
+  // certainly a teammate, because there is no partner for them to be.
+  const hand = [C("A", "S"), C("7", "S"), C("8", "S")];
+  const g = position({
+    hands: withHand(1, hand),
+    trick: [
+      { player: 2, card: C("9", "H") },
+      { player: 3, card: C("7", "H") },
+      { player: 4, card: C("Q", "D") },
+    ],
+    picker: 3, partner: null, partnerRevealed: false,
+    calledSuit: null, calledAcePlayed: false, tricksDone: 0, leader: 2,
+  });
+  check("defender is void and free to throw anything",
+    legalPlays(g, 1).length === 3, `legal=${legalPlays(g, 1).map(cid).join(",")}`);
+
+  const pick = aiChooseCard(g, 1);
+  check("defender schmears to a teammate on the opening trick of a loner hand",
+    cid(pick) === "AS", `played ${cid(pick)}`);
+}
+
+{
+  // Same certainty later in an alone hand — unchanged by this fix, but it is
+  // the case a `partnerRevealed`-only gate would break, so it stays asserted.
+  const hand = [C("A", "S"), C("7", "S"), C("8", "S")];
+  const g = position({
+    hands: withHand(1, hand),
+    trick: [
+      { player: 2, card: C("9", "H") },
+      { player: 3, card: C("7", "H") },
+      { player: 4, card: C("Q", "D") },
+    ],
+    picker: 3, partner: null, partnerRevealed: false,
+    calledSuit: null, calledAcePlayed: false, tricksDone: 2, leader: 2,
+  });
+  const pick = aiChooseCard(g, 1);
+  check("defenders still schmear to each other against a loner mid-hand",
+    cid(pick) === "AS", `played ${cid(pick)}`);
+}
+
+/* ---- Speculative schmearing in PARTNERED hands is deliberate, not a bug --- */
+// Tempting symmetry, measured and rejected: knowsTeammate() reports every
+// unrevealed seat as a teammate, so from trick 2 onward a defender may hand 11
+// points to the picker's hidden partner. Extending v0.8.0's opening-trick guard
+// to cover the whole pre-reveal window looks like the same fix — and it is a
+// net loss. With the picker excluded, an unrevealed winner is a fellow defender
+// two times in three and the partner only one in three, and an Ace held back
+// gets trumped later often enough that pooling it beats hoarding it.
+//
+// Measured over 5x200,000 hands per variant. Suppressing until the reveal moved
+// partnered picker win rate 61.7-62.0% -> 62.4-62.8% — non-overlapping ranges,
+// so ~0.8pp handed to the picker. Keep the guard scoped to the opening trick.
+{
+  const hand = [C("A", "S"), C("7", "S"), C("8", "S")];
+  const g = position({
+    hands: withHand(1, hand),
+    trick: [
+      { player: 2, card: C("9", "H") },
+      { player: 3, card: C("7", "H") },
+      { player: 4, card: C("Q", "D") },
+    ],
+    picker: 3, partner: 4, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 2, leader: 2,
+  });
+  const pick = aiChooseCard(g, 1);
+  check("defender still takes the 2:1 bet and schmears before the reveal",
+    cid(pick) === "AS", `played ${cid(pick)}`);
+}
+
+{
+  // ...but not on the opening trick of a partnered hand. That is v0.8.0's
+  // guard, and this fix must leave it standing.
+  const hand = [C("A", "S"), C("7", "S"), C("8", "S")];
+  const g = position({
+    hands: withHand(1, hand),
+    trick: [
+      { player: 2, card: C("9", "H") },
+      { player: 3, card: C("7", "H") },
+      { player: 4, card: C("Q", "D") },
+    ],
+    picker: 3, partner: 4, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 0, leader: 2,
+  });
+  const pick = aiChooseCard(g, 1);
+  check("defender holds the Ace on the opening trick of a partnered hand",
+    cid(pick) === "7S", `played ${cid(pick)}`);
+}
+
+{
+  // Once the ace has fallen the partnership is public, so this is a real
+  // teammate and the schmear is correct.
+  const hand = [C("A", "S"), C("7", "S"), C("8", "S")];
+  const g = position({
+    hands: withHand(1, hand),
+    trick: [
+      { player: 2, card: C("9", "H") },
+      { player: 3, card: C("7", "H") },
+      { player: 0, card: C("Q", "D") },
+    ],
+    picker: 3, partner: 4, partnerRevealed: true,
+    calledSuit: "C", calledAcePlayed: true, tricksDone: 2, leader: 2,
+  });
+  const pick = aiChooseCard(g, 1);
+  check("defender still schmears once the partner is revealed",
+    cid(pick) === "AS", `played ${cid(pick)}`);
+}
+
+{
+  // The partner knows the picker from the moment they pick up the ace call,
+  // with no reveal needed — that asymmetry is the one case where schmearing
+  // into an unrevealed partnership is certain, and it has to survive.
+  const hand = [C("A", "C"), C("A", "H"), C("7", "H")];
+  const g = position({
+    hands: withHand(4, hand),
+    trick: [
+      { player: 0, card: C("9", "S") },
+      { player: 1, card: C("7", "S") },
+      { player: 3, card: C("Q", "D") },
+    ],
+    picker: 3, partner: 4, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 2, leader: 0,
+  });
+  check("partner may not throw the called ace off-suit",
+    !legalPlays(g, 4).some((c) => cid(c) === "AC"),
+    `legal=${legalPlays(g, 4).map(cid).join(",")}`);
+  const pick = aiChooseCard(g, 4);
+  check("partner still schmears to the picker before the reveal",
+    cid(pick) === "AH", `played ${cid(pick)}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

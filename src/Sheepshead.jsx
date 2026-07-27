@@ -5,7 +5,7 @@ import {
   resolveTrick, gradeHandPlays,
 } from "./engine.js";
 
-import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 
 // `onPlayWithFriends` is optional: when supplied, a header button offers the
 // multiplayer table. Passed in as a prop rather than imported so this file
@@ -256,8 +256,18 @@ export default function Sheepshead({ onPlayWithFriends }) {
               {NAMES[i][0]}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
+            {/* Running score rather than cards remaining. Everyone still
+                holding cards has the same number of them as you do, so that
+                count told you nothing you couldn't read off your own hand;
+                where each opponent stands in the match is the thing you
+                actually want at a glance. */}
             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: felt.creamDim }}>{g.hands[i].length}🂠 · {g.trickCounts[i]} tricks</span>
+              <span style={{ fontSize: 12, color: felt.creamDim }}>
+                <span style={{ color: scoreColor(g.scores[i]), fontWeight: 700 }}>
+                  {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
+                </span>
+                {" · "}{g.trickCounts[i]} {g.trickCounts[i] === 1 ? "trick" : "tricks"}
+              </span>
             </div>
             {roleTag(i)}
           </div>
@@ -342,7 +352,14 @@ export default function Sheepshead({ onPlayWithFriends }) {
           )}
           <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: onPlayWithFriends ? 8 : "auto" }}>Last Trick</button>
         </div>
-        <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
+        {/* The fan holds its height even when empty. The table above is
+            `flex: 1 1 auto`, so when the last card of the hand is played this
+            row used to collapse and hand the table 91px — every seat and every
+            card of the final trick jumped, right at the moment you're watching
+            it resolve. Reserving the row keeps the layout exactly as it was
+            with cards in front of you. It also settles the smaller 8px shift
+            between the burying fan (8 cards at 0.9 scale) and normal play. */}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 10, minHeight: CARD_ROW_H }}>
           {(() => {
             // More than 6 cards only happens transiently while burying (holding
             // the blind before discarding 2) — shrink the fan a bit so the
@@ -423,10 +440,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
       {g.phase === "handEnd" && showRecap && (
         <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
-              <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Recap</div>
-            </div>
+            <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
             <button
               onClick={handleShareRecap}
               aria-label="Share this recap"
@@ -441,14 +455,44 @@ export default function Sheepshead({ onPlayWithFriends }) {
             </button>
           </div>
           <div ref={recapCaptureRef} style={{ background: felt.bgDeep }}>
+          {/* The hand-end summary is repeated here, and sits inside the capture
+              region on purpose: a recap gets shared to argue about a hand, and
+              the trick grid alone doesn't say who won or by how much. The
+              buried cards replace the old "(N buried)" count — they're the one
+              part of the hand nobody at the table ever gets to see, and the
+              recap is the only place they can be shown. */}
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+            {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
+          </div>
+          <div style={{ fontSize: 15, color: felt.creamDim, marginBottom: 8 }}>
+            {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
+            {" · "}defenders {g.result.defPts}
+          </div>
+          {/* Rank-and-suit glyphs, not card faces — the same shorthand the grid
+              below uses, so the whole recap reads in one visual language and
+              the buried pair doesn't outweigh the 30 cards that were played. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
+            <span style={{ fontSize: 11, color: felt.creamDim, letterSpacing: ".04em", textTransform: "uppercase" }}>Buried</span>
+            {g.buried.map((c) => (
+              <span key={cid(c)} style={{ color: c.suit === "H" || c.suit === "D" ? felt.red : felt.cream, fontWeight: 700 }}>
+                {c.rank}{SUIT_SYM[c.suit]}
+              </span>
+            ))}
+          </div>
           <div style={{ overflowX: "auto", marginBottom: 14 }}>
             <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
               <thead>
                 <tr>
-                  <td style={{ padding: "0 6px 6px 0" }}></td>
+                  {/* "TRICK" labels the row once, in the otherwise-empty name
+                      column, so each heading is just its number. Repeating the
+                      word six times cost width in the one place the grid is
+                      tightest — at 375px every heading wrapped onto two lines. */}
+                  <td style={{ padding: "0 6px 6px 0", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" }}>
+                    Trick
+                  </td>
                   {[1, 2, 3, 4, 5, 6].map((t) => (
-                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".03em" }}>
-                      Trick {t}
+                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 12, fontWeight: 700 }}>
+                      {t}
                     </td>
                   ))}
                 </tr>

@@ -347,10 +347,25 @@ export function aiChooseCard(g, idx) {
     const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
     const trumpLooksSafe = isTrump(winningCard) && (trumpPower(winningCard) >= 7 || oppTrumpLeft <= remainingToAct);
 
-    // On the opening trick nobody has seen the called ace fall, so a defender's
-    // "teammate" is a guess — the seat winning may well be the picker's
-    // partner. Paying points to the wrong side is worse than holding on.
-    const teammateIsCertain = g.partnerRevealed || (idx === g.partner && winnerSoFar === g.picker);
+    // Until the called ace falls, a defender's "teammate" is a guess — the seat
+    // winning may well be the picker's partner, and paying points to the wrong
+    // side is worse than holding on. knowsTeammate() reports every unrevealed
+    // seat as a teammate, which is the right default for deciding who to fight,
+    // but far too loose a basis for handing over 11 points.
+    //
+    // Three ways the partnership is actually known:
+    //   - the called ace has been played, so everyone saw it;
+    //   - the picker went alone, so no partner exists at all (declared at pick
+    //     time and shown all hand, hence public — and note partnerRevealed
+    //     stays false for the whole hand here, so leaving this case out would
+    //     mute defender schmearing exactly when pooling points matters most);
+    //   - the viewer IS the partner and the picker is winning, which the
+    //     partner has known since the ace was called, with no reveal needed.
+    const teammateIsCertain =
+      g.partnerRevealed ||
+      g.partner === null ||
+      (idx === g.partner && winnerSoFar === g.picker);
+
     const speculativeOpening = g.tricksDone === 0 && !teammateIsCertain;
 
     if ((lastToPlay || trumpLooksSafe) && !speculativeOpening) {
@@ -487,12 +502,16 @@ export function scoreHand(g) {
   const pickerWins = teamPts >= 61;
   let mult = 1;
   let label = "";
+  // "No Schneider!" — the losing side failed to get out of schneider, i.e. it
+  // finished under 31 while the winners took 90 or more. Both branches are the
+  // same event seen from the two sides: defenders held to <= 30, or the picker
+  // team held to <= 30.
   if (pickerWins) {
     if (teamTricks === 6) { mult = 3; label = "No-tricker!"; }
-    else if (defPts <= 30) { mult = 2; label = "Schneider!"; }
+    else if (defPts <= 30) { mult = 2; label = "No Schneider!"; }
   } else {
     if (teamTricks === 0) { mult = 3; label = "No-tricker!"; }
-    else if (teamPts <= 30) { mult = 2; label = "Schneider!"; }
+    else if (teamPts <= 30) { mult = 2; label = "No Schneider!"; }
   }
   const scores = [...g.scores];
   const sign = pickerWins ? 1 : -1;
