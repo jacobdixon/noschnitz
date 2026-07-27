@@ -24,6 +24,12 @@ import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx"
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
 import { fanOverlap } from "./fan.js";
+import { Felt, HandFan } from "./felt.jsx";
+import { TableHeader } from "./header.jsx";
+// The fallback matters for tables created before rules were table state: they
+// are live in the store with no `rules` field, and a header with no rules line
+// is a visibly broken header rather than a missing feature.
+import { HOUSE_RULES } from "./rules.js";
 import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
 
@@ -92,7 +98,6 @@ function formatIdle(ms) {
 }
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
-const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
 
 // Horizontal padding on the hand row, subtracted from the viewport to get the
 // width the fan actually has to fit inside.
@@ -114,74 +119,26 @@ function useViewportWidth() {
   return w;
 }
 
-// Both tables below are lifted verbatim from the solo game, by screen position
-// rather than absolute seat. They are already tuned so avatars and played
-// cards don't collide at phone sizes — an earlier attempt here invented its
-// own percentages and put the trick pile straight on top of the side seats.
+// What the felt should draw right now, which is deliberately not what the
+// server most recently said.
 //
-// The important one is TRICK_POS: a played card lands pulled inward from its
-// own player's seat, so you can see at a glance who played what. Rendering the
-// trick as a neutral centred row loses that, and with it most of the
-// readability of the game.
-const SEAT_POS = {
-  1: { left: "2%", top: "46%" },
-  2: { left: "20%", top: "4%" },
-  3: { right: "20%", top: "4%" },
-  4: { right: "2%", top: "46%" },
-};
-const TRICK_POS = {
-  0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
-  1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
-  2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
-  3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
-  4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
-};
-
-function Avatar({ seat, table, isTurn, serverNow, onClick }) {
-  const s = table.seats[seat];
-  const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
-  const showIdle = idle > IDLE_HINT_MS && s.kind !== "ai";
-  const g = table.g;
-  const initial = (s.name || "?").trim()[0]?.toUpperCase() || "?";
-  const isPicker = g && g.picker === seat;
-  const isPartner = g && g.partner === seat;
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-        cursor: onClick ? "pointer" : "default",
-        WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
-      }}
-    >
-      <div style={{
-        width: 46, height: 46, borderRadius: "50%", background: felt.chip,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 800, color: felt.cream,
-        border: `2px solid ${isTurn ? felt.brass : "#ffffff22"}`,
-        boxShadow: isTurn ? `0 0 12px ${felt.brass}` : "none",
-      }}>{initial}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: felt.cream, whiteSpace: "nowrap" }}>
-        {s.name}
-      </div>
-      <div style={{ fontSize: 10, color: felt.creamDim, whiteSpace: "nowrap" }}>
-        {/* MP-2.2 which seats are people vs house AI, and COM-3.3 the third
-            case: a real player's seat the AI is covering while they're away.
-            Worth distinguishing — "Dave is being covered" and "Dave was never
-            here" are different social facts at a card table. */}
-        {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "•"}{" "}
-        {g ? `${g.handCounts?.[seat] ?? 0}🂠` : ""}
-      </div>
-      {showIdle && (
-        <div style={{ fontSize: 10, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim }}>
-          idle {formatIdle(idle)}
-        </div>
-      )}
-      {isPicker && <Badge gold compact>Picker</Badge>}
-      {isPartner && <Badge gold compact>Partner</Badge>}
-    </div>
-  );
+// Two differences, both about time. The trick shown is the paced frame rather
+// than g.trick — the server resolves every AI seat inside one request, so its
+// trick jumps by four cards at once and has usually been cleared again before
+// the client sees it. And the card you just played is on the table before the
+// server has confirmed it.
+//
+// Synthesising a state keeps Felt ignorant of both: it renders a game, and this
+// decides which game that is. Masking `turn` while the reveal catches up also
+// stops the active-seat glow racing ahead of the cards.
+function displayState(g, frame, optimistic, caughtUp) {
+  const trick = [
+    ...frame.cards,
+    ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
+      ? [optimistic]
+      : []),
+  ];
+  return { ...g, trick, turn: caughtUp ? g.turn : -1, pickTurn: caughtUp ? g.pickTurn : -1 };
 }
 
 /* ------------------------- Sharing the table link -------------------------- */
@@ -686,125 +643,91 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   };
 
   return (
+    // Solo's shell, not a plain fixed inset. The rails and the 480px cap are
+    // why solo's felt is 363px wide on a 375px phone where this screen's was
+    // the full 375 — and since every seat position is a percentage of the
+    // felt, that 12px was the entire difference between the two layouts
+    // (73/206/7/272 against 75/216/8/284). Same component, same percentages,
+    // different box. Sharing the felt was never going to line them up on its
+    // own; the box had to converge too.
     <div style={{
-      position: "fixed", inset: 0, background: felt.bg, color: felt.cream,
-      display: "flex", flexDirection: "column", overflow: "hidden",
+      height: "100dvh", overflow: "hidden",
+      background: `radial-gradient(ellipse at 50% 30%, ${felt.bg}, ${felt.bgDeep} 80%)`,
+      color: felt.cream, fontFamily: "'Avenir Next', 'Segoe UI', system-ui, sans-serif",
+      display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto",
+      borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
-      {/* Header (#34). Deliberately terse labels: the solo header already holds
-          429px of content in 363px at phone width, and this row carries three
-          buttons plus the table code. Measured after building, not assumed. */}
-      <div style={{
-        flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
-        padding: "8px 10px", borderBottom: `2px solid ${felt.rail}`,
-      }}>
-        <div style={{
-          display: "flex", alignItems: "baseline", gap: 5,
-          minWidth: 0, flex: 1, overflow: "hidden",
-        }}>
-          <span style={{
-            fontFamily: "Georgia, serif", fontWeight: 900, letterSpacing: ".06em",
-            fontSize: 14, color: felt.brass, whiteSpace: "nowrap",
-            overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
-          }}>{table.id}</span>
-          {/* Same treatment as the solo header: small and dim enough to ignore
-              while playing, legible enough to read off a screenshot when
-              someone reports a bug against a particular build. flexShrink 0 so
-              the table code truncates before the version does — the version is
-              the part that has to stay readable. */}
-          <span style={{
-            fontSize: 9, opacity: 0.4, letterSpacing: ".02em",
-            userSelect: "none", whiteSpace: "nowrap", flexShrink: 0,
-          }}>v{__APP_VERSION__}</span>
-        </div>
-        <button style={btnGhost} onClick={() => setModal("invite")}>Invite</button>
-        <button style={btnGhost} onClick={() => setModal("trump")}>Trump</button>
-        <button style={btnGhost} onClick={() => setModal("scores")}>Scores</button>
-      </div>
+      {/* The solo game's header, from header.jsx. The table code takes the
+          title slot because at a table the code IS the identity — it's what
+          you read out to someone whose link didn't paste — where solo has
+          nothing more specific to say than SHEEPSHEAD.
 
-      {/* Contract strip */}
-      <div style={{
-        flexShrink: 0, padding: "6px 12px", fontSize: 13, color: felt.creamDim,
-        borderBottom: `1px solid ${felt.rail}`, display: "flex", gap: 10, alignItems: "center",
-      }}>
-        <span style={{ fontWeight: 700 }}>Hand {g.handNum}</span>
-        {g.picker !== null && <span>{table.seats[g.picker].name} picked</span>}
-        {g.calledSuit && (
-          <span style={{ color: felt.brass, fontWeight: 700 }}>
-            {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
+          Invite / Trump / Scores were three buttons in a row here. They move
+          into the menu because that is where solo keeps Trump and Scores, and
+          keeping them out here is what forced this header to be a second
+          implementation: three buttons plus a table code do not fit beside a
+          title at phone width, so it dropped the rules line to make room.
+
+          The contract strip that used to sit under this row is gone entirely.
+          It showed who picked, the called suit and Alone — all three of which
+          the felt now draws as badges on the picker's own seat, which is
+          better placed anyway: it says who, not just what. Hand number was the
+          only thing left, and the Scores modal already opens on "After hand
+          N". */}
+      <TableHeader
+        title={table.id}
+        rules={table.rules || HOUSE_RULES}
+        doubler={g.doubler || 1}
+        status={
+          // Kept mounted and merely faded, so a dropped connection can never
+          // reflow the header — a header that changes height mid-hand shifts
+          // the felt, and the cards, under it.
+          <span style={{
+            flexShrink: 0, fontSize: 11, color: felt.creamDim, whiteSpace: "nowrap",
+            opacity: connected ? 0 : 1, transition: "opacity .3s",
+          }}>
+            reconnecting…
           </span>
-        )}
-        {g.alone && <Badge compact>Alone</Badge>}
-        <span style={{ marginLeft: "auto", opacity: connected ? 0 : 1, transition: "opacity .3s" }}>
-          reconnecting…
-        </span>
-      </div>
+        }
+        menuItems={[
+          { label: "Invite others", onSelect: () => setModal("invite") },
+          { label: "Trump order", onSelect: () => setModal("trump") },
+          { label: "Scores", onSelect: () => setModal("scores") },
+        ]}
+      />
 
-      {/* Felt — absolute positions matching the solo game, rotated so you are
-          always at the bottom. */}
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        {table.seats.map((_, seat) => {
-          const pos = SEAT_POS[rotate(seat, mySeat)];
-          if (!pos) return null; // position 0 is you — rendered as your hand
+      {/* The felt is the solo game's, rendered from src/felt.jsx. Everything
+          multiplayer needs on top of it hangs off two seams the component
+          already has: seatExtra for presence, and onSeatClick for the player
+          card. What the table gains by sharing it — running scores and trick
+          counts per seat, the dealer button, the trick-winner banner — it
+          previously just didn't have. */}
+      <Felt
+        g={displayState(g, frame, optimistic, caughtUp)}
+        names={table.seats.map((s) => s.name)}
+        mySeat={mySeat}
+        onSeatClick={(seat) => setSeatModal(seat)}
+        seatExtra={(seat) => {
+          const s = table.seats[seat];
+          const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
+          const showIdle = idle > IDLE_HINT_MS && s.kind !== "ai";
           return (
-            <div key={seat} style={{
-              position: "absolute", ...pos, width: 84,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-            }}>
-              <Avatar
-                seat={seat}
-                table={table}
-                isTurn={g.turn === seat && caughtUp}
-                serverNow={serverNow}
-                onClick={() => setSeatModal(seat)}
-              />
-            </div>
+            <>
+              <div style={{ fontSize: 10, color: felt.creamDim, whiteSpace: "nowrap" }}>
+                {/* MP-2.2 which seats are people vs house AI, and COM-3.3 the
+                    third case: a real player's seat the AI is covering while
+                    they're away. */}
+                {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "\u00b7"}
+              </div>
+              {showIdle && (
+                <div style={{ fontSize: 10, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim }}>
+                  idle {formatIdle(idle)}
+                </div>
+              )}
+            </>
           );
-        })}
-
-        {/* Each card sits by the player who played it, revealed one at a time.
-            The optimistic stand-in joins them until the real card is revealed
-            — suppressed once the trick has been swept, so a card you played
-            can't reappear on an empty felt. */}
-        {[
-          ...frame.cards,
-          ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
-            ? [optimistic]
-            : []),
-        ].map((p) => (
-          <div key={cid(p.card)} style={{
-            position: "absolute", ...TRICK_POS[rotate(p.player, mySeat)], zIndex: 2,
-          }}>
-            <Card card={p.card} small />
-          </div>
-        ))}
-
-        {frame.complete && (
-          <div style={{
-            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            background: "#000000aa", padding: "4px 12px", borderRadius: 6,
-            fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
-          }}>
-            {table.seats[frame.winner]?.name} +{frame.cards.reduce((s, p) => s + cardPts(p.card), 0)}
-          </div>
-        )}
-
-        {/* Blind marker while nobody has picked yet, as in the solo game. */}
-        {g.phase === "picking" && (
-          <div style={{
-            position: "absolute", left: "50%", top: "44%", transform: "translate(-50%,-50%)",
-            display: "flex", gap: 6,
-          }}>
-            <Card faceDown small /><Card faceDown small />
-          </div>
-        )}
-
-        <div style={{
-          position: "absolute", bottom: 6, left: 0, right: 0, textAlign: "center",
-          fontStyle: "italic", color: felt.creamDim, fontSize: 15,
-        }}>
-          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : " "}
-        </div>
-      </div>
+        }}
+      />
 
       {/* COM-3.2. Deliberately a banner rather than something tucked in a
           modal: a player who has just come back needs to find this without
@@ -836,7 +759,18 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           and disappear as a hand progresses, and without a floor the felt above
           resized every time — most visibly as the last card of a trick landed
           and the deal button arrived. */}
-      <div style={{ flexShrink: 0, minHeight: ACTION_MIN_HEIGHT }}>
+      {/* Solo's padding and alignment, to the pixel. Carrying the 7px inside
+          the status line instead left this block 89px tall against solo's 98,
+          and since the felt is flex:1 it absorbed the difference \u2014 516px
+          instead of 507. Seat tops are percentages of that height, so a 9px
+          discrepancy down here was moving every seat on the table. */}
+      <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: ACTION_MIN_HEIGHT }}>
+        {/* Where solo keeps it: above the actions, not floating inside the
+            felt. Held blank until the reveal catches up, so it can't announce
+            a turn before the cards that caused it have landed. */}
+        <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
+          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : "\u00a0"}
+        </div>
       {g.phase === "picking" && g.pickTurn === mySeat && (
         <Actions>
           <button style={btnGold} disabled={busy} onClick={() => act(() => api.pick(tableId, playerId, "pick"))}>
@@ -968,9 +902,14 @@ function statusLine(g, table, mySeat, isMyTurn) {
   return `${table.seats[g.turn]?.name || "Someone"}'s play…`;
 }
 
+// Solo's button row carries no padding of its own — the block around it
+// already supplies 7px/12px and reserves 84px. The 10px/12px this used to add
+// pushed the content past that floor, so the block grew to 103px and the felt,
+// being flex:1, shrank to 502 where solo's is 507. Padding here is padding the
+// reserved height was already paying for.
 function Actions({ children }) {
   return (
-    <div style={{ display: "flex", gap: 10, justifyContent: "center", padding: "10px 12px" }}>
+    <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
       {children}
     </div>
   );

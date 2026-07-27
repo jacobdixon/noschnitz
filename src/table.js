@@ -18,6 +18,7 @@
    module beyond dealing a fresh hand — play itself stays in engine.js.
    ========================================================================= */
 import { NAMES, freshHand } from "./engine.js";
+import { HOUSE_RULES } from "./rules.js";
 
 export const SEATS = 5;
 
@@ -99,6 +100,12 @@ export function createTable({ hostPlayerId, hostName, now, rand, id } = {}) {
       ...AI_NAMES.slice(0, SEATS - 1).map(aiSeat),
     ],
     pendingJoins: [],
+    // Copied onto the table rather than read from the constant when rendering,
+    // which is the whole point of them being state: a guest arriving from a
+    // link is told what this table agreed on rather than assuming. The copy is
+    // deliberate — sharing the array reference would let one table's future
+    // change leak into every other table in the same isolate.
+    rules: [...HOUSE_RULES],
     dealer: 0,
     scores: [0, 0, 0, 0, 0],
     handNum: 0,

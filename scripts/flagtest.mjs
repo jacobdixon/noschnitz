@@ -94,14 +94,21 @@ const codeOf = (res) => { try { return JSON.parse(res.body).error.code; } catch 
   // Matches the CALL, not the identifier. Checking for "requireMultiplayer"
   // anywhere also matches the import line, so deleting the guard while leaving
   // the import — the exact shape of an accidental removal — passed silently.
-  const missing = routes.filter((p) => !readFileSync(p, "utf8").includes("requireMultiplayer(res)"));
+  //
+  // Deliberately open on the arguments. Pinning it to "requireMultiplayer(res)"
+  // failed events.js, which is a factory and so has to pass its env explicitly
+  // rather than reading the ambient one. That route was correctly gated the
+  // whole time; the test was wrong, which costs more than no test — a suite
+  // that cries wolf gets read as broken rather than as a finding.
+  const CALL = /requireMultiplayer\(\s*res\b/;
+  const missing = routes.filter((p) => !CALL.test(readFileSync(p, "utf8")));
   check("every route is gated", missing.length === 0, missing.join(", "));
 
   // And gated BEFORE it does any work — a guard after the store call has
   // already paid the cost it exists to avoid.
   const late = routes.filter((p) => {
     const s = readFileSync(p, "utf8");
-    const guard = s.indexOf("requireMultiplayer(res)");
+    const guard = s.search(CALL);
     const store = s.indexOf("getStore(");
     return guard >= 0 && store >= 0 && guard > store;
   });

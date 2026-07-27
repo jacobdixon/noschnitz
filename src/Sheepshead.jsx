@@ -8,11 +8,11 @@ import {
 import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { Felt, HandFan, RoleBadges, DealerButton, SEAT_POS } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
+import { HOUSE_RULES } from "./rules.js";
 
-// The house rules this table plays by, shown under the title for the whole
-// game. A list rather than a sentence: the planned version of that line lets
-// you change them, and each rule has to be addressable for that to work.
-const HOUSE_RULES = ["Called Ace", "No Leasters", "Double on the Bump"];
+// The house rules moved to rules.js so a table can copy the same list onto the
+// table object, where they have to be state rather than a constant. Solo reads
+// the constant directly: one player, so agreement is free.
 
 // `onPlayWithFriends` is optional: when supplied, a header button offers the
 // multiplayer table. Passed in as a prop rather than imported so this file

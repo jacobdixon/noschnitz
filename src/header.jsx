@@ -27,20 +27,42 @@ import { felt, btnGhost } from "./ui.jsx";
  * @param {number}   doubler    current stake multiplier; 1 hides the badge
  * @param {Array}    menuItems  [{ label, onSelect }] — order is as given
  * @param {node}     extra      optional chip in the rules row (a table code, say)
+ * @param {node}     status     optional indicator in the title row (connection state)
  * @param {string}   title
  */
-export function TableHeader({ rules = [], doubler = 1, menuItems = [], extra, title = "SHEEPSHEAD" }) {
+export function TableHeader({ rules = [], doubler = 1, menuItems = [], extra, status, title = "Sheepshead — No Schnitz!" }) {
   const [open, setOpen] = useState(false);
 
   return (
     <div style={{ flexShrink: 0, position: "relative", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
+        {/* The name is 24 characters where "SHEEPSHEAD" was 10, so the tracking
+            that suited a single word no longer fits beside the version and the
+            menu button — about 270px of the 339px a 375px phone gives. Tighter
+            tracking buys it back. The truncation rules are a floor rather than
+            a plan: a table passes its code here, and a header that pushes the
+            menu button off-screen is worse than one that ellipsises. */}
+        <div style={{
+          fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900,
+          letterSpacing: ".02em", fontSize: 18, color: felt.brass,
+          minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
           {title}
         </div>
         <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
           v{__APP_VERSION__}
         </div>
+
+        {/* Its own slot in the title row rather than sharing the rules row,
+            which has no give at all. The rules run to 255px of the 339px a
+            375px phone allows, and the doubler badge claims most of what's
+            left — a 77px "reconnecting…" overflowed it by one pixel and wrapped
+            the header 19px taller than solo's. Up here there is ~190px spare,
+            so an indicator that is mounted permanently (and merely faded out
+            when all is well, so its arrival can never reflow the header) costs
+            nothing. Solo passes nothing and renders identically. */}
+        {status}
+
         <button
           onClick={() => setOpen((v) => !v)}
           aria-label="Menu"
