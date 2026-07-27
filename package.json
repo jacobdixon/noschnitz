@@ -19,7 +19,8 @@
     "fantest": "node scripts/fantest.mjs",
     "scoringtest": "node scripts/scoringtest.mjs",
     "flagtest": "node scripts/flagtest.mjs",
-    "test": "npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest"
+    "test": "npm run lint && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest",
+    "lint": "eslint src api scripts"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
@@ -29,6 +30,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
     "vite": "^5.4.11"
   }
 }

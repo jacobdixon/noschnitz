@@ -15,9 +15,24 @@
    and how much room exists.
    ========================================================================= */
 
-// Measured in the browser, not derived from the style: 56 declared + ~8
-// horizontal padding + 3 border.
-export const CARD_W = 67;
+// Card's box, kept here rather than in ui.jsx so this file stays plain JS and
+// node-testable. ui.jsx imports these to build the card, so there is exactly
+// one source of truth and the fan arithmetic cannot disagree with what renders.
+//
+// It did disagree, for as long as this constant has existed. CARD_W was 67 on
+// the belief that a card carried "~8 horizontal padding"; it carries 12. Four
+// pixels per card is 24 across a six-card fan, which is why both screens
+// overhung their row — solo by 7px a side, and the table by the same, since it
+// has been using this same function all along.
+//
+// fantest could never have caught it: it computes a width with CARD_W and then
+// asserts that width fits, so it is consistent with itself whatever the value
+// is. Only measuring a rendered card finds this, which is what happened.
+export const CARD_FACE_W = 56;   // Card's declared width at scale 1
+export const CARD_PAD_X = 6;     // horizontal padding, each side
+export const CARD_BORDER = 1.5;  // border, each side
+
+export const CARD_W = CARD_FACE_W + 2 * CARD_PAD_X + 2 * CARD_BORDER; // 71
 
 // Below this the fan stops looking like a fan and starts looking like a stack.
 export const MIN_OVERLAP = 14;

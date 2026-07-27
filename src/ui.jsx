@@ -11,6 +11,12 @@
    pip on a card face.
    ========================================================================= */
 import { SUIT_SYM, isTrump } from "./engine.js";
+// A card's occupied width is the fan's problem, so the numbers that make it
+// up live in fan.js (plain JS, node-testable) and are imported here. Keeping
+// them in one place is what stops the fan arithmetic disagreeing with what
+// actually renders — which it did, by 4px per card, for as long as both
+// existed.
+import { CARD_FACE_W, CARD_PAD_X, CARD_BORDER } from "./fan.js";
 
 export const felt = {
   bg: "#123B2D",
@@ -38,7 +44,7 @@ export function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 
   // Card box dimensions stay put (so the table/hand layout doesn't get
   // cramped); only the rank/suit glyphs inside get ~20% bigger for
   // legibility — clubs vs. spades were hard to tell apart at the old sizes.
-  const w = Math.round((small ? 42 : 56) * scale);
+  const w = Math.round((small ? 42 : CARD_FACE_W) * scale);
   const h = Math.round((small ? 60 : 80) * scale);
   if (faceDown) {
     return (
@@ -55,14 +61,14 @@ export function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 
     <div onClick={onClick} style={{
       width: w, height: h, borderRadius: 7, flexShrink: 0, position: "relative",
       background: dim ? "#CFC7B2" : felt.cream,
-      border: selected ? `2.5px solid ${felt.brass}` : "1.5px solid #B8AD92",
+      border: selected ? `2.5px solid ${felt.brass}` : `${CARD_BORDER}px solid #B8AD92`,
       boxShadow: selected ? `0 0 0 2px ${felt.brass}55, 0 -6px 10px rgba(0,0,0,.35)` : "0 2px 4px rgba(0,0,0,.35)",
       transform: selected ? "translateY(-10px)" : "none",
       transition: "transform .15s, box-shadow .15s",
       cursor: onClick ? "pointer" : "default",
       opacity: dim ? 0.55 : 1,
       display: "flex", flexDirection: "column", justifyContent: "space-between",
-      padding: `${Math.round((small ? 3 : 4) * scale)}px ${Math.round((small ? 4 : 6) * scale)}px`,
+      padding: `${Math.round((small ? 3 : 4) * scale)}px ${Math.round((small ? 4 : CARD_PAD_X) * scale)}px`,
       userSelect: "none", WebkitTapHighlightColor: "transparent",
       // Mobile Safari and Chrome pop a text-selection / "save image" callout on
       // a long press, which fires constantly when someone rests a thumb on a

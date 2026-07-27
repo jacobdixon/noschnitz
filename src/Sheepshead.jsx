@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, cardPts, sortHand, trickWinner, handStrength,
+  SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, sortHand, trickWinner, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay,
   resolveTrick, gradeHandPlays,
 } from "./engine.js";
 
-import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
-import { Felt, HandFan, RoleBadges, DealerButton, SEAT_POS } from "./felt.jsx";
+import { felt, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { Felt, HandFan, RoleBadges, DealerButton } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
+import { HandEndModal, RecapModal, ScoresModal, LastTrickModal, TrumpModal } from "./modals.jsx";
 import { HOUSE_RULES } from "./rules.js";
+import { shareRecap } from "./shareRecap.js";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -130,54 +132,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
     setG((s) => freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1));
   };
 
-  // Lazily load html2canvas from a CDN only when someone actually taps Share,
-  // rather than bundling it for every visitor.
-  function loadHtml2Canvas() {
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-      script.onload = () => resolve(window.html2canvas);
-      script.onerror = () => reject(new Error("Couldn't load screenshot library"));
-      document.head.appendChild(script);
-    });
-  }
-
-  // Screenshots the recap grid and hands it to the OS share sheet (Messages,
-  // Mail, etc.) so testers can send back hands they think the AI misplayed.
-  // Falls back gracefully if file-sharing or navigator.share isn't available.
-  async function handleShareRecap() {
-    if (!recapCaptureRef.current) return;
-    try {
-      const html2canvas = await loadHtml2Canvas();
-      const canvas = await html2canvas(recapCaptureRef.current, { backgroundColor: felt.bgDeep, scale: 2 });
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const fileName = `sheepshead-hand-${g.handNum}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
-        const shareText = `Sheepshead hand ${g.handNum} — take a look at this play.`;
-        try {
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: `Sheepshead — Hand ${g.handNum}`, text: shareText });
-          } else if (navigator.share) {
-            await navigator.share({ title: `Sheepshead — Hand ${g.handNum}`, text: shareText });
-          } else {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fileName;
-            a.click();
-            URL.revokeObjectURL(url);
-          }
-        } catch (shareErr) {
-          // AbortError etc. when the user cancels the share sheet — not an error.
-        }
-      }, "image/png");
-    } catch (err) {
-      console.error("Recap share failed:", err);
-    }
-  }
-
   /* ---------- derived ---------- */
   const legalNow = useMemo(() => (g.phase === "playing" && g.turn === 0 ? legalPlays(g, 0).map(cid) : []), [g]);
   // Best/worst play grading is only meaningful once a hand is fully resolved;
@@ -192,11 +146,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
   // A lone picker is one person, so "Pickers win" is wrong on exactly the hands
   // where the win is most impressive.
-  const outcomeHeadline = () => {
-    if (!g.result.pickerWins) return "Defenders win";
-    return g.alone || g.partner === null ? "Picker wins" : "Pickers win";
-  };
-
 
 
   // Poker-style dealer button. Seats 1-4 wear it beside their avatar; seat 0
@@ -319,268 +268,46 @@ export default function Sheepshead({ onPlayWithFriends }) {
         />
       </div>
 
-      {/* Hand end modal */}
       {g.phase === "handEnd" && g.result && !showRecap && (
-        <Modal>
-          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-            {outcomeHeadline()} {g.result.label && `— ${g.result.label}`}
-          </div>
-          <div style={{ fontSize: 16, marginBottom: 10, color: felt.creamDim }}>
-            {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
-            {g.result.buriedPts > 0 && ` (${g.result.buriedPts} buried)`} · defenders {g.result.defPts}
-          </div>
-          <table style={{ width: "100%", fontSize: 16, borderCollapse: "collapse", marginBottom: 14 }}>
-            <thead>
-              <tr style={{ fontSize: 11, color: felt.creamDim, textTransform: "uppercase", letterSpacing: ".04em" }}>
-                <td style={{ padding: "0 0 4px" }}></td>
-                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Pts</td>
-                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Hand</td>
-                <td style={{ textAlign: "right", padding: "0 0 4px" }}>Total</td>
-              </tr>
-            </thead>
-            <tbody>
-              {NAMES.map((n, i) => (
-                <tr key={n} style={{ borderBottom: "1px solid #ffffff18" }}>
-                  <td style={{ padding: "5px 0", fontWeight: i === 0 ? 800 : 500 }}>
-                    {n}{" "}
-                    {i === g.picker && <Badge gold>Picker</Badge>}{" "}
-                    {i === g.partner && <Badge gold>Partner</Badge>}
-                  </td>
-                  <td style={{ textAlign: "right" }}>{g.ptsTaken[i]} pts</td>
-                  <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700, width: 50 }}>
-                    {g.result.handDelta[i] >= 0 ? "+" : ""}{g.result.handDelta[i]}
-                  </td>
-                  <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700, width: 60 }}>
-                    {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={btnGold} onClick={nextHand}>Deal next hand</button>
-            <button style={btnPlain} onClick={() => setShowRecap(true)}>Recap</button>
-          </div>
-        </Modal>
+        <HandEndModal
+          g={g}
+          names={NAMES}
+          onNext={nextHand}
+          onRecap={() => setShowRecap(true)}
+        />
       )}
 
-      {/* Hand recap modal */}
       {g.phase === "handEnd" && showRecap && (
-        <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
-          {/* Only the Share button lives outside the capture now. Hand number
-              and build moved inside it, because this screenshot is the format
-              hands actually get reported in — and a reported hand is evidence
-              about a specific AI build. Without the version stamped into the
-              image, "the AI misplayed this" can't be matched to what the AI was
-              at the time. */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
-            <button
-              onClick={handleShareRecap}
-              aria-label="Share this recap"
-              title="Share this recap"
-              style={{ ...btnGhost, display: "flex", alignItems: "center", gap: 5, padding: "6px 10px" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 15V3M12 3l-4 4M12 3l4 4" />
-                <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-              </svg>
-              Share
-            </button>
-          </div>
-          <div ref={recapCaptureRef} style={{ background: felt.bgDeep }}>
-          <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>
-            Hand {g.handNum}
-            <span style={{ opacity: 0.55 }}> · v{__APP_VERSION__}</span>
-          </div>
-          {/* The hand-end summary is repeated here, and sits inside the capture
-              region on purpose: a recap gets shared to argue about a hand, and
-              the trick grid alone doesn't say who won or by how much. The
-              buried cards replace the old "(N buried)" count — they're the one
-              part of the hand nobody at the table ever gets to see, and the
-              recap is the only place they can be shown. */}
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-            {outcomeHeadline()} {g.result.label && `— ${g.result.label}`}
-          </div>
-          <div style={{ fontSize: 15, color: felt.creamDim, marginBottom: 8 }}>
-            {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
-            {" · "}defenders {g.result.defPts}
-          </div>
-          {/* Rank-and-suit glyphs, not card faces — the same shorthand the grid
-              below uses, so the whole recap reads in one visual language and
-              the buried pair doesn't outweigh the 30 cards that were played. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
-            <span style={{ fontSize: 11, color: felt.creamDim, letterSpacing: ".04em", textTransform: "uppercase" }}>Buried</span>
-            {g.buried.map((c) => (
-              <span key={cid(c)} style={{ color: c.suit === "H" || c.suit === "D" ? felt.red : felt.cream, fontWeight: 700 }}>
-                {c.rank}{SUIT_SYM[c.suit]}
-              </span>
-            ))}
-          </div>
-          <div style={{ overflowX: "auto", marginBottom: 14 }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
-              <thead>
-                <tr>
-                  {/* "TRICK" labels the row once, in the otherwise-empty name
-                      column, so each heading is just its number. Repeating the
-                      word six times cost width in the one place the grid is
-                      tightest — at 375px every heading wrapped onto two lines. */}
-                  <td style={{ padding: "0 6px 6px 0", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" }}>
-                    Trick
-                  </td>
-                  {[1, 2, 3, 4, 5, 6].map((t) => (
-                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 12, fontWeight: 700 }}>
-                      {t}
-                    </td>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {NAMES.map((n, p) => (
-                  <tr key={n} style={{ borderTop: "1px solid #ffffff18" }}>
-                    {/* Badges stack under the name rather than sitting beside
-                        it: the grid already scrolls sideways on a phone, and a
-                        wider name column eats the tricks you're trying to read. */}
-                    <td style={{ padding: "6px 6px 6px 0", fontWeight: p === 0 ? 800 : 500, whiteSpace: "nowrap" }}>
-                      <div>{n}</div>
-                      {p === g.picker && (
-                        <div style={{ marginTop: 3 }}><Badge gold compact>Picker</Badge></div>
-                      )}
-                      {p === g.picker && g.alone && (
-                        <div style={{ marginTop: 3 }}><Badge compact>Alone</Badge></div>
-                      )}
-                      {p === g.partner && (
-                        <div style={{ marginTop: 3 }}><Badge gold compact>Partner</Badge></div>
-                      )}
-                    </td>
-                    {g.trickHistory.map((th, t) => {
-                      const played = th.trick.find((x) => x.player === p);
-                      if (!played) return <td key={t} />;
-                      const { card } = played;
-                      const isLeader = th.trick[0].player === p;
-                      const isWinner = th.winner === p;
-                      const red = card.suit === "H" || card.suit === "D";
-                      const isBestPlay = playGrades.best && playGrades.best.trick === t && playGrades.best.player === p;
-                      const isWorstPlay = playGrades.worst && playGrades.worst.trick === t && playGrades.worst.player === p;
-                      return (
-                        <td key={t} style={{ textAlign: "center", padding: "6px 4px" }}>
-                          <span style={{
-                            display: "inline-block",
-                            color: red ? felt.red : felt.cream,
-                            fontWeight: isWinner ? 800 : 500,
-                            background: isWinner ? "#00000040" : "transparent",
-                            borderRadius: 4,
-                            padding: "2px 4px",
-                            borderBottom: isLeader ? `2px solid ${felt.brass}` : "2px solid transparent",
-                          }}>
-                            {card.rank}{SUIT_SYM[card.suit]}
-                            {isBestPlay && <span style={{ color: "#4FAE64", fontWeight: 900, marginLeft: 2 }}>!</span>}
-                            {isWorstPlay && <span style={{ color: felt.red, fontWeight: 900, marginLeft: 2 }}>?</span>}
-                          </span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
-            <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
-            <br />
-            <span style={{ color: "#4FAE64", fontWeight: 900 }}>!</span> best play · <span style={{ color: felt.red, fontWeight: 900 }}>?</span> worst play
-          </div>
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={btnGold} onClick={nextHand}>Deal next hand</button>
-            <button style={btnPlain} onClick={() => setShowRecap(false)}>Back</button>
-          </div>
-        </Modal>
+        <RecapModal
+          g={g}
+          names={NAMES}
+          grades={playGrades}
+          captureRef={recapCaptureRef}
+          onShare={() => shareRecap(recapCaptureRef.current, g.handNum)}
+          onBack={() => setShowRecap(false)}
+          onNext={nextHand}
+        />
       )}
 
-      {/* Scores modal */}
       {showScores && (
-        <Modal onClose={() => setShowScores(false)}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-            <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass }}>Score</div>
-            <div style={{ fontSize: 13, color: felt.creamDim }}>Hand {g.handNum}</div>
-          </div>
-          {NAMES.map((n, i) => (
-            <div key={n} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #ffffff18", fontSize: 17 }}>
-              <span style={{ fontWeight: i === 0 ? 800 : 500 }}>{n}</span>
-              <span style={{ color: felt.brass, fontWeight: 700 }}>{g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 12 }}>
-            <button style={btnPlain} onClick={() => setShowScores(false)}>Close</button>
-          </div>
-        </Modal>
+        <ScoresModal
+          names={NAMES}
+          scores={g.scores}
+          handNum={g.handNum}
+          mySeat={0}
+          onClose={() => setShowScores(false)}
+        />
       )}
 
-      {/* Last trick modal */}
       {showLastTrick && (
-        <Modal maxWidth={420} onClose={() => setShowLastTrick(false)}>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Last Trick</div>
-          {g.lastTrick ? (
-            <>
-              <div style={{ position: "relative", height: 250, margin: "4px 0 10px" }}>
-                {[0, 1, 2, 3, 4].map((i) => {
-                  const t = g.lastTrick.trick.find((x) => x.player === i);
-                  const isLeader = g.lastTrick.trick[0].player === i;
-                  const isWinner = i === g.lastTrick.winner;
-                  const pos = i === 0
-                    ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
-                    : SEAT_POS[i];
-                  return (
-                    <div key={i} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: 74 }}>
-                      <div style={{
-                        width: 38, height: 38, borderRadius: "50%", background: felt.chip,
-                        border: `2px solid ${isLeader ? felt.brass : "#ffffff2e"}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 16,
-                        boxShadow: isWinner ? `0 0 10px ${felt.brass}aa` : "none",
-                      }}>
-                        {NAMES[i][0]}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: isWinner ? 800 : 600, color: isWinner ? felt.brass : felt.cream, textAlign: "center" }}>
-                        {NAMES[i]}
-                      </div>
-                      <div style={{ minHeight: 46 }}>{t && <Card card={t.card} small />}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ fontSize: 11, color: felt.creamDim, textAlign: "center" }}>
-                <span style={{ color: felt.brass, fontWeight: 700 }}>Gold ring</span> = led this trick · <span style={{ color: felt.brass, fontWeight: 700 }}>glow</span> = won it
-              </div>
-              <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 6, textAlign: "center" }}>
-                {NAMES[g.lastTrick.winner]} took {g.lastTrick.trick.reduce((s, t) => s + cardPts(t.card), 0)} pts
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: 16, color: felt.creamDim }}>No trick played yet this hand.</div>
-          )}
-          <div style={{ marginTop: 12 }}>
-            <button style={btnPlain} onClick={() => setShowLastTrick(false)}>Close</button>
-          </div>
-        </Modal>
+        <LastTrickModal
+          lastTrick={g.lastTrick}
+          names={NAMES}
+          onClose={() => setShowLastTrick(false)}
+        />
       )}
 
-      {/* Trump help modal */}
-      {showHelp && (
-        <Modal onClose={() => setShowHelp(false)}>
-          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>Trump order</div>
-          <div style={{ fontSize: 16, lineHeight: 1.7, color: felt.creamDim }}>
-            <div style={{ color: felt.cream, fontWeight: 700 }}>Q♣ Q♠ Q♥ Q♦ · J♣ J♠ J♥ J♦ · A♦ 10♦ K♦ 9♦ 8♦ 7♦</div>
-            <div style={{ marginTop: 8 }}>All queens, jacks, and diamonds are trump (marked with a gold dot). Fail suits rank A, 10, K, 9, 8, 7.</div>
-            <div style={{ marginTop: 8 }}>Points: A=11, 10=10, K=4, Q=3, J=2. Picker's team needs 61 of 120.</div>
-            <div style={{ marginTop: 8 }}>The player holding the called ace is the picker's secret partner and must play it when the suit is led.</div>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <button style={btnPlain} onClick={() => setShowHelp(false)}>Close</button>
-          </div>
-        </Modal>
-      )}
+      {showHelp && <TrumpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
