@@ -26,9 +26,10 @@
    from what's been played, not from what people hold — and it should stay that
    way.
    ========================================================================= */
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { SUIT_SYM, SUIT_NAME, cid, cardPts, trickWinner } from "./engine.js";
 import { felt, scoreColor, Card, CARD_ROW_H, Badge } from "./ui.jsx";
+import { fanOverlap, MAX_OVERLAP } from "./fan.js";
 
 export const SEATS = 5;
 
@@ -228,24 +229,54 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick }) {
  * @param {Function} isDim       (card) => boolean
  * @param {Function} onCardClick (card) => void | undefined to make it inert
  */
+// Measures the row the fan is actually in, rather than the viewport minus a
+// guess at the padding. The guess was wrong for both screens and differently
+// wrong for each: solo wraps the fan in 10px of padding inside 6px rails, the
+// table in 6px and no rails, so a single constant could not describe both. On
+// a 375px phone the real width is 343, not the 363 the viewport implied, and
+// the fan overhung its row by 7px on each side.
+function useRowWidth(ref) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setW(el.clientWidth);
+    measure();
+    // Covers rotation and resize, but also the case a viewport listener can't:
+    // the row changing width because something else on the page did.
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
 export function HandFan({ cards, isSelected, isDim, onCardClick }) {
-  // More than 6 cards only happens transiently while burying (holding the blind
-  // before discarding 2) — shrink the fan so the leftmost card's rank doesn't
-  // get crowded off narrow phone widths.
-  const fanScale = cards.length > 6 ? 0.9 : 1;
-  const overlap = Math.round(14 * fanScale);
+  const rowRef = useRef(null);
+  const rowWidth = useRowWidth(rowRef);
+
+  // Derived, not guessed. This used to be a flat 14px with a 0.9 scale above
+  // six cards, which is what made solo's fan overflow — 7px at six cards and
+  // 35px at eight. fan.js solves for the tightest overlap that actually fits
+  // the width available; fantest covers every hand size at every width.
+  //
+  // Before the row has been measured there is nothing sensible to compute
+  // against, so fall back to the tightest fan rather than the loosest: too
+  // tight for one frame is invisible, too loose clips cards off the screen.
+  const overlap = rowWidth > 0 ? fanOverlap(cards.length, rowWidth) : MAX_OVERLAP;
 
   return (
     // The fan holds its height even when empty. The table above is
     // `flex: 1 1 auto`, so when the last card of the hand is played this row
     // would otherwise collapse and hand the table 91px — every seat and every
     // card of the final trick jumping, right at the moment you're watching it
-    // resolve. Reserving the row keeps the layout exactly as it was with cards
-    // in front of you, and settles the smaller shift between the burying fan
-    // and normal play.
-    <div style={{
+    // resolve.
+    <div ref={rowRef} style={{
       display: "flex", justifyContent: "center", alignItems: "flex-start",
       paddingTop: 10, minHeight: CARD_ROW_H,
+      // A safety net, not the mechanism: the fan is sized to fit, and a
+      // scrollbar here means the geometry is wrong.
+      flexWrap: "nowrap", overflowX: "auto",
     }}>
       {cards.map((c, i) => {
         const onClick = onCardClick?.(c);
@@ -253,7 +284,6 @@ export function HandFan({ cards, isSelected, isDim, onCardClick }) {
           <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: i }}>
             <Card
               card={c}
-              scale={fanScale}
               selected={isSelected?.(c)}
               dim={isDim?.(c)}
               onClick={onClick}

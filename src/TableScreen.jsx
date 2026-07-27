@@ -18,26 +18,21 @@
    created the table). Players expect to sit at the bottom of their own screen,
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { SUIT_SYM, SUIT_NAME, cid, cardPts, legalPlays, makeDeck, isTrump, trumpPower, trickWinner } from "./engine.js";
-import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { SUIT_SYM, SUIT_NAME, cid, legalPlays, gradeHandPlays } from "./engine.js";
+import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
-import { fanOverlap } from "./fan.js";
 import { Felt, HandFan } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
+import { TrumpModal, ScoresModal, LastTrickModal, HandEndModal, RecapModal } from "./modals.jsx";
+import { shareRecap } from "./shareRecap.js";
 // The fallback matters for tables created before rules were table state: they
 // are live in the store with no `rules` field, and a header with no rules line
 // is a visibly broken header rather than a missing feature.
 import { HOUSE_RULES } from "./rules.js";
 import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
-
-const SEATS = 5;
-
-// Derived, never hand-written: a hardcoded list is a second source of truth for
-// the rules and would quietly go stale if trump ever changed.
-const TRUMP_ORDER = makeDeck().filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
 
 // Reserved height for the status + action block. Without it the felt reflows
 // every time a button appears or disappears, and the whole play area jumps as
@@ -98,26 +93,6 @@ function formatIdle(ms) {
 }
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
-
-// Horizontal padding on the hand row, subtracted from the viewport to get the
-// width the fan actually has to fit inside.
-const HAND_PADDING = 12;
-
-// Tracks viewport width so the fan re-tightens on rotation and resize. The
-// table is position:fixed inset:0, so the viewport IS the container.
-function useViewportWidth() {
-  const [w, setW] = useState(() => (typeof window === "undefined" ? 375 : window.innerWidth));
-  useEffect(() => {
-    const onResize = () => setW(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
-  }, []);
-  return w;
-}
 
 // What the felt should draw right now, which is deliberately not what the
 // server most recently said.
@@ -238,67 +213,26 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
 
 // #34 — the table had no way to check what beats what. Derived from the engine,
 // so it can't drift from the rules it documents.
-function TrumpModal({ onClose }) {
-  return (
-    <Modal maxWidth={420} onClose={onClose}>
-      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
-        Trump, high to low
-      </div>
-      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 12 }}>
-        Every Queen, then every Jack, then the diamonds. Everything else is a
-        fail suit.
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
-        {TRUMP_ORDER.map((c) => (
-          <span key={cid(c)} style={{
-            fontSize: 14, fontWeight: 700, padding: "3px 6px", borderRadius: 4,
-            background: "#00000035",
-            color: c.suit === "H" || c.suit === "D" ? felt.red : felt.cream,
-          }}>{c.rank}{SUIT_SYM[c.suit]}</span>
-        ))}
-      </div>
-      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 14 }}>
-        Card points: A 11 · 10 10 · K 4 · Q 3 · J 2 · 9/8/7 nothing. 120 in the
-        deck; the picker's team needs 61.
-      </div>
-      <button style={btnPlain} onClick={onClose}>Close</button>
-    </Modal>
-  );
-}
-
-// #34 — running scores, which previously existed nowhere on the table screen.
-function ScoresModal({ table, onClose, onRename, busy }) {
-  const mySeat = table.you;
+// The half of the old scores modal that is genuinely a table's — renaming
+// yourself and stepping away. It lived inline in that modal and read `isMe`,
+// `s`, `onAway` and `onBack` straight out of thin air: they were written for
+// PlayerModal's scope and pasted into ScoresModal's (7791bc5, COM-3.2).
+// Opening Scores at a table threw `ReferenceError: isMe is not defined` and
+// blanked the whole app. Taking real parameters is what makes that class of
+// mistake impossible rather than merely unlikely.
+function SeatControls({ table, mySeat, busy, onRename, onAway, onBack }) {
+  const seat = mySeat >= 0 ? table.seats[mySeat] : null;
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(mySeat >= 0 ? table.seats[mySeat]?.name || "" : "");
+  const [draft, setDraft] = useState(seat?.name || "");
+  if (!seat) return null; // spectators have nothing to rename or step away from
 
   return (
-    <Modal onClose={onClose}>
-      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>
-        {table.handNum > 0 ? `After hand ${table.handNum}` : "Not started"}
-      </div>
-      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>
-        Scores
-      </div>
-      <table style={{ width: "100%", fontSize: 16, borderCollapse: "collapse", marginBottom: 14 }}>
-        <tbody>
-          {table.seats.map((s, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #ffffff18" }}>
-              <td style={{ padding: "6px 0", fontWeight: s.isYou ? 800 : 500 }}>
-                {s.name} {s.isYou && <Badge compact>You</Badge>}
-              </td>
-              <td style={{ textAlign: "right", color: felt.brass, fontWeight: 700 }}>
-                {table.scores[i] >= 0 ? "+" : ""}{table.scores[i]}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
       {/* Changing your name lives here because this is the one screen that
           already lists everybody by name — it's where you notice yours is
           wrong. Server-side it goes through the same collision rule as
           joining. */}
-      {mySeat >= 0 && (editing ? (
+      {editing ? (
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <input
             value={draft}
@@ -319,13 +253,13 @@ function ScoresModal({ table, onClose, onRename, busy }) {
         <button style={{ ...btnGhost, marginBottom: 14 }} onClick={() => setEditing(true)}>
           Change my name
         </button>
-      ))}
+      )}
 
-      {/* Your own seat. Stepping away has existed as a route since COM-3 but
-          had no control anywhere in the UI — so the only way a seat became
-          AI-covered was by going quiet, which is the accidental path rather
-          than the deliberate one. */}
-      {isMe && (s.kind === "away" ? (
+      {/* Stepping away has existed as a route since COM-3 but had no control
+          anywhere in the UI — so the only way a seat became AI-covered was by
+          going quiet, which is the accidental path rather than the deliberate
+          one. */}
+      {seat.kind === "away" ? (
         <>
           <button style={{ ...btnGold, marginBottom: 8 }} disabled={busy} onClick={onBack}>
             Take my seat back
@@ -345,51 +279,8 @@ function ScoresModal({ table, onClose, onRename, busy }) {
             nobody else can take it.
           </div>
         </>
-      ))}
-
-      <button style={btnPlain} onClick={onClose}>Close</button>
-    </Modal>
-  );
-}
-
-// #30 — with tricks now sweeping off the felt correctly, the last trick is gone
-// the moment it ends. Solo has always let you look back at it; this restores
-// that for the table, laid out by seat position the way the felt is.
-function LastTrickModal({ table, mySeat, onClose }) {
-  const lt = table.g?.lastTrick;
-  if (!lt) return null;
-  const winner = lt.winner;
-  const leader = lt.trick[0]?.player;
-  const pts = lt.trick.reduce((n, t) => n + cardPts(t.card), 0);
-
-  return (
-    <Modal maxWidth={420} onClose={onClose}>
-      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>
-        Last trick
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 12 }}>
-        {lt.trick.map((t) => (
-          <div key={cid(t.card)} style={{ textAlign: "center", minWidth: 60 }}>
-            <Card card={t.card} small />
-            <div style={{
-              fontSize: 12, marginTop: 4, whiteSpace: "nowrap",
-              fontWeight: t.player === winner ? 800 : 500,
-              color: t.player === winner ? felt.brass : felt.creamDim,
-              borderBottom: t.player === leader ? `2px solid ${felt.brass}` : "2px solid transparent",
-            }}>
-              {t.player === mySeat ? "You" : table.seats[t.player]?.name}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 14 }}>
-        <span style={{ color: felt.brass, fontWeight: 700 }}>
-          {winner === mySeat ? "You" : table.seats[winner]?.name}
-        </span>{" "}
-        took it for {pts} {pts === 1 ? "point" : "points"} · underline = led
-      </div>
-      <button style={btnPlain} onClick={onClose}>Close</button>
-    </Modal>
+      )}
+    </>
   );
 }
 
@@ -495,10 +386,22 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // this is only a stand-in until the real card comes back down the stream,
   // and an illegal play is rejected and the stand-in withdrawn.
   const [optimistic, setOptimistic] = useState(null);
-  const viewportWidth = useViewportWidth();
   const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite"
   const [seatModal, setSeatModal] = useState(null);
+  const [showRecap, setShowRecap] = useState(false);
+  const recapCaptureRef = useRef(null);
+
+  // Reset between hands. Without this, closing the recap is the only thing
+  // that clears it, so a player who left it open would land straight in the
+  // recap at the END of the next hand instead of on the summary.
+  useEffect(() => { setShowRecap(false); }, [table?.g?.handNum]);
   const serverNow = useServerNow(table);
+  // Only meaningful once every card is down, and it walks the whole hand,
+  // so it is not worth computing on each of the ~30 renders before that.
+  const playGrades = useMemo(
+    () => (table?.g?.phase === "handEnd" ? gradeHandPlays(table.g) : { best: null, worst: null }),
+    [table?.g?.phase, table?.g?.handNum]
+  );
   useTick(1000);
 
   // Proof of life. Ignores the response — the stream is authoritative for
@@ -607,9 +510,6 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const myHand = (g.hands[mySeat] || []).filter(
     (c) => !(optimistic && cid(c) === cid(optimistic.card))
   );
-  // Tightens for the picker's 8-card bury view and loosens again once two are
-  // buried. A fixed overlap fits six and clips eight — see src/fan.js.
-  const handOverlap = fanOverlap(myHand.length, viewportWidth - HAND_PADDING);
   // `caughtUp` gates every affordance: until the table has finished showing
   // what everyone else played, your cards aren't live. Otherwise you can play
   // into a trick that visually has two cards in it and watch your own card
@@ -828,39 +728,79 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         )}
       </div>
 
-      {/* Your hand */}
+      {/* Your hand. HandFan sizes itself from the viewport now, so the fan
+          arithmetic that used to live here is gone with it. */}
       <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px 12px" }}>
-        {/* overflowX is a safety net, not the mechanism: the fan is sized to
-            fit, and a scrollbar appearing here means the geometry is wrong. */}
-        <div style={{ display: "flex", justifyContent: "center", flexWrap: "nowrap", overflowX: "auto" }}>
-          {myHand.map((c, i) => (
-            <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -handOverlap }}>
-              <Card
-                card={c}
-                onClick={() => onCardClick(c)}
-                selected={selected.some((s) => cid(s) === cid(c))}
-                dim={g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
-              />
-            </div>
-          ))}
-        </div>
+        <HandFan
+          cards={myHand}
+          isSelected={(c) => selected.some((x) => cid(x) === cid(c))}
+          isDim={(c) => g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
+          onCardClick={(c) => () => onCardClick(c)}
+        />
       </div>
+
+      {/* The hand-end summary and the recap, which the table simply never had
+          — you finished a hand and got a Deal button. They work here because
+          viewFor() opens up at handEnd: hands, buried and partner are all
+          disclosed once the hand is over, so nothing extra crosses the wire.
+
+          Held back until the paced reveal catches up, for the same reason the
+          deal button is: otherwise the summary covers the felt while the last
+          card of the last trick is still landing. */}
+      {g.phase === "handEnd" && g.result && caughtUp && !showRecap && (
+        <HandEndModal
+          g={g}
+          names={table.seats.map((x) => x.name)}
+          mySeat={mySeat}
+          onNext={table.youAreHost ? () => act(() => api.startHand(tableId, playerId)) : undefined}
+          nextDisabled={busy}
+          onRecap={() => setShowRecap(true)}
+        />
+      )}
+
+      {g.phase === "handEnd" && g.result && caughtUp && showRecap && (
+        <RecapModal
+          g={g}
+          names={table.seats.map((x) => x.name)}
+          mySeat={mySeat}
+          grades={playGrades}
+          captureRef={recapCaptureRef}
+          onShare={() => shareRecap(recapCaptureRef.current, g.handNum)}
+          onBack={() => setShowRecap(false)}
+          onNext={table.youAreHost ? () => act(() => api.startHand(tableId, playerId)) : undefined}
+          nextDisabled={busy}
+        />
+      )}
 
       {modal === "trump" && <TrumpModal onClose={() => setModal(null)} />}
       {modal === "scores" && (
         <ScoresModal
-          table={table}
-          busy={busy}
+          names={table.seats.map((x) => x.name)}
+          scores={table.scores}
+          handNum={table.handNum}
+          mySeat={mySeat}
           onClose={() => setModal(null)}
-          onRename={(n) => act(async () => {
-            await api.setName(tableId, playerId, n);
-            setModal(null);
-          })}
-        />
+        >
+          {/* Everything solo has no concept of hangs here rather than in the
+              shared component: renaming yourself, and stepping away. */}
+          <SeatControls
+            table={table}
+            mySeat={mySeat}
+            busy={busy}
+            onRename={(name) => { setModal(null); act(() => api.renameSeat(tableId, playerId, name)); }}
+            onAway={() => { setModal(null); act(() => api.stepAway(tableId, playerId)); }}
+            onBack={() => { setModal(null); act(() => api.takeSeatBack(tableId, playerId)); }}
+          />
+        </ScoresModal>
       )}
       {modal === "invite" && <InviteModal table={table} onClose={() => setModal(null)} />}
       {modal === "lastTrick" && (
-        <LastTrickModal table={table} mySeat={mySeat} onClose={() => setModal(null)} />
+        <LastTrickModal
+          lastTrick={g.lastTrick}
+          names={table.seats.map((x) => x.name)}
+          mySeat={mySeat}
+          onClose={() => setModal(null)}
+        />
       )}
       {seatModal !== null && (
         <PlayerModal
