@@ -6,6 +6,37 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.9.0] - 2026-07-27
+- Defenders now gang up on a lone picker properly. Against someone who went
+  alone, the AI defenders were refusing to schmear on the opening trick, so the
+  loner got a free run at the trick that most often sets up the hand.
+  - Root cause was the guard added in 0.8.0, which stops a defender paying
+    points to a "teammate" who might turn out to be the picker's hidden partner.
+    It keyed off `partnerRevealed`, and when the picker goes alone there is no
+    called ace, so nothing ever reveals and the flag stays false all hand. The
+    guard was written for uncertainty, but an alone hand is the one case with
+    none: going alone is declared at pick time and shown all hand
+    ("Picker · Alone"), so every defender knows the other three seats are
+    teammates from the first card. Certainty now also comes from there being no
+    partner to be wrong about, not only from the ace having fallen.
+  - Measured over 5x200,000 simulated hands before and after. In alone hands the
+    picker's win rate drops 68.2-69.1% -> 67.4-67.8%; ranges don't overlap, so
+    it's a real shift rather than run-to-run noise. Partnered hands are
+    untouched (61.7-62.0% -> 61.9-62.1%, overlapping), which is the intended
+    blast radius and doubles as a control on the measurement.
+- Also measured and deliberately *not* changed: the same guard leaves defenders
+  free to schmear speculatively in partnered hands from trick 2 onward, where
+  they may hand points to the picker's hidden partner. Extending the guard
+  across the whole pre-reveal window looks like the same fix, and costs about
+  0.8pp: partnered picker win rate goes 61.7-62.0% -> 62.4-62.8%, again
+  non-overlapping. With the picker excluded, an unrevealed winner is a fellow
+  defender two times in three and the partner only one in three, and an Ace held
+  back gets trumped later often enough that pooling it beats hoarding it. The
+  rejected variant is asserted in the test suite so it doesn't get "fixed" later.
+- `npm test` grows to 21 assertions. Against the old engine exactly one fails —
+  the opening-trick loner case — with the other 20 passing, so the new
+  behaviour is pinned and the guards are confirmed to be guards. (`PENDING`)
+
 ## [0.8.0] - 2026-07-26
 - AI now protects its trump power instead of throwing Queens away as schmear.
   Reported from a real hand: with a Jack led and Q-clubs already down and
