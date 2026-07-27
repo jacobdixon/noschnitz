@@ -16,7 +16,7 @@ corresponds to the entries below.
     into view without scrolling on a phone.
   - Verified at 375px on a finished hand: renders "BURIED A♥ 10♣", red suits in
     the same red the grid uses, no card elements left in the row, no page
-    overflow. (`PENDING`)
+    overflow. (`13a6ac2`)
 
 ## [0.11.1] - 2026-07-27
 - The recap grid labels its columns once: "TRICK" now sits in the name column
