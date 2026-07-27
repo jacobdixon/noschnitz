@@ -502,12 +502,16 @@ export function scoreHand(g) {
   const pickerWins = teamPts >= 61;
   let mult = 1;
   let label = "";
+  // "No Schneider!" — the losing side failed to get out of schneider, i.e. it
+  // finished under 31 while the winners took 90 or more. Both branches are the
+  // same event seen from the two sides: defenders held to <= 30, or the picker
+  // team held to <= 30.
   if (pickerWins) {
     if (teamTricks === 6) { mult = 3; label = "No-tricker!"; }
-    else if (defPts <= 30) { mult = 2; label = "Schneider!"; }
+    else if (defPts <= 30) { mult = 2; label = "No Schneider!"; }
   } else {
     if (teamTricks === 0) { mult = 3; label = "No-tricker!"; }
-    else if (teamPts <= 30) { mult = 2; label = "Schneider!"; }
+    else if (teamPts <= 30) { mult = 2; label = "No Schneider!"; }
   }
   const scores = [...g.scores];
   const sign = pickerWins ? 1 : -1;
