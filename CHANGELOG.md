@@ -15,7 +15,7 @@ corresponds to the entries below.
     dependency on the networked half and still works with no server at all.
   - Labelled for what it does today: it starts a fresh table, leaving the hand
     in progress behind. Once a table can be seeded with the running score this
-    becomes "Invite others" and the game carries over instead. (`__PENDING__`)
+    becomes "Invite others" and the game carries over instead. (`cb0130f`)
 
 ## [0.16.1] - 2026-07-27
 - Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer
