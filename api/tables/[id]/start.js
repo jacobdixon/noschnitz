@@ -17,7 +17,7 @@
    inside this same request, so the response the host gets back is already at
    the first decision a human owes.
    ========================================================================= */
-import { startHand, atHandBoundary, seatOf } from "../../../src/table.js";
+import { startHand, atHandBoundary, seatOf, markSeen } from "../../../src/table.js";
 import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
@@ -36,6 +36,12 @@ export default async function handler(req, res) {
 
   const store = getStore();
   const out = await mutate(store, id, (table) => {
+    // Acting is the strongest possible evidence of presence. Without this, a
+    // player could be taking their turn and still be covered by COM-3.4 if the
+    // stream's presence pass had been starved — which is exactly the failure
+    // that hit a live three-player table.
+    table = markSeen(table, { playerId, now: Date.now() });
+
     if (table.hostPlayerId !== playerId) return { table, denied: "not-host" };
     if (!atHandBoundary(table)) return { table, denied: "hand-in-progress" };
 

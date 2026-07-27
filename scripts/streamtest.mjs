@@ -547,6 +547,48 @@ function open(store, reqOpts, handlerOpts = {}) {
     !JSON.stringify(latest?.data?.table?.seats?.filter((_, i) => i !== seated)).includes("p-host"));
 }
 
+
+/* --------- Presence must survive a BUSY table (the 3-player bug) ---------- */
+{
+  // The failure, from a live three-player game: presence used to ride the SSE
+  // heartbeat. sendState() writes, writing resets the heartbeat timer, and the
+  // version-changed branch returns early — so presence was only ever recorded
+  // while the table was SILENT. Two humans plus AI left quiet gaps; a third
+  // made state changes near-continuous, presence was never written, and after
+  // 90s the auto-cover replaced active players with AI mid-game.
+  //
+  // So: hold a stream open over a table that changes constantly, and assert
+  // the watcher is still marked present.
+  const store = createMemoryStore({ now: () => T0 });
+  let table = createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: T0, id: "busy1234" });
+  table = joinTable(table, { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  await store.create(table);
+
+  const before = (await store.get("busy1234")).seats.find((x) => x.playerId === "p-dave").lastSeen;
+
+  const { clock } = open(store, { id: "busy1234", playerId: "p-dave" });
+  await settle();
+
+  // Churn the table the way an active game does, advancing time past several
+  // presence windows while never letting it fall quiet.
+  for (let i = 0; i < 12; i++) {
+    const cur = await store.get("busy1234");
+    await store.put({ ...cur, version: cur.version + 1, updatedAt: T0 + i * 5000 }, cur.version);
+    clock.advance(5000);
+    await settle();
+  }
+
+  const after = (await store.get("busy1234")).seats.find((x) => x.playerId === "p-dave").lastSeen;
+  check("a watcher on a BUSY table is still recorded as present",
+    after > before, `lastSeen ${before} -> ${after}`);
+  // Not asserting it tracks the clock all the way out: the stream closes at its
+  // 50s lifetime (the client reconnects), and the fake clock coalesces ticks.
+  // What matters is that presence advanced by a full window under continuous
+  // churn — i.e. it is not just a one-off recorded at connect time.
+  check("presence advances under churn, not just once at connect",
+    after >= T0 + 20000, `lastSeen advanced to ${after - T0}ms`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

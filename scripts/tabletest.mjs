@@ -231,45 +231,77 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
 
 {
   // COM-3.4 — a table must never sit forever on somebody who stopped responding.
+  // But it must ALSO never cover a player it isn't waiting on: that turns any
+  // weakness in presence tracking into people being replaced mid-game, which is
+  // exactly what happened on a live three-player table.
   let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
-  const seat = seatOf(t, "p-dave");
+  t = startHand(t, T0);
+  const daveSeat = seatOf(t, "p-dave");
+  const hostSeat = seatOf(t, "p-host");
 
-  const soon = coverIdleSeats(t, T0 + 1000);
-  check("a recently-seen player is left alone", soon === t);
+  // Dave owes the decision and has gone quiet.
+  const daveBlocking = { ...t, g: { ...t.g, phase: "picking", pickTurn: daveSeat, passes: 0 } };
+  const covered = coverIdleSeats(daveBlocking, T0 + AWAY_AFTER_MS + 1);
+  check("the blocking player who has gone quiet gets covered",
+    covered.seats[daveSeat]?.kind === "away");
+  check("covering keeps the seat theirs to reclaim", seatOf(covered, "p-dave") === daveSeat);
+  check("covering bumps the version like any other mutation", covered.version > daveBlocking.version);
 
-  const later = coverIdleSeats(t, T0 + AWAY_AFTER_MS + 1);
-  check("a player who has gone quiet gets covered", later.seats[seat]?.kind === "away");
-  check("covering keeps the seat theirs to reclaim", seatOf(later, "p-dave") === seat);
-  check("covering bumps the version like any other mutation", later.version > t.version);
+  // THE regression: the host is equally quiet, but the table isn't waiting on
+  // them. Covering them would accomplish nothing and cost them their seat.
+  check("a quiet player the table is NOT waiting on is left alone",
+    covered.seats[hostSeat]?.kind === "human",
+    `host kind=${covered.seats[hostSeat]?.kind}`);
+  check("at most one seat is ever covered in a pass",
+    covered.seats.filter((x) => x.kind === "away").length === 1);
 
-  // Presence has to count WATCHING, not just acting — otherwise everyone at the
-  // table gets covered mid-hand while paying perfect attention.
-  // (The host IS covered in this scenario — they haven't been seen since the
-  // table was created — so the assertion is about Dave's seat specifically,
-  // not about the table being untouched.)
-  const watched = markSeen(t, { playerId: "p-dave", now: T0 + AWAY_AFTER_MS - 1 });
-  const afterWatching = coverIdleSeats(watched, T0 + AWAY_AFTER_MS + 1);
-  check("a player who is merely watching is not covered",
-    afterWatching.seats[seat]?.kind === "human",
-    `kind=${afterWatching.seats[seat]?.kind}`);
-  check("...while an idle player at the same table still is",
-    afterWatching.seats[seatOf(afterWatching, "p-host")]?.kind === "away");
+  // Recently seen, still blocking: left alone.
+  const seen = markSeen(daveBlocking, { playerId: "p-dave", now: T0 + AWAY_AFTER_MS });
+  check("a blocking player who is still checking in is left alone",
+    coverIdleSeats(seen, T0 + AWAY_AFTER_MS + 1).seats[daveSeat]?.kind === "human");
 
-  // The host has never been seen since the table was created; they get the
-  // benefit of a full window rather than being covered instantly.
-  const fresh = createTable({ ...host, now: T0 });
-  check("a brand-new table covers nobody", coverIdleSeats(fresh, T0 + 1000) === fresh);
+  // Nothing owed: nobody covered, however long it has been.
+  const lobby = joinTable(createTable(host), { playerId: "p-x", name: "X", now: T0 }).table;
+  check("a table with no hand dealt covers nobody",
+    coverIdleSeats(lobby, T0 + AWAY_AFTER_MS * 10) === lobby);
+
+  const ended = { ...t, g: { ...t.g, phase: "handEnd" } };
+  check("a finished hand covers nobody", coverIdleSeats(ended, T0 + AWAY_AFTER_MS * 10) === ended);
+
+  // Two absent players get covered one at a time, as the turn reaches them —
+  // never in a single sweep.
+  let progressive = coverIdleSeats(daveBlocking, T0 + AWAY_AFTER_MS + 1);
+  const nowBlockingHost = { ...progressive, g: { ...progressive.g, pickTurn: hostSeat } };
+  progressive = coverIdleSeats(nowBlockingHost, T0 + AWAY_AFTER_MS + 2);
+  check("a second absent player is covered once the turn reaches them",
+    progressive.seats[hostSeat]?.kind === "away");
 }
 
 {
-  // The point of all of it: an away seat is AI-driven, so play continues.
+  // The point of all of it: an away seat is AI-driven, so play continues. With
+  // cover now scoped to the blocking seat, a table where everyone has gone
+  // quiet clears one seat per pass rather than all at once — so this walks it
+  // forward the way advanceTable would, and checks it always terminates.
   let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
   t = startHand(t, T0);
-  const idle = coverIdleSeats(t, T0 + AWAY_AFTER_MS + 1);
-  const humansPresent = idle.seats.filter((s) => s.kind === "human").length;
-  check("everyone idle means no seat blocks play", humansPresent === 0);
-  check("but every claimed seat still has an owner",
-    idle.seats.filter((s) => s.playerId).length === 2);
+
+  // The turn keeps moving whether or not a seat was covered — an AI seat simply
+  // isn't a candidate — so this advances every iteration rather than stopping
+  // the first time a pass changes nothing.
+  let cur = t;
+  for (let i = 0; i < 12; i++) {
+    cur = coverIdleSeats(cur, T0 + AWAY_AFTER_MS * (i + 2));
+    cur = { ...cur, g: { ...cur.g, pickTurn: (cur.g.pickTurn + 1) % 5 } };
+  }
+  const passes = 0;
+  check("repeated passes eventually clear every absent player",
+    cur.seats.filter((x) => x.kind === "human").length === 0,
+    `still present: ${cur.seats.filter((x) => x.kind === "human").length}`);
+  check("every claimed seat still has an owner",
+    cur.seats.filter((x) => x.playerId).length === 2);
+  check("no seat is covered twice",
+    cur.seats.filter((x) => x.kind === "away").length === 2,
+    `away=${cur.seats.filter((x) => x.kind === "away").length}`);
 }
 
 /* ------------------------- Versioning + CAS store ------------------------- */

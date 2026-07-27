@@ -15,7 +15,7 @@
    Deliberately not a toggle. Coming back is not an explicit action a player
    should have to find; it happens because they showed up.
    ========================================================================= */
-import { seatOf, stepAway } from "../../../src/table.js";
+import { seatOf, stepAway, markSeen } from "../../../src/table.js";
 import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
@@ -34,6 +34,12 @@ export default async function handler(req, res) {
 
   const store = getStore();
   const out = await mutate(store, id, (table) => {
+    // Acting is the strongest possible evidence of presence. Without this, a
+    // player could be taking their turn and still be covered by COM-3.4 if the
+    // stream's presence pass had been starved — which is exactly the failure
+    // that hit a live three-player table.
+    table = markSeen(table, { playerId, now: Date.now() });
+
     const seat = seatOf(table, playerId);
     if (seat < 0) return { table, denied: "not-seated" };
 

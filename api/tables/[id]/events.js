@@ -86,6 +86,12 @@ export const STREAM_LIFETIME_MS = 50_000;
 // connections that go quiet; anything under ~30s is safe.
 export const HEARTBEAT_MS = 15_000;
 
+// How often a connected player is recorded as present. Independent of the
+// heartbeat: a busy table must not starve presence (see the presence pass).
+// Comfortably inside AWAY_AFTER_MS so a player gets several chances before the
+// AI covers them.
+export const PRESENCE_MS = 20_000;
+
 // The `retry:` hint that seeds EventSource's own reconnect delay. Our client
 // manages backoff itself, but a browser-initiated reconnect (tab wake, network
 // flap) should come back fast — the table is live.
@@ -176,6 +182,7 @@ export function createEventsHandler(options = {}) {
     pollMs = POLL_INTERVAL_MS,
     lifetimeMs = STREAM_LIFETIME_MS,
     heartbeatMs = HEARTBEAT_MS,
+    presenceMs = PRESENCE_MS,
     env = process.env,
     now = () => Date.now(),
     setInterval: setIntervalFn = setInterval,
@@ -234,6 +241,9 @@ export function createEventsHandler(options = {}) {
     let closed = false;
     let busy = false;
     let lastWriteAt = now();
+    // Separate from lastWriteAt on purpose: presence must not be suppressed by
+    // the table being busy. See the note at the presence pass below.
+    let lastPresenceAt = now();
     let lastVersion = -1;
 
     let resolveDone;
@@ -298,6 +308,29 @@ export function createEventsHandler(options = {}) {
           return;
         }
 
+        // Presence, on its OWN clock — deliberately before the version check.
+        //
+        // This used to ride the SSE heartbeat, which was a real bug: sendState()
+        // writes, writing resets the heartbeat timer, and the version-changed
+        // branch below returns early. So presence was only ever recorded while
+        // the table was SILENT. The busier the table, the less often a player
+        // was marked present — exactly backwards. Two humans plus AI left quiet
+        // gaps; a third made state changes near-continuous, the heartbeat never
+        // fired, and after 90s the auto-cover flipped active players to AI
+        // mid-game because nothing had refreshed lastSeen since they joined.
+        //
+        // Watching a table is participation, and how much is happening on it
+        // has nothing to do with whether you are still there.
+        if (now() - lastPresenceAt >= presenceMs) {
+          lastPresenceAt = now();
+          await mutate(store, id, (t) => {
+            const seen = markSeen(t, { playerId, now: now() });
+            const covered = coverIdleSeats(seen, now());
+            return covered === seen ? seen : advanceTable(covered, now());
+          });
+          if (closed) return;
+        }
+
         // Not `>`: a table that expired and was recreated under the same code
         // restarts at version 0, and a client stuck on a higher number would
         // never hear from us again.
@@ -313,26 +346,7 @@ export function createEventsHandler(options = {}) {
           return;
         }
 
-        if (now() - lastWriteAt >= heartbeatMs) {
-          write(`: ping ${now()}\n\n`);
-          // Presence rides the heartbeat rather than the poll. Watching a table
-          // is participation — before this, lastSeen was only refreshed by
-          // api/tables/[id]/state.js, which the streaming client never calls,
-          // so an attentive player looked idle from the moment they joined and
-          // COM-3.4's auto-cover would have flipped the whole table to AI
-          // mid-hand. Once per heartbeat, not once per poll: a write per tick
-          // per player would multiply the table's Redis cost for no benefit.
-          //
-          // The same pass covers anyone who HAS gone quiet and advances the
-          // table if that unblocks it, which is what stops a table stalling
-          // when the absent player was the only one anybody was waiting on and
-          // nobody else is sending requests.
-          await mutate(store, id, (t) => {
-            const seen = markSeen(t, { playerId, now: now() });
-            const covered = coverIdleSeats(seen, now());
-            return covered === seen ? seen : advanceTable(covered, now());
-          });
-        }
+        if (now() - lastWriteAt >= heartbeatMs) write(`: ping ${now()}\n\n`);
       } catch {
         // A transient store failure isn't the client's problem to interpret —
         // hand off exactly like a lifetime expiry and let it come back.

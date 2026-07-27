@@ -26,7 +26,7 @@
    If no suit qualifies, the picker is genuinely alone and calledSuit must be
    null — a client claiming a suit anyway is rejected.
    ========================================================================= */
-import { seatOf, commit } from "../../../src/table.js";
+import { seatOf, commit, markSeen } from "../../../src/table.js";
 import { isTrump, cid, assignPartner } from "../../../src/engine.js";
 import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
@@ -76,6 +76,12 @@ export default async function handler(req, res) {
 
   const store = getStore();
   const out = await mutate(store, id, (table) => {
+    // Acting is the strongest possible evidence of presence. Without this, a
+    // player could be taking their turn and still be covered by COM-3.4 if the
+    // stream's presence pass had been starved — which is exactly the failure
+    // that hit a live three-player table.
+    table = markSeen(table, { playerId, now: Date.now() });
+
     const seat = seatOf(table, playerId);
     if (seat < 0) return { table, denied: "not-seated" };
 

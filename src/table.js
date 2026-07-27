@@ -268,18 +268,38 @@ export function stepAway(table, { playerId, now }) {
 // covered mid-hand while paying perfect attention. The stream heartbeat is what
 // keeps it current; see api/tables/[id]/events.js.
 export function coverIdleSeats(table, now, awayAfterMs = AWAY_AFTER_MS) {
-  let changed = false;
-  const seats = table.seats.map((s) => {
-    if (s.kind !== "human") return s;
-    // A seat that has never reported in gets the benefit of the doubt until it
-    // has had a full window to do so.
-    const since = s.lastSeen ?? table.updatedAt ?? now;
-    if (now - since <= awayAfterMs) return s;
-    changed = true;
-    return { ...s, kind: "away" };
-  });
-  if (!changed) return table;
+  // Only ever cover the seat the table is actually WAITING ON. Covering a quiet
+  // player whose turn it isn't achieves nothing — the hand wasn't blocked on
+  // them — and turns any weakness in presence tracking into players being
+  // replaced by AI mid-game. That is precisely what happened when presence was
+  // starved on a busy table: this swept up everyone at once instead of the one
+  // seat holding things up. Blast radius is now at most one seat at a time, and
+  // only when it is genuinely stalling play. If a second player has also gone,
+  // the next pass covers them once the turn reaches them.
+  const blocking = seatOwedDecision(table);
+  if (blocking < 0) return table;
+
+  const s = table.seats[blocking];
+  if (!s || s.kind !== "human") return table;
+
+  // A seat that has never reported in gets the benefit of the doubt until it
+  // has had a full window to do so.
+  const since = s.lastSeen ?? table.updatedAt ?? now;
+  if (now - since <= awayAfterMs) return table;
+
+  const seats = table.seats.map((x, i) => (i === blocking ? { ...x, kind: "away" } : x));
   return commit({ ...table, seats }, now);
+}
+
+// Which seat, if any, the table cannot proceed without. -1 when nothing is
+// waiting on a particular player (no hand dealt, hand over, trick mid-resolve).
+export function seatOwedDecision(table) {
+  const g = table.g;
+  if (!g) return -1;
+  if (g.phase === "picking") return g.passes >= SEATS ? -1 : g.pickTurn;
+  if (g.phase === "bury" || g.phase === "call") return g.picker ?? -1;
+  if (g.phase === "playing") return g.trick.length >= SEATS ? -1 : g.turn;
+  return -1;
 }
 
 /* ------------------------------ Hand control ------------------------------ */
