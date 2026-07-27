@@ -697,14 +697,19 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         />
       )}
 
-      {/* Held back until the final trick has finished playing out — otherwise
-          the deal button appears while the last card is still landing. */}
-      {g.phase === "handEnd" && caughtUp && table.youAreHost && (
-        <Actions>
-          <button style={btnGold} disabled={busy} onClick={() => act(() => api.startHand(tableId, playerId))}>
-            Deal next hand
-          </button>
-        </Actions>
+      {/* The deal button used to live here, and now lives on the hand-end
+          summary that covers this area anyway — two of them rendered at once,
+          the second one visible through the modal. The summary is the better
+          home: it is what you are reading when you decide to move on.
+
+          A non-host still needs to know why nothing is happening, which the
+          summary does not say — it simply has no button for them. */}
+      {/* Not <Centered> — that is the full-screen fixed overlay used for
+          loading and error states, and it would blank the table behind it. */}
+      {g.phase === "handEnd" && caughtUp && !table.youAreHost && (
+        <div style={{ textAlign: "center", color: felt.creamDim, fontStyle: "italic" }}>
+          Waiting for the host to deal.
+        </div>
       )}
 
       </div>
