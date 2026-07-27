@@ -639,10 +639,24 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         padding: "8px 10px", borderBottom: `2px solid ${felt.rail}`,
       }}>
         <div style={{
-          fontFamily: "Georgia, serif", fontWeight: 900, letterSpacing: ".06em",
-          fontSize: 14, color: felt.brass, whiteSpace: "nowrap",
-          overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1,
-        }}>{table.id}</div>
+          display: "flex", alignItems: "baseline", gap: 5,
+          minWidth: 0, flex: 1, overflow: "hidden",
+        }}>
+          <span style={{
+            fontFamily: "Georgia, serif", fontWeight: 900, letterSpacing: ".06em",
+            fontSize: 14, color: felt.brass, whiteSpace: "nowrap",
+            overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+          }}>{table.id}</span>
+          {/* Same treatment as the solo header: small and dim enough to ignore
+              while playing, legible enough to read off a screenshot when
+              someone reports a bug against a particular build. flexShrink 0 so
+              the table code truncates before the version does — the version is
+              the part that has to stay readable. */}
+          <span style={{
+            fontSize: 9, opacity: 0.4, letterSpacing: ".02em",
+            userSelect: "none", whiteSpace: "nowrap", flexShrink: 0,
+          }}>v{__APP_VERSION__}</span>
+        </div>
         <button style={btnGhost} onClick={() => setModal("invite")}>Invite</button>
         <button style={btnGhost} onClick={() => setModal("trump")}>Trump</button>
         <button style={btnGhost} onClick={() => setModal("scores")}>Scores</button>
