@@ -539,9 +539,16 @@ export default function Sheepshead() {
             {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
             {" · "}defenders {g.result.defPts}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: felt.creamDim, letterSpacing: ".04em", textTransform: "uppercase" }}>Buried</span>
-            {g.buried.map((c) => <Card key={cid(c)} card={c} small />)}
+          {/* Rank-and-suit glyphs, not card faces — the same shorthand the grid
+              below uses, so the whole recap reads in one visual language and
+              the buried pair doesn't outweigh the 30 cards that were played. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
+            <span style={{ fontSize: 11, color: felt.creamDim, letterSpacing: ".04em", textTransform: "uppercase" }}>Buried</span>
+            {g.buried.map((c) => (
+              <span key={cid(c)} style={{ color: c.suit === "H" || c.suit === "D" ? felt.red : felt.cream, fontWeight: 700 }}>
+                {c.rank}{SUIT_SYM[c.suit]}
+              </span>
+            ))}
           </div>
           <div style={{ overflowX: "auto", marginBottom: 14 }}>
             <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
