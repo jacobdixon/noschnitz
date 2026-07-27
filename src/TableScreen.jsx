@@ -902,9 +902,14 @@ function statusLine(g, table, mySeat, isMyTurn) {
   return `${table.seats[g.turn]?.name || "Someone"}'s play…`;
 }
 
+// Solo's button row carries no padding of its own — the block around it
+// already supplies 7px/12px and reserves 84px. The 10px/12px this used to add
+// pushed the content past that floor, so the block grew to 103px and the felt,
+// being flex:1, shrank to 502 where solo's is 507. Padding here is padding the
+// reserved height was already paying for.
 function Actions({ children }) {
   return (
-    <div style={{ display: "flex", gap: 10, justifyContent: "center", padding: "10px 12px" }}>
+    <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
       {children}
     </div>
   );
