@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.10.1] - 2026-07-27
+- The 90-point result now reads "No Schneider!" rather than "Schneider!" — the
+  losing side failed to get out of schneider, so that's what it should say.
+  Applies to both sides of the same event: picker team held to 30 or less, or
+  defenders held to 30 or less.
+  - The label is produced in `scoreHand`, so this is one string in the engine
+    rather than a patch at the render site. `simulate.mjs` compared against the
+    old label with exact equality to count its schneider rate, and was updated
+    with it — left alone it would have silently reported 0.0% and quietly
+    broken one of the three metrics used to judge every AI change.
+  - Verified on constructed scoring positions: picker team 95/defenders 25 and
+    defenders 95/picker team 25 both label "No Schneider!" at 2x, an ordinary
+    70-50 win stays unlabelled at 1x, and a no-tricker still reads
+    "No-tricker!" at 3x. Simulated schneider rate holds at 23.6% across 50,000
+    hands, unchanged from before the rename.
+  - Layout-neutral at 375px. The heading already wrapped to two lines for every
+    labelled outcome before this change; measured against the modal's 299px
+    inner width, all five strings still render at two lines and 55px with no
+    horizontal overflow. (`5c9ac72`)
+
 ## [0.10.0] - 2026-07-27
 - Each opponent's seat now shows their running score instead of how many cards
   they're holding — green when they're up, red when they're down.
