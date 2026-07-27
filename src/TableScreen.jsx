@@ -678,13 +678,13 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         title={table.id}
         rules={table.rules || HOUSE_RULES}
         doubler={g.doubler || 1}
-        extra={
-          // Rides in the rules row rather than taking a row of its own. Kept
-          // mounted at zero opacity so a blip can't reflow the header — and a
-          // header that changes height mid-hand moves the felt under it.
+        status={
+          // Kept mounted and merely faded, so a dropped connection can never
+          // reflow the header — a header that changes height mid-hand shifts
+          // the felt, and the cards, under it.
           <span style={{
-            marginLeft: "auto", flexShrink: 0, fontSize: 11, color: felt.creamDim,
-            opacity: connected ? 0 : 1, transition: "opacity .3s", whiteSpace: "nowrap",
+            flexShrink: 0, fontSize: 11, color: felt.creamDim, whiteSpace: "nowrap",
+            opacity: connected ? 0 : 1, transition: "opacity .3s",
           }}>
             reconnecting…
           </span>

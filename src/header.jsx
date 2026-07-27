@@ -27,9 +27,10 @@ import { felt, btnGhost } from "./ui.jsx";
  * @param {number}   doubler    current stake multiplier; 1 hides the badge
  * @param {Array}    menuItems  [{ label, onSelect }] — order is as given
  * @param {node}     extra      optional chip in the rules row (a table code, say)
+ * @param {node}     status     optional indicator in the title row (connection state)
  * @param {string}   title
  */
-export function TableHeader({ rules = [], doubler = 1, menuItems = [], extra, title = "SHEEPSHEAD" }) {
+export function TableHeader({ rules = [], doubler = 1, menuItems = [], extra, status, title = "SHEEPSHEAD" }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -41,6 +42,17 @@ export function TableHeader({ rules = [], doubler = 1, menuItems = [], extra, ti
         <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
           v{__APP_VERSION__}
         </div>
+
+        {/* Its own slot in the title row rather than sharing the rules row,
+            which has no give at all. The rules run to 255px of the 339px a
+            375px phone allows, and the doubler badge claims most of what's
+            left — a 77px "reconnecting…" overflowed it by one pixel and wrapped
+            the header 19px taller than solo's. Up here there is ~190px spare,
+            so an indicator that is mounted permanently (and merely faded out
+            when all is well, so its arrival can never reflow the header) costs
+            nothing. Solo passes nothing and renders identically. */}
+        {status}
+
         <button
           onClick={() => setOpen((v) => !v)}
           aria-label="Menu"
