@@ -6,6 +6,8 @@ import {
 } from "./engine.js";
 
 import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { Felt, HandFan, RoleBadges, DealerButton, SEAT_POS } from "./felt.jsx";
+import { TableHeader } from "./header.jsx";
 
 // The house rules this table plays by, shown under the title for the whole
 // game. A list rather than a sentence: the planned version of that line lets
@@ -22,7 +24,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const recapCaptureRef = useRef(null);
 
   /* ---------- engine loop ---------- */
@@ -185,19 +186,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
     () => (g.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
     [g.phase, g.handNum]
   );
-  const seatPos = [null,
-    { left: "2%", top: "46%" },
-    { left: "20%", top: "4%" },
-    { right: "20%", top: "4%" },
-    { right: "2%", top: "46%" },
-  ];
-  const trickPos = {
-    0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
-    1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
-    2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
-    3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
-    4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
-  };
   // Seat 0 is "You", so anything that reads back a seat name needs the
   // second person or it comes out as "You takes the trick".
   const takesTheTrick = (i) => (i === 0 ? "You take the trick" : `${NAMES[i]} takes the trick`);
@@ -209,46 +197,10 @@ export default function Sheepshead({ onPlayWithFriends }) {
     return g.alone || g.partner === null ? "Picker wins" : "Pickers win";
   };
 
-  // The called suit belongs to the picker — they chose it — so it rides on their
-  // badge stack rather than in a strip of its own. Hearts is the only callable
-  // red suit (diamonds are trump), and `felt.red` is tuned for cream card faces,
-  // so it gets the lighter red that reads on felt.
-  const calledChip = () => (
-    <Badge compact>
-      Called{" "}
-      <span style={{ color: g.calledSuit === "H" ? felt.scoreDown : felt.cream, fontWeight: 900 }}>
-        {SUIT_SYM[g.calledSuit]}
-      </span>
-    </Badge>
-  );
 
-  const roleTag = (i) => {
-    if (g.picker === i) return (
-      <>
-        <Badge gold>Picker{g.alone ? " · Alone" : ""}</Badge>
-        {g.calledSuit && calledChip()}
-      </>
-    );
-    if (g.partnerRevealed && g.partner === i) return <Badge gold>Partner</Badge>;
-    return null;
-  };
 
   // Poker-style dealer button. Seats 1-4 wear it beside their avatar; seat 0
   // has no avatar on the table, so it sits in the YOUR HAND row instead.
-  const dealerButton = () => (
-    <span
-      title="Dealer"
-      aria-label="Dealer"
-      style={{
-        width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-        background: felt.cream, color: "#2A2108",
-        border: `1.5px solid ${felt.brassDim}`, boxShadow: "0 1px 3px rgba(0,0,0,.5)",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "Georgia, serif", fontWeight: 900, fontSize: 11, lineHeight: 1,
-        userSelect: "none",
-      }}
-    >D</span>
-  );
 
   const statusLine = () => {
     if (g.phase === "picking") {
@@ -272,171 +224,32 @@ export default function Sheepshead({ onPlayWithFriends }) {
       display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto",
       borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
-      {/* Header */}
-      <div style={{ flexShrink: 0, position: "relative", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
-            SHEEPSHEAD
-          </div>
-          <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
-            v{__APP_VERSION__}
-          </div>
-          <button
-            onClick={() => setShowMenu((v) => !v)}
-            aria-label="Menu"
-            aria-haspopup="menu"
-            aria-expanded={showMenu}
-            style={{ ...btnGhost, display: "flex", alignItems: "center", padding: "5px 9px" }}
-          >
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M1 1h14M1 6h14M1 11h14" />
-            </svg>
-          </button>
-        </div>
+      {/* Header lives in header.jsx alongside the felt, so a table renders
+          the same chrome rather than a second copy. The menu is passed as data
+          because that is where the two halves genuinely differ — a table adds
+          Invite and, later, a profile. */}
+      <TableHeader
+        rules={HOUSE_RULES}
+        doubler={g.doubler || 1}
+        menuItems={[
+          { label: "Trump order", onSelect: () => setShowHelp(true) },
+          { label: "Scores", onSelect: () => setShowScores(true) },
+          // Only when a host supplied a handler — the solo game keeps no
+          // dependency on the networked half and must work with no server.
+          // Labelled for what it does today: it starts a fresh table, leaving
+          // the hand in progress behind. Once a table can be seeded with the
+          // running score this becomes "Invite others" and the game carries
+          // over.
+          ...(onPlayWithFriends ? [{ label: "Play with friends", onSelect: onPlayWithFriends }] : []),
+        ]}
+      />
 
-        {/* The house rules, above the rail and there for the whole game. Kept as
-            data rather than one sentence because the next version of this line
-            lets you change them, and a rule you can toggle has to be an
-            addressable thing rather than a substring. Not a button yet — a
-            control that does nothing when you press it reads as broken, so it
-            stays text until it has somewhere to go. */}
-        {/* Wraps rather than squeezes. The rules and the badge together need
-            356px and a 375px phone gives 339, so something has to give — and
-            it must not be the rules line, which is the permanent thing. The
-            badge drops to a second row instead. That changes the header's
-            height, which is only safe because a doubler is set when the hand is
-            dealt, never mid-hand: the layout settles before a card is played. */}
-        <div style={{ marginTop: 4, display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 4, columnGap: 8 }}>
-          <div style={{
-            flexShrink: 0, fontSize: 11, letterSpacing: ".04em",
-            color: felt.creamDim, opacity: 0.75, userSelect: "none", whiteSpace: "nowrap",
-          }}>
-            {HOUSE_RULES.join(" · ")}
-          </div>
-          {/* The stake rides with the rules rather than on the table. It was
-              briefly at the table's top centre, which collides: the seats sit
-              at 4% of the table's height, so on a 667px-tall phone they start
-              at y=14 while the badge reaches y=19, and there is no room to put
-              it between the two top seats either — that gap is ~50px and the
-              badge is ~95px. Up here it is fixed chrome, it cannot collide with
-              anything the game draws, and it sits next to the rules that
-              explain what doubling means. */}
-          {(g.doubler || 1) > 1 && (
-            <span style={{
-              marginLeft: "auto", flexShrink: 0,
-              color: "#2A2108", background: felt.brass,
-              fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
-              padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
-            }}>
-              Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
-            </span>
-          )}
-        </div>
-
-        {showMenu && (
-          <>
-            {/* Catches the click that dismisses the menu. Sits under the menu
-                but over everything else, so the next tap anywhere closes it
-                instead of also hitting a card. */}
-            <div onClick={() => setShowMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
-            <div role="menu" style={{
-              position: "absolute", right: 12, top: "calc(100% - 4px)", zIndex: 16,
-              background: felt.bgDeep, border: `2px solid ${felt.rail}`, borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,.5)", overflow: "hidden", minWidth: 150,
-            }}>
-              {[
-                ["Trump order", () => setShowHelp(true)],
-                ["Scores", () => setShowScores(true)],
-              ].map(([label, open], i) => (
-                <button
-                  key={label}
-                  role="menuitem"
-                  onClick={() => { setShowMenu(false); open(); }}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left",
-                    background: "transparent", color: felt.cream,
-                    border: "none", borderTop: i === 0 ? "none" : "1px solid #ffffff18",
-                    padding: "11px 14px", fontSize: 15, fontWeight: 600, cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* The contract strip is gone. Everything it carried now lives where the
-          thing it describes already is: the dealer wears a button, the called
-          suit rides on the picker's badge stack, and "picked"/"alone" were
-          always duplicated by those same badges. That hands its ~28px back to
-          the table, which is the part of the screen you actually look at. */}
-
-      {/* Table */}
-      <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} style={{ position: "absolute", ...seatPos[i], display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 84 }}>
-            {/* Avatar and dealer button share a positioning context so the
-                button can sit against the avatar's edge the way it sits by a
-                player's elbow at a real table, without disturbing the column
-                below it. */}
-            <div style={{ position: "relative", width: 44, height: 44 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: "50%", background: felt.chip,
-                border: `2px solid ${g.phase === "playing" && g.turn === i ? felt.brass : (g.phase === "picking" && g.pickTurn === i ? felt.brass : "#ffffff2e")}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
-                boxShadow: (g.turn === i || g.pickTurn === i) ? `0 0 10px ${felt.brass}66` : "none",
-                transition: "border .2s, box-shadow .2s",
-              }}>
-                {NAMES[i][0]}
-              </div>
-              {g.dealer === i && (
-                <span style={{ position: "absolute", right: -7, bottom: -2 }}>{dealerButton()}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
-            {/* Running score rather than cards remaining. Everyone still
-                holding cards has the same number of them as you do, so that
-                count told you nothing you couldn't read off your own hand;
-                where each opponent stands in the match is the thing you
-                actually want at a glance. */}
-            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: felt.creamDim }}>
-                <span style={{ color: scoreColor(g.scores[i]), fontWeight: 700 }}>
-                  {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
-                </span>
-                {" · "}{g.trickCounts[i]} {g.trickCounts[i] === 1 ? "trick" : "tricks"}
-              </span>
-            </div>
-            {roleTag(i)}
-          </div>
-        ))}
-
-        {/* trick cards */}
-        {g.trick.map((t) => (
-          <div key={cid(t.card)} style={{ position: "absolute", ...trickPos[t.player], zIndex: 2 }}>
-            <Card card={t.card} small />
-          </div>
-        ))}
-        {g.trick.length === 5 && (
-          <div style={{
-            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            background: "#000000aa", padding: "4px 12px", borderRadius: 6, fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
-          }}>
-            {NAMES[trickWinner(g.trick)]} +{g.trick.reduce((s, t) => s + cardPts(t.card), 0)}
-          </div>
-        )}
-
-        {/* blind marker during picking */}
-        {g.phase === "picking" && g.passes < 5 && (
-          <div style={{ position: "absolute", left: "50%", top: "44%", transform: "translate(-50%,-50%)", display: "flex", gap: 6 }}>
-            <Card faceDown small /><Card faceDown small />
-          </div>
-        )}
-      </div>
+      {/* Table. The felt lives in felt.jsx so the multiplayer table renders
+          from the same components rather than a second copy that drifts —
+          which is exactly what happened over the last week. Solo passes its
+          fixed cast and seat 0; a table passes real names and whichever seat
+          you got. */}
+      <Felt g={g} names={NAMES} mySeat={0} />
 
       {/* Status + actions */}
       <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
@@ -479,21 +292,13 @@ export default function Sheepshead({ onPlayWithFriends }) {
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
-          {g.dealer === 0 && dealerButton()}
-          {roleTag(0)}
-          {/* Sits beside Last Trick rather than in the header: the header row
-              already measures 429px of content against 363px of space at
-              375px wide, so a third button there clips the title. This row
-              has room to spare. */}
-          {onPlayWithFriends && (
-            <button
-              onClick={onPlayWithFriends}
-              style={{ ...btnGhost, marginLeft: "auto", borderColor: felt.brass, color: felt.brass }}
-            >
-              Friends
-            </button>
-          )}
-          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: onPlayWithFriends ? 8 : "auto" }}>Last Trick</button>
+          {g.dealer === 0 && <DealerButton />}
+          <RoleBadges g={g} seat={0} />
+          {/* "Friends" used to live here — beside Last Trick rather than in the
+              header, because the header couldn't fit a third button. The menu
+              solves that properly, so it has moved there and this row is back
+              to carrying one thing. */}
+          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </div>
         {/* The fan holds its height even when empty. The table above is
             `flex: 1 1 auto`, so when the last card of the hand is played this
@@ -502,35 +307,16 @@ export default function Sheepshead({ onPlayWithFriends }) {
             it resolve. Reserving the row keeps the layout exactly as it was
             with cards in front of you. It also settles the smaller 8px shift
             between the burying fan (8 cards at 0.9 scale) and normal play. */}
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 10, minHeight: CARD_ROW_H }}>
-          {(() => {
-            // More than 6 cards only happens transiently while burying (holding
-            // the blind before discarding 2) — shrink the fan a bit so the
-            // leftmost card's rank doesn't get crowded off narrow phone widths.
-            const fanScale = g.hands[0].length > 6 ? 0.9 : 1;
-            const overlap = Math.round(14 * fanScale);
-            return g.hands[0].map((c, i) => {
-              const inBury = g.phase === "bury";
-              const playable = g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c));
-              const selected = g.selected.some((x) => cid(x) === cid(c));
-              return (
-                <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: i }}>
-                  <Card
-                    card={c}
-                    scale={fanScale}
-                    selected={selected}
-                    dim={g.phase === "playing" && g.turn === 0 && !playable}
-                    onClick={
-                      inBury ? () => toggleBury(c)
-                      : playable ? () => humanPlay(c)
-                      : undefined
-                    }
-                  />
-                </div>
-              );
-            });
-          })()}
-        </div>
+        <HandFan
+          cards={g.hands[0]}
+          isSelected={(c) => g.selected.some((x) => cid(x) === cid(c))}
+          isDim={(c) => g.phase === "playing" && g.turn === 0 && !legalNow.includes(cid(c))}
+          onCardClick={(c) => {
+            if (g.phase === "bury") return () => toggleBury(c);
+            if (g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c))) return () => humanPlay(c);
+            return undefined;
+          }}
+        />
       </div>
 
       {/* Hand end modal */}
@@ -744,7 +530,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
                   const isWinner = i === g.lastTrick.winner;
                   const pos = i === 0
                     ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
-                    : seatPos[i];
+                    : SEAT_POS[i];
                   return (
                     <div key={i} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: 74 }}>
                       <div style={{
