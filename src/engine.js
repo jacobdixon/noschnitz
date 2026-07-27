@@ -347,10 +347,25 @@ export function aiChooseCard(g, idx) {
     const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
     const trumpLooksSafe = isTrump(winningCard) && (trumpPower(winningCard) >= 7 || oppTrumpLeft <= remainingToAct);
 
-    // On the opening trick nobody has seen the called ace fall, so a defender's
-    // "teammate" is a guess — the seat winning may well be the picker's
-    // partner. Paying points to the wrong side is worse than holding on.
-    const teammateIsCertain = g.partnerRevealed || (idx === g.partner && winnerSoFar === g.picker);
+    // Until the called ace falls, a defender's "teammate" is a guess — the seat
+    // winning may well be the picker's partner, and paying points to the wrong
+    // side is worse than holding on. knowsTeammate() reports every unrevealed
+    // seat as a teammate, which is the right default for deciding who to fight,
+    // but far too loose a basis for handing over 11 points.
+    //
+    // Three ways the partnership is actually known:
+    //   - the called ace has been played, so everyone saw it;
+    //   - the picker went alone, so no partner exists at all (declared at pick
+    //     time and shown all hand, hence public — and note partnerRevealed
+    //     stays false for the whole hand here, so leaving this case out would
+    //     mute defender schmearing exactly when pooling points matters most);
+    //   - the viewer IS the partner and the picker is winning, which the
+    //     partner has known since the ace was called, with no reveal needed.
+    const teammateIsCertain =
+      g.partnerRevealed ||
+      g.partner === null ||
+      (idx === g.partner && winnerSoFar === g.picker);
+
     const speculativeOpening = g.tricksDone === 0 && !teammateIsCertain;
 
     if ((lastToPlay || trumpLooksSafe) && !speculativeOpening) {
