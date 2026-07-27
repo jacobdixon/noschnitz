@@ -6,6 +6,17 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.2] - 2026-07-27
+- "Play with friends" moved into the menu, alongside Trump order and Scores.
+  It had been sitting beside Last Trick since the menu didn't exist yet — the
+  header couldn't fit a third button without clipping the title. The menu is
+  the proper answer to that, so the hand row is back to carrying one control.
+  - Only rendered when a host supplies the handler, so the solo game keeps no
+    dependency on the networked half and still works with no server at all.
+  - Labelled for what it does today: it starts a fresh table, leaving the hand
+    in progress behind. Once a table can be seeded with the running score this
+    becomes "Invite others" and the game carries over instead. (`__PENDING__`)
+
 ## [0.16.1] - 2026-07-27
 - Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer
   branch. No behaviour change to the solo game beyond the two mobile fixes noted
