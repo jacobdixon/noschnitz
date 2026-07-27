@@ -511,10 +511,7 @@ export default function Sheepshead() {
       {g.phase === "handEnd" && showRecap && (
         <Modal maxWidth={480} onClose={() => setShowRecap(false)}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
-              <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 10 }}>Recap</div>
-            </div>
+            <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>Hand {g.handNum}</div>
             <button
               onClick={handleShareRecap}
               aria-label="Share this recap"
@@ -529,6 +526,23 @@ export default function Sheepshead() {
             </button>
           </div>
           <div ref={recapCaptureRef} style={{ background: felt.bgDeep }}>
+          {/* The hand-end summary is repeated here, and sits inside the capture
+              region on purpose: a recap gets shared to argue about a hand, and
+              the trick grid alone doesn't say who won or by how much. The
+              buried cards replace the old "(N buried)" count — they're the one
+              part of the hand nobody at the table ever gets to see, and the
+              recap is the only place they can be shown. */}
+          <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+            {g.result.pickerWins ? "Pickers win" : "Defenders win"} {g.result.label && `— ${g.result.label}`}
+          </div>
+          <div style={{ fontSize: 15, color: felt.creamDim, marginBottom: 8 }}>
+            {g.result.pickerTeam.map((p) => NAMES[p]).join(" & ")} took {g.result.teamPts} points
+            {" · "}defenders {g.result.defPts}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+            <span style={{ fontSize: 13, color: felt.creamDim, letterSpacing: ".04em", textTransform: "uppercase" }}>Buried</span>
+            {g.buried.map((c) => <Card key={cid(c)} card={c} small />)}
+          </div>
           <div style={{ overflowX: "auto", marginBottom: 14 }}>
             <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
               <thead>

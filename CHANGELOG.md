@@ -6,6 +6,24 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.11.0] - 2026-07-27
+- The recap now opens with the hand-end summary — who won, the label, and the
+  points both ways — instead of just the word "Recap", and shows the two
+  buried cards in place of the old "(N buried)" count.
+  - The buried pair is the one part of a hand nobody at the table ever gets to
+    see. A count of their points was the least interesting thing about them;
+    the recap is the only screen that can actually show them, so it does, as
+    real cards rather than text.
+  - The summary sits inside the shared-screenshot region, which the trick grid
+    alone never did. A recap gets shared to argue about a hand, and the grid on
+    its own doesn't say who won or by how much — so the image now carries the
+    result with it. The Share button stays outside the capture, confirmed by
+    reading the captured element's text.
+  - "Hand N" and Share keep the top row; the summary and grid sit below.
+  - Verified in the browser at 375px on a finished hand: header, points line,
+    both buried cards, the six-trick grid and the legend all render inside the
+    capture region with no horizontal overflow. (`4413ec0`)
+
 ## [0.10.1] - 2026-07-27
 - The 90-point result now reads "No Schneider!" rather than "Schneider!" — the
   losing side failed to get out of schneider, so that's what it should say.
