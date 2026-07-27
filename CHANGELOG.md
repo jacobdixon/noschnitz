@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.1] - 2026-07-27
+- Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer
+  branch. No behaviour change to the solo game beyond the two mobile fixes noted
+  below; this is groundwork for bringing the two versions together.
+  - The two branches had been fighting over one file. `v2` was +27 commits, but
+    almost all of it is additive — 22 new files that can't collide. Measured
+    against the merge base, `v2`'s own changes to `Sheepshead.jsx` were
+    **+19 / -121**, and the -121 was entirely lifting `felt`, `Card`, `Badge`,
+    `Modal` and the button styles into `ui.jsx`. It had made essentially no
+    behavioural change to the solo screen. `engine.js` was +57 with zero
+    deletions, which is why engine merges have always resolved themselves and
+    only `Sheepshead.jsx` ever conflicted.
+  - So the whole merge tax came from one structural refactor that master didn't
+    have. Master now has it, byte-identical.
+  - Measured with a trial merge into `v2` before and after: the conflict in
+    `Sheepshead.jsx` goes from **one 85-line hunk to two hunks totalling 12
+    lines** — and changes character, from "reconcile a refactor" to "master
+    added a constant, keep it". Getting from 25 lines to 12 meant adopting
+    `v2`'s exact comment text and blank lines where the two files overlap;
+    divergence there is divergence, even when it's only prose.
+  - It does not reach zero, and can't while `v2` is four commits behind: master
+    keeps adding content next to a region `v2` also edited. Once `v2` takes this
+    merge, both sides share the structure and later solo changes land in
+    disjoint regions.
+  - `Sheepshead.jsx` also gains the optional `onPlayWithFriends` prop and its
+    Friends button. Inert here — nothing passes it — but present so the file
+    matches its counterpart rather than differing by a feature.
+  - Carries across two mobile fixes that only existed on `v2`: `touchAction:
+    "manipulation"` on cards, removing the ~300ms double-tap delay browsers add
+    to undeclared touch targets, and `WebkitTouchCallout: "none"`, which stops
+    the "save image" callout firing when a thumb rests on a card.
+  - Bundle 56.48 -> 56.54 kB gzipped, which is the two touch properties and the
+    unused button. `npm test` 75/75 unchanged. (`PENDING`)
+
 ## [0.16.0] - 2026-07-27
 - The play-area header is gone, and everything it carried moved to the thing it
   describes.
