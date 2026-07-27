@@ -64,6 +64,12 @@ function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
   );
 }
 
+// How much vertical space one full-size Card actually occupies. The card box is
+// content-box, so the declared height is only part of it: 80 (height) + 2x4
+// (padding) + 2x1.5 (border) = 91. The hand fan reserves this whether or not it
+// is holding cards — see the note where it's used.
+const CARD_ROW_H = 91;
+
 // `compact` is for the recap grid, where the badge sits in the name column of
 // a six-column table: at full size it widens that column enough to push the
 // last trick off-screen on a phone.
@@ -398,7 +404,14 @@ export default function Sheepshead() {
           {roleTag(0)}
           <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </div>
-        <div style={{ display: "flex", justifyContent: "center", paddingTop: 10 }}>
+        {/* The fan holds its height even when empty. The table above is
+            `flex: 1 1 auto`, so when the last card of the hand is played this
+            row used to collapse and hand the table 91px — every seat and every
+            card of the final trick jumped, right at the moment you're watching
+            it resolve. Reserving the row keeps the layout exactly as it was
+            with cards in front of you. It also settles the smaller 8px shift
+            between the burying fan (8 cards at 0.9 scale) and normal play. */}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 10, minHeight: CARD_ROW_H }}>
           {(() => {
             // More than 6 cards only happens transiently while burying (holding
             // the blind before discarding 2) — shrink the fan a bit so the
