@@ -54,7 +54,7 @@
    `close` on the request. Hold the promise, drive the clock, then await it
    (scripts/streamtest.mjs shows the pattern).
    ========================================================================= */
-import { seatOf, markSeen, coverIdleSeats } from "../../../src/table.js";
+import { seatOf, coverIdleSeats } from "../../../src/table.js";
 import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { redisFromEnv } from "../../../src/store/upstash.js";
@@ -323,10 +323,26 @@ export function createEventsHandler(options = {}) {
         // has nothing to do with whether you are still there.
         if (now() - lastPresenceAt >= presenceMs) {
           lastPresenceAt = now();
+          // NOTE: this pass no longer marks the VIEWER present, and that is
+          // the point. Presence used to be written here, on a server timer —
+          // but the timer outlives the client. When a browser closes, this
+          // invocation keeps running to its lifetime cap and keeps vouching
+          // for a player who is already gone, so closing a tab had no visible
+          // effect for up to a minute. req.on("close") is registered and helps,
+          // but connection teardown is not something to stake presence on in a
+          // serverless runtime.
+          //
+          // Presence is now written only by an inbound request the client
+          // actually makes (api/tables/[id]/state.js, pinged on a timer by the
+          // client, plus every action route). When the browser goes, the pings
+          // stop immediately — which is the only honest evidence of life.
+          //
+          // What stays here is distribution and unsticking: broadcasting the
+          // timestamps to everyone else, covering anyone who has genuinely gone
+          // quiet, and advancing the table if that unblocks it.
           const res = await mutate(store, id, (t) => {
-            const seen = markSeen(t, { playerId, now: now() });
-            const covered = coverIdleSeats(seen, now());
-            return covered === seen ? seen : advanceTable(covered, now());
+            const covered = coverIdleSeats(t, now());
+            return covered === t ? t : advanceTable(covered, now());
           });
           if (closed) return;
 

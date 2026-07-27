@@ -42,6 +42,13 @@ const ACTION_MIN_HEIGHT = 84;
 // somebody drifting rather than being surprised by a Boot button.
 const IDLE_HINT_MS = 45_000;
 
+// How often the client tells the server it's still here. Presence must be
+// driven from the browser, not from a server timer: a timer keeps running after
+// the tab closes and vouches for someone who has already gone. Comfortably
+// inside AWAY_AFTER_MS so a couple of missed pings — a backgrounded tab, a
+// tunnel — don't hand the seat to the AI.
+const PRESENCE_PING_MS = 20_000;
+
 // Re-renders once a second so idle counters advance. Only mounted while a table
 // is on screen.
 function useTick(ms = 1000) {
@@ -71,12 +78,17 @@ function useServerNow(table) {
   return () => Date.now() - skew;
 }
 
+// Keeps the seconds visible past a minute. The previous version switched units
+// at 60s — so the counter read "59s" and then "1m", which looks like it reset,
+// and then sat on "1m" for the whole 60-119s range. That range straddles the
+// point where a seat becomes removable, so the number never visibly approached
+// the thing it was supposed to be counting towards.
 function formatIdle(ms) {
   const secs = Math.floor(ms / 1000);
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h`;
+  if (mins < 60) return `${mins}m ${String(secs % 60).padStart(2, "0")}s`;
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
 }
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
@@ -505,6 +517,22 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const [seatModal, setSeatModal] = useState(null);
   const serverNow = useServerNow(table);
   useTick(1000);
+
+  // Proof of life. Ignores the response — the stream is authoritative for
+  // state; this exists purely so the server has an inbound request to date the
+  // seat by. Fires immediately on mount so a returning player is current at
+  // once rather than up to a ping late.
+  useEffect(() => {
+    if (!tableId || !playerId) return;
+    let stopped = false;
+    const ping = () => {
+      if (stopped) return;
+      api.getState(tableId, playerId).catch(() => {});
+    };
+    ping();
+    const t = setInterval(ping, PRESENCE_PING_MS);
+    return () => { stopped = true; clearInterval(t); };
+  }, [tableId, playerId]);
 
   // Retire the stand-in once the genuine card has been REVEALED (not merely
   // received): dropping it as soon as the server confirms would blink the card

@@ -548,47 +548,37 @@ function open(store, reqOpts, handlerOpts = {}) {
 }
 
 
-/* --------- Presence must survive a BUSY table (the 3-player bug) ---------- */
+/* ------- The stream must NOT vouch for a client it cannot hear from ------- */
 {
-  // The failure, from a live three-player game: presence used to ride the SSE
-  // heartbeat. sendState() writes, writing resets the heartbeat timer, and the
-  // version-changed branch returns early — so presence was only ever recorded
-  // while the table was SILENT. Two humans plus AI left quiet gaps; a third
-  // made state changes near-continuous, presence was never written, and after
-  // 90s the auto-cover replaced active players with AI mid-game.
+  // This block used to assert the opposite: that the stream marked its viewer
+  // present on every heartbeat. That was the fix for presence being starved on
+  // a busy table — and it was wrong in a way only a live test caught. A server
+  // timer outlives the browser that started it, so a closed tab kept being
+  // vouched for until the invocation hit its lifetime cap, and closing a
+  // browser had no visible effect at the table.
   //
-  // So: hold a stream open over a table that changes constantly, and assert
-  // the watcher is still marked present.
+  // Presence is now written only by inbound requests the client actually makes
+  // (the state route, pinged by the client, plus every action route). The
+  // stream distributes it and nothing else. When the browser goes, the pings
+  // stop — which is the only honest evidence of life.
   const store = createMemoryStore({ now: () => T0 });
-  let table = createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: T0, id: "busy1234" });
+  let table = createTable({ hostPlayerId: "p-host", hostName: "Jacob", now: T0, id: "novouch1" });
   table = joinTable(table, { playerId: "p-dave", name: "Dave", now: T0 }).table;
   await store.create(table);
 
-  const before = (await store.get("busy1234")).seats.find((x) => x.playerId === "p-dave").lastSeen;
+  const daveSeat = table.seats.findIndex((x) => x.playerId === "p-dave");
+  const before = (await store.get("novouch1")).seats[daveSeat].lastSeen;
 
-  const { clock } = open(store, { id: "busy1234", playerId: "p-dave" });
+  const { clock } = open(store, { id: "novouch1", playerId: "p-dave" });
   await settle();
+  for (let i = 0; i < 2; i++) { await clock.advance(20000); await settle(); }
 
-  // Churn the table the way an active game does, advancing time past several
-  // presence windows while never letting it fall quiet.
-  for (let i = 0; i < 12; i++) {
-    const cur = await store.get("busy1234");
-    await store.put({ ...cur, version: cur.version + 1, updatedAt: T0 + i * 5000 }, cur.version);
-    clock.advance(5000);
-    await settle();
-  }
-
-  const after = (await store.get("busy1234")).seats.find((x) => x.playerId === "p-dave").lastSeen;
-  check("a watcher on a BUSY table is still recorded as present",
-    after > before, `lastSeen ${before} -> ${after}`);
-  // Not asserting it tracks the clock all the way out: the stream closes at its
-  // 50s lifetime (the client reconnects), and the fake clock coalesces ticks.
-  // What matters is that presence advanced by a full window under continuous
-  // churn — i.e. it is not just a one-off recorded at connect time.
-  check("presence advances under churn, not just once at connect",
-    after >= T0 + 20000, `lastSeen advanced to ${after - T0}ms`);
+  const after = (await store.get("novouch1")).seats[daveSeat].lastSeen;
+  check("holding a stream open does NOT mark the viewer present",
+    after === before, `lastSeen ${before} -> ${after}`);
+  check("...so a closed browser stops counting as present immediately",
+    after === T0, `lastSeen ${after}`);
 }
-
 
 /* ------------- Presence must be BROADCAST, not just written -------------- */
 {
@@ -631,9 +621,10 @@ function open(store, reqOpts, handlerOpts = {}) {
     Array.isArray(latest?.data?.kinds) && latest.data.kinds.length === 5);
 
   const daveSeat = (await store.get("pres1234")).seats.findIndex((x) => x.playerId === "p-dave");
-  check("the watcher's own presence is what advances",
-    (latest.data.lastSeen?.[daveSeat] ?? 0) > T0,
-    `lastSeen ${latest.data.lastSeen?.[daveSeat]} vs ${T0}`);
+  const stored = (await store.get("pres1234")).seats[daveSeat].lastSeen;
+  check("the frame relays the stored presence verbatim",
+    latest.data.lastSeen?.[daveSeat] === stored,
+    `frame ${latest.data.lastSeen?.[daveSeat]} vs stored ${stored}`);
 
   // The whole point of a separate frame: no version churn, so nothing that
   // tracks the version (the paced trick cursor, caughtUp) gets disturbed.

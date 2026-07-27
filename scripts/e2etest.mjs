@@ -22,7 +22,7 @@ import { call } from "./_mockhttp.mjs";
 import { _resetStore } from "../api/_lib/store.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { cid, legalPlays } from "../src/engine.js";
-import { seatOf } from "../src/table.js";
+import { seatOf, isBootable } from "../src/table.js";
 
 import createTableRoute from "../api/tables/index.js";
 import joinRoute from "../api/tables/[id]/join.js";
@@ -542,6 +542,44 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   });
   check("a removed player can rejoin", back.status === 200 && ["seated", "pending"].includes(back.body?.status),
     `status=${back.status} join=${back.body?.status}`);
+}
+
+// --- presence is written by inbound requests, nothing else ----------------
+{
+  // The counterpart to the stream test: since the stream no longer vouches for
+  // its own viewer, something has to. That something is the client pinging the
+  // state route, plus every action route marking its actor.
+  const fresh = await call(createTableRoute, {
+    method: "POST", body: { hostName: "H", playerId: "pid-pres-host" },
+  });
+  const pid = fresh.body.table.id;
+  await call(joinRoute, { method: "POST", query: { id: pid }, body: { playerId: "pid-pres-dave", name: "Dave" } });
+
+  const t0 = await store.get(pid);
+  const daveSeat = seatOf(t0, "pid-pres-dave");
+  const hostSeat = seatOf(t0, "pid-pres-host");
+
+  // Age BOTH players, then have only the host check in.
+  const old = Date.now() - 5 * 60 * 1000;
+  await store.put({
+    ...t0, version: t0.version + 1,
+    seats: t0.seats.map((x) => (x.playerId ? { ...x, lastSeen: old } : x)),
+  }, t0.version);
+
+  await call(stateRoute, { method: "GET", query: { id: pid, playerId: "pid-pres-host" } });
+  const after = await store.get(pid);
+
+  check("a state request marks the caller present",
+    after.seats[hostSeat].lastSeen > old, `lastSeen ${after.seats[hostSeat].lastSeen}`);
+  check("and marks nobody else — presence is per-client evidence",
+    after.seats[daveSeat].lastSeen === old,
+    `dave ${after.seats[daveSeat].lastSeen} vs ${old}`);
+  check("a presence ping does not bump the version",
+    after.version === t0.version + 1, `${t0.version + 1} -> ${after.version}`);
+
+  // So the player who never checked in is the one who becomes removable.
+  check("the silent player is removable", isBootable(after, daveSeat, Date.now()));
+  check("the player who checked in is not", !isBootable(after, hostSeat, Date.now()));
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
