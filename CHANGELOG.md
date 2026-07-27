@@ -22,7 +22,7 @@ corresponds to the entries below.
   - Verified in the browser across a scored hand: +4 and +2 render green
     (`#5BBE72`), -2 red (`#E0685C`), 0 neutral cream. At 375px the strip adds
     no horizontal overflow — the widest seat text measures 63px inside the
-    84px seat column. (`PENDING`)
+    84px seat column. (`ad67d4b`)
 
 ## [0.9.1] - 2026-07-27
 - The table no longer lurches when you play your last card. The hand fan holds
