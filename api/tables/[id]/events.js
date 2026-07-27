@@ -194,7 +194,7 @@ export function createEventsHandler(options = {}) {
 
   return async function eventsHandler(req, res) {
     if (!methodGuard(req, res, "GET")) return;
-  if (!requireMultiplayer(res, env)) return;
+    if (!requireMultiplayer(res, env)) return;
 
     const q = paramsOf(req);
     const id = q.id;

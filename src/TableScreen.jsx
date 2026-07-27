@@ -25,6 +25,11 @@ import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
 import { fanOverlap } from "./fan.js";
 import { Felt, HandFan } from "./felt.jsx";
+import { TableHeader } from "./header.jsx";
+// The fallback matters for tables created before rules were table state: they
+// are live in the store with no `rules` field, and a header with no rules line
+// is a visibly broken header rather than a missing feature.
+import { HOUSE_RULES } from "./rules.js";
 import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
 
@@ -638,58 +643,58 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   };
 
   return (
+    // Solo's shell, not a plain fixed inset. The rails and the 480px cap are
+    // why solo's felt is 363px wide on a 375px phone where this screen's was
+    // the full 375 — and since every seat position is a percentage of the
+    // felt, that 12px was the entire difference between the two layouts
+    // (73/206/7/272 against 75/216/8/284). Same component, same percentages,
+    // different box. Sharing the felt was never going to line them up on its
+    // own; the box had to converge too.
     <div style={{
-      position: "fixed", inset: 0, background: felt.bg, color: felt.cream,
-      display: "flex", flexDirection: "column", overflow: "hidden",
+      height: "100dvh", overflow: "hidden",
+      background: `radial-gradient(ellipse at 50% 30%, ${felt.bg}, ${felt.bgDeep} 80%)`,
+      color: felt.cream, fontFamily: "'Avenir Next', 'Segoe UI', system-ui, sans-serif",
+      display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto",
+      borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
-      {/* Header (#34). Deliberately terse labels: the solo header already holds
-          429px of content in 363px at phone width, and this row carries three
-          buttons plus the table code. Measured after building, not assumed. */}
-      <div style={{
-        flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
-        padding: "8px 10px", borderBottom: `2px solid ${felt.rail}`,
-      }}>
-        <div style={{
-          display: "flex", alignItems: "baseline", gap: 5,
-          minWidth: 0, flex: 1, overflow: "hidden",
-        }}>
-          <span style={{
-            fontFamily: "Georgia, serif", fontWeight: 900, letterSpacing: ".06em",
-            fontSize: 14, color: felt.brass, whiteSpace: "nowrap",
-            overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
-          }}>{table.id}</span>
-          {/* Same treatment as the solo header: small and dim enough to ignore
-              while playing, legible enough to read off a screenshot when
-              someone reports a bug against a particular build. flexShrink 0 so
-              the table code truncates before the version does — the version is
-              the part that has to stay readable. */}
-          <span style={{
-            fontSize: 9, opacity: 0.4, letterSpacing: ".02em",
-            userSelect: "none", whiteSpace: "nowrap", flexShrink: 0,
-          }}>v{__APP_VERSION__}</span>
-        </div>
-        <button style={btnGhost} onClick={() => setModal("invite")}>Invite</button>
-        <button style={btnGhost} onClick={() => setModal("trump")}>Trump</button>
-        <button style={btnGhost} onClick={() => setModal("scores")}>Scores</button>
-      </div>
+      {/* The solo game's header, from header.jsx. The table code takes the
+          title slot because at a table the code IS the identity — it's what
+          you read out to someone whose link didn't paste — where solo has
+          nothing more specific to say than SHEEPSHEAD.
 
-      {/* Contract strip */}
-      <div style={{
-        flexShrink: 0, padding: "6px 12px", fontSize: 13, color: felt.creamDim,
-        borderBottom: `1px solid ${felt.rail}`, display: "flex", gap: 10, alignItems: "center",
-      }}>
-        <span style={{ fontWeight: 700 }}>Hand {g.handNum}</span>
-        {g.picker !== null && <span>{table.seats[g.picker].name} picked</span>}
-        {g.calledSuit && (
-          <span style={{ color: felt.brass, fontWeight: 700 }}>
-            {SUIT_SYM[g.calledSuit]} {SUIT_NAME[g.calledSuit]}
+          Invite / Trump / Scores were three buttons in a row here. They move
+          into the menu because that is where solo keeps Trump and Scores, and
+          keeping them out here is what forced this header to be a second
+          implementation: three buttons plus a table code do not fit beside a
+          title at phone width, so it dropped the rules line to make room.
+
+          The contract strip that used to sit under this row is gone entirely.
+          It showed who picked, the called suit and Alone — all three of which
+          the felt now draws as badges on the picker's own seat, which is
+          better placed anyway: it says who, not just what. Hand number was the
+          only thing left, and the Scores modal already opens on "After hand
+          N". */}
+      <TableHeader
+        title={table.id}
+        rules={table.rules || HOUSE_RULES}
+        doubler={g.doubler || 1}
+        extra={
+          // Rides in the rules row rather than taking a row of its own. Kept
+          // mounted at zero opacity so a blip can't reflow the header — and a
+          // header that changes height mid-hand moves the felt under it.
+          <span style={{
+            marginLeft: "auto", flexShrink: 0, fontSize: 11, color: felt.creamDim,
+            opacity: connected ? 0 : 1, transition: "opacity .3s", whiteSpace: "nowrap",
+          }}>
+            reconnecting…
           </span>
-        )}
-        {g.alone && <Badge compact>Alone</Badge>}
-        <span style={{ marginLeft: "auto", opacity: connected ? 0 : 1, transition: "opacity .3s" }}>
-          reconnecting…
-        </span>
-      </div>
+        }
+        menuItems={[
+          { label: "Invite others", onSelect: () => setModal("invite") },
+          { label: "Trump order", onSelect: () => setModal("trump") },
+          { label: "Scores", onSelect: () => setModal("scores") },
+        ]}
+      />
 
       {/* The felt is the solo game's, rendered from src/felt.jsx. Everything
           multiplayer needs on top of it hangs off two seams the component
