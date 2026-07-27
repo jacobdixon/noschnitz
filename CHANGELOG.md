@@ -24,7 +24,7 @@ corresponds to the entries below.
   - Layout-neutral at 375px. The heading already wrapped to two lines for every
     labelled outcome before this change; measured against the modal's 299px
     inner width, all five strings still render at two lines and 55px with no
-    horizontal overflow. (`PENDING`)
+    horizontal overflow. (`5c9ac72`)
 
 ## [0.10.0] - 2026-07-27
 - Each opponent's seat now shows their running score instead of how many cards
