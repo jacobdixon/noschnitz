@@ -13,6 +13,7 @@ import {
   createTable, joinTable, leaveTable, applyPendingJoins, startHand,
   markSeen, seatOf, humanSeats, aiSeatIndexes, uniqueName, makeTableCode,
   atHandBoundary, AI_NAMES, stepAway, coverIdleSeats, AWAY_AFTER_MS,
+  idleMs, isBootable, bootSeat,
 } from "../src/table.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { mutate } from "../src/store/mutate.js";
@@ -302,6 +303,51 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   check("no seat is covered twice",
     cur.seats.filter((x) => x.kind === "away").length === 2,
     `away=${cur.seats.filter((x) => x.kind === "away").length}`);
+}
+
+
+/* ------------------------- Booting an absent player ----------------------- */
+{
+  // Distinct from both leaving and stepping away: the TABLE reclaims somebody
+  // else's seat. Cover keeps a seat for its owner; boot releases it so another
+  // person can sit down.
+  let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  const daveSeat = seatOf(t, "p-dave");
+
+  check("a player just seen is not bootable", !isBootable(t, daveSeat, T0 + 1000));
+  check("idle time is measured from lastSeen", idleMs(t, daveSeat, T0 + 5000) === 5000);
+  check("a long-absent player is bootable", isBootable(t, daveSeat, T0 + AWAY_AFTER_MS + 1));
+
+  // Bootable regardless of whether they were the one holding play up — which is
+  // the difference from coverIdleSeats, and the reason both exist.
+  const started = startHand(t, T0);
+  const notBlocking = { ...started, g: { ...started.g, pickTurn: seatOf(started, "p-host") } };
+  check("bootable even when not the blocking seat",
+    isBootable(notBlocking, daveSeat, T0 + AWAY_AFTER_MS + 1));
+
+  const booted = bootSeat(t, { seat: daveSeat, now: T0 + AWAY_AFTER_MS + 1 });
+  check("booting hands the seat back to the house AI", booted.seats[daveSeat]?.kind === "ai");
+  check("booting releases the claim", seatOf(booted, "p-dave") === -1);
+  check("the freed seat is offered to newcomers", aiSeatIndexes(booted).includes(daveSeat));
+  check("the seat gets its AI name back", AI_NAMES.includes(booted.seats[daveSeat]?.name));
+  check("booting bumps the version", booted.version > t.version);
+
+  // Booting is not a ban: the table code is still the only credential.
+  const returned = joinTable(booted, { playerId: "p-dave", name: "Dave", now: T0 + 99999 });
+  check("a booted player can rejoin", returned.status === "seated");
+
+  // An away seat is still claimed, so it is still bootable — a player who
+  // stepped away and never came back shouldn't hold a seat forever.
+  const away = stepAway(t, { playerId: "p-dave", now: T0 });
+  check("an away seat is still bootable once idle",
+    isBootable(away, daveSeat, T0 + AWAY_AFTER_MS + 1));
+  check("booting an away seat releases it",
+    bootSeat(away, { seat: daveSeat, now: T0 }).seats[daveSeat]?.kind === "ai");
+
+  // Nothing to reclaim from an unclaimed seat.
+  const aiSeat0 = aiSeatIndexes(t)[0];
+  check("a house AI seat is never bootable", !isBootable(t, aiSeat0, T0 + AWAY_AFTER_MS * 10));
+  check("booting an AI seat is a no-op", bootSeat(t, { seat: aiSeat0, now: T0 }) === t);
 }
 
 /* ------------------------- Versioning + CAS store ------------------------- */

@@ -226,6 +226,38 @@ export function applyPendingJoins(table, now) {
 // were using, so the table keeps playing without a gap. Full COM-3 behavior
 // (grace period, reclaiming your seat after a dropped connection) builds on
 // this; for now it's the explicit "I'm leaving" path.
+// How long a seat has been unheard-from. Callers pass `now` from the same clock
+// the table was written with (server time) — see the note on skew in
+// TableScreen, which corrects for it before displaying this.
+export function idleMs(table, seat, now) {
+  const s = table.seats[seat];
+  if (!s || !isClaimed(s)) return 0;
+  return Math.max(0, now - (s.lastSeen ?? table.updatedAt ?? now));
+}
+
+// Can this seat be booted right now? Separate from `coverIdleSeats`, which only
+// covers the seat that is BLOCKING play: a player can be long gone without ever
+// having been the one holding things up, and the table should still be able to
+// reclaim their seat.
+export function isBootable(table, seat, now, awayAfterMs = AWAY_AFTER_MS) {
+  const s = table.seats[seat];
+  if (!s || !isClaimed(s)) return false;
+  return idleMs(table, seat, now) > awayAfterMs;
+}
+
+// Releasing a seat outright, as opposed to covering it. Cover keeps the seat
+// for its owner; boot hands it back to the house AI so somebody else can sit
+// down. The booted player isn't banned — the table code is still the only
+// credential — they'd simply rejoin as a newcomer taking a free seat.
+export function bootSeat(table, { seat, now }) {
+  const s = table.seats[seat];
+  if (!s || !isClaimed(s)) return table;
+  const seats = table.seats.map((x, i) =>
+    i === seat ? aiSeat(AI_NAMES[i - 1] || `Seat ${i + 1}`) : x
+  );
+  return commit({ ...table, seats }, now);
+}
+
 export function leaveTable(table, { playerId, now }) {
   const idx = seatOf(table, playerId);
   if (idx < 0) {

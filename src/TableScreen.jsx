@@ -24,6 +24,7 @@ import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx"
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
 import { fanOverlap } from "./fan.js";
+import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
 
 const SEATS = 5;
@@ -36,6 +37,43 @@ const TRUMP_ORDER = makeDeck().filter(isTrump).sort((a, b) => trumpPower(b) - tr
 // every time a button appears or disappears, and the whole play area jumps as
 // the last card of a trick lands (#33). Solo has always reserved this space.
 const ACTION_MIN_HEIGHT = 84;
+
+// Show an idle hint well before the seat becomes bootable, so the table sees
+// somebody drifting rather than being surprised by a Boot button.
+const IDLE_HINT_MS = 45_000;
+
+// Re-renders once a second so idle counters advance. Only mounted while a table
+// is on screen.
+function useTick(ms = 1000) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => bump((n) => n + 1), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+}
+
+// `lastSeen` is stamped with the SERVER's clock. Comparing it against the
+// browser's Date.now() shows nonsense the moment the two disagree — and phones
+// with a slow clock disagree by minutes, which would either hide idle players
+// or offer to boot people who just sat down. `updatedAt` gives us a reading of
+// the server clock on every update, so the difference is the skew, and idle
+// times are computed in the server's frame.
+function useServerNow(table) {
+  const [skew, setSkew] = useState(0);
+  const stamp = table?.updatedAt;
+  useEffect(() => {
+    if (stamp) setSkew(Date.now() - stamp);
+  }, [stamp]);
+  return () => Date.now() - skew;
+}
+
+function formatIdle(ms) {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h`;
+}
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
 const rotate = (seat, mySeat) => (mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS);
@@ -83,15 +121,24 @@ const TRICK_POS = {
   4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
 };
 
-function Avatar({ seat, table, isTurn }) {
+function Avatar({ seat, table, isTurn, serverNow, onClick }) {
   const s = table.seats[seat];
+  const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
+  const showIdle = idle > IDLE_HINT_MS && s.kind !== "ai";
   const g = table.g;
   const initial = (s.name || "?").trim()[0]?.toUpperCase() || "?";
   const isPicker = g && g.picker === seat;
   const isPartner = g && g.partner === seat;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+    <div
+      onClick={onClick}
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+        cursor: onClick ? "pointer" : "default",
+        WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
+      }}
+    >
       <div style={{
         width: 46, height: 46, borderRadius: "50%", background: felt.chip,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -110,6 +157,11 @@ function Avatar({ seat, table, isTurn }) {
         {s.kind === "ai" ? "AI" : s.kind === "away" ? "away · AI" : "•"}{" "}
         {g ? `${g.handCounts?.[seat] ?? 0}🂠` : ""}
       </div>
+      {showIdle && (
+        <div style={{ fontSize: 10, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim }}>
+          idle {formatIdle(idle)}
+        </div>
+      )}
       {isPicker && <Badge gold compact>Picker</Badge>}
       {isPartner && <Badge gold compact>Partner</Badge>}
     </div>
@@ -360,6 +412,59 @@ function InviteModal({ table, onClose }) {
   );
 }
 
+// Tapping a seat. Today it holds presence and the boot control; it's also the
+// natural home for a profile link and lifetime stats once players are more than
+// a localStorage token.
+function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy }) {
+  const s = table.seats[seat];
+  if (!s) return null;
+  const idle = idleMs(table, seat, serverNow());
+  const bootable = isBootable(table, seat, serverNow());
+  const isMe = seat === table.you;
+
+  const kindLabel =
+    s.kind === "ai" ? "Played by the house AI"
+      : s.kind === "away" ? "Stepped away — the AI is covering this seat"
+        : "Playing";
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 2 }}>
+        {s.name}
+      </div>
+      <div style={{ fontSize: 14, color: felt.creamDim, marginBottom: 10 }}>
+        {kindLabel}{isMe ? " · this is you" : ""}
+      </div>
+
+      {s.kind !== "ai" && (
+        <div style={{ fontSize: 14, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim, marginBottom: 14 }}>
+          {idle > IDLE_HINT_MS ? `Last seen ${formatIdle(idle)} ago` : "Here now"}
+        </div>
+      )}
+
+      {!isMe && s.kind !== "ai" && (
+        bootable ? (
+          <>
+            <button style={{ ...btnGold, marginBottom: 8 }} disabled={busy} onClick={() => onBoot(seat)}>
+              {busy ? "Removing…" : `Remove ${s.name}`}
+            </button>
+            <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+              Frees the seat for someone else. Not a ban — they can rejoin with
+              the table link and take any open seat.
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+            You can free this seat once they've been away for a while.
+          </div>
+        )
+      )}
+
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
 /* --------------------------------- Table ---------------------------------- */
 
 export default function TableScreen({ tableId, playerId, playerName }) {
@@ -382,6 +487,9 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   const [optimistic, setOptimistic] = useState(null);
   const viewportWidth = useViewportWidth();
   const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite"
+  const [seatModal, setSeatModal] = useState(null);
+  const serverNow = useServerNow(table);
+  useTick(1000);
 
   // Retire the stand-in once the genuine card has been REVEALED (not merely
   // received): dropping it as soon as the server confirms would blink the card
@@ -534,7 +642,13 @@ export default function TableScreen({ tableId, playerId, playerName }) {
               position: "absolute", ...pos, width: 84,
               display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
             }}>
-              <Avatar seat={seat} table={table} isTurn={g.turn === seat && caughtUp} />
+              <Avatar
+                seat={seat}
+                table={table}
+                isTurn={g.turn === seat && caughtUp}
+                serverNow={serverNow}
+                onClick={() => setSeatModal(seat)}
+              />
             </div>
           );
         })}
@@ -685,6 +799,19 @@ export default function TableScreen({ tableId, playerId, playerName }) {
       {modal === "invite" && <InviteModal table={table} onClose={() => setModal(null)} />}
       {modal === "lastTrick" && (
         <LastTrickModal table={table} mySeat={mySeat} onClose={() => setModal(null)} />
+      )}
+      {seatModal !== null && (
+        <PlayerModal
+          table={table}
+          seat={seatModal}
+          serverNow={serverNow}
+          busy={busy}
+          onClose={() => setSeatModal(null)}
+          onBoot={(seat) => act(async () => {
+            await api.bootPlayer(tableId, playerId, seat);
+            setSeatModal(null);
+          })}
+        />
       )}
     </div>
   );

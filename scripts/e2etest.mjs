@@ -33,6 +33,7 @@ import pickRoute from "../api/tables/[id]/pick.js";
 import buryRoute, { callableSuits } from "../api/tables/[id]/bury.js";
 import leaveRoute from "../api/tables/[id]/leave.js";
 import nameRoute from "../api/tables/[id]/name.js";
+import bootRoute from "../api/tables/[id]/boot.js";
 
 let passed = 0;
 const failures = [];
@@ -417,6 +418,71 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     afterLeave.seats[daveSeat]?.kind === "ai", `kind=${afterLeave.seats[daveSeat]?.kind}`);
   check("the table stays playable after someone leaves",
     afterLeave.seats.filter((s) => s.kind === "human").length >= 1);
+}
+
+// --- boot: the table reclaiming an abandoned seat -------------------------
+{
+  // The threshold is re-checked server-side, so a client that renders the
+  // button early can't remove somebody who is present.
+  const live = await store.get(tableId);
+  const hostSeat = seatOf(live, HOST);
+  const victim = live.seats.findIndex((x, i) => i !== hostSeat && (x.kind === "human" || x.kind === "away"));
+  const victimPid = victim >= 0 ? live.seats[victim].playerId : null;
+
+  if (victim >= 0) {
+    const tooSoon = await call(bootRoute, {
+      method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: victim },
+    });
+    check("booting a present player is refused", tooSoon.status === 400, `got ${tooSoon.status}`);
+    check("refusal uses a stable code", tooSoon.body?.error?.code === "still-present");
+    check("the refused boot changed nothing",
+      (await store.get(tableId)).seats[victim]?.kind !== "ai");
+
+    // Age them out, then it works.
+    const cur = await store.get(tableId);
+    const aged = {
+      ...cur,
+      version: cur.version + 1,
+      seats: cur.seats.map((x, i) => (i === victim ? { ...x, lastSeen: Date.now() - 10 * 60 * 1000 } : x)),
+    };
+    await store.put(aged, cur.version);
+
+    const ok = await call(bootRoute, {
+      method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: victim },
+    });
+    check("booting a long-absent player succeeds", ok.status === 200, `got ${ok.status} ${ok.body?.error?.code || ""}`);
+    check("the seat goes back to the house AI",
+      (await store.get(tableId)).seats[victim]?.kind === "ai");
+    assertNoLeak("boot", ok.body, await store.get(tableId), hostSeat, HOST, ALL_IDS);
+
+    // Booting is not a ban, and later cases in this file still expect this
+    // player seated — so put them back, which also exercises the rejoin path.
+    const back = await call(joinRoute, {
+      method: "POST", query: { id: tableId }, body: { playerId: victimPid, name: "Dave" },
+    });
+    // Mid-hand this comes back as "pending" — MP-2.3 seats them at the next
+    // boundary — so the assertion is that rejoining is ALLOWED, not that it is
+    // instant.
+    check("a booted player can rejoin the table",
+      back.status === 200 && ["seated", "pending"].includes(back.body?.status),
+      `status=${back.status} join=${back.body?.status}`);
+  }
+
+  const self = await call(bootRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: hostSeat },
+  });
+  check("you cannot boot yourself", self.status === 403, `got ${self.status}`);
+  check("self-boot uses a stable code", self.body?.error?.code === "cannot-boot-self");
+
+  const stranger = await call(bootRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", seat: 0 },
+  });
+  check("a stranger cannot boot anyone", stranger.status === 403, `got ${stranger.status}`);
+
+  const bad = await call(bootRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: 9 },
+  });
+  check("an out-of-range seat is rejected", bad.status === 400, `got ${bad.status}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);

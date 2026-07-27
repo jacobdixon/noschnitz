@@ -72,6 +72,11 @@ export const playCard = (id, playerId, card) =>
 export const setName = (id, playerId, name) =>
   request(`/api/tables/${encodeURIComponent(id)}/name`, { method: "POST", body: { playerId, name } });
 
+// The table reclaiming a seat from someone who has gone. Not a ban — see
+// api/tables/[id]/boot.js.
+export const bootPlayer = (id, playerId, seat) =>
+  request(`/api/tables/${encodeURIComponent(id)}/boot`, { method: "POST", body: { playerId, seat } });
+
 // COM-3.1 — keeps the seat, hands play to the AI. Reclaiming needs no call:
 // rejoining the table takes the seat back (see joinTable's reclaim path).
 export const stepAway = (id, playerId) =>
