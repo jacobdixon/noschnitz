@@ -38,7 +38,7 @@ corresponds to the entries below.
     to undeclared touch targets, and `WebkitTouchCallout: "none"`, which stops
     the "save image" callout firing when a thumb rests on a card.
   - Bundle 56.48 -> 56.54 kB gzipped, which is the two touch properties and the
-    unused button. `npm test` 75/75 unchanged. (`PENDING`)
+    unused button. `npm test` 75/75 unchanged. (`8a9663d`)
 
 ## [0.16.0] - 2026-07-27
 - The play-area header is gone, and everything it carried moved to the thing it
