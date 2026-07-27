@@ -383,8 +383,37 @@ export default function Sheepshead() {
             addressable thing rather than a substring. Not a button yet — a
             control that does nothing when you press it reads as broken, so it
             stays text until it has somewhere to go. */}
-        <div style={{ marginTop: 4, fontSize: 11, letterSpacing: ".04em", color: felt.creamDim, opacity: 0.75, userSelect: "none" }}>
-          {HOUSE_RULES.join(" · ")}
+        {/* Wraps rather than squeezes. The rules and the badge together need
+            356px and a 375px phone gives 339, so something has to give — and
+            it must not be the rules line, which is the permanent thing. The
+            badge drops to a second row instead. That changes the header's
+            height, which is only safe because a doubler is set when the hand is
+            dealt, never mid-hand: the layout settles before a card is played. */}
+        <div style={{ marginTop: 4, display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 4, columnGap: 8 }}>
+          <div style={{
+            flexShrink: 0, fontSize: 11, letterSpacing: ".04em",
+            color: felt.creamDim, opacity: 0.75, userSelect: "none", whiteSpace: "nowrap",
+          }}>
+            {HOUSE_RULES.join(" · ")}
+          </div>
+          {/* The stake rides with the rules rather than on the table. It was
+              briefly at the table's top centre, which collides: the seats sit
+              at 4% of the table's height, so on a 667px-tall phone they start
+              at y=14 while the badge reaches y=19, and there is no room to put
+              it between the two top seats either — that gap is ~50px and the
+              badge is ~95px. Up here it is fixed chrome, it cannot collide with
+              anything the game draws, and it sits next to the rules that
+              explain what doubling means. */}
+          {(g.doubler || 1) > 1 && (
+            <span style={{
+              marginLeft: "auto", flexShrink: 0,
+              color: "#2A2108", background: felt.brass,
+              fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
+              padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+            }}>
+              Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
+            </span>
+          )}
         </div>
 
         {showMenu && (
@@ -430,19 +459,6 @@ export default function Sheepshead() {
 
       {/* Table */}
       <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
-        {/* The stake is inherited from a hand nobody picked, so it has to be
-            legible for the whole hand it applies to — top centre, clear of the
-            seats at 4% and the trick cards at 26%. */}
-        {(g.doubler || 1) > 1 && (
-          <div style={{
-            position: "absolute", left: "50%", top: 0, transform: "translateX(-50%)", zIndex: 4,
-            color: "#2A2108", background: felt.brass,
-            fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
-            padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap",
-          }}>
-            Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
-          </div>
-        )}
         {[1, 2, 3, 4].map((i) => (
           <div key={i} style={{ position: "absolute", ...seatPos[i], display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 84 }}>
             {/* Avatar and dealer button share a positioning context so the

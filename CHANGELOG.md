@@ -16,9 +16,16 @@ corresponds to the entries below.
     the strip was restating three things and owning one.
   - That hands ~38px back to the table, which is the part of the screen you
     actually look at.
-  - The Doubler badge moves to the top centre of the table, clear of the seats
-    at 4% and the trick cards at 26%. It has to stay legible for the whole hand
-    it applies to, since it's inherited from a hand nobody picked.
+  - The Doubler badge moves up into the header, beside the house rules. It was
+    briefly at the table's top centre, and that collides: the seats sit at 4% of
+    the table's height, so on a 667px-tall phone they start at y=14 while the
+    badge reaches y=19, overlapping two of them. There is no room between the
+    two top seats either — that gap is ~50px and the badge is ~95px. In the
+    header it is fixed chrome that cannot collide with anything the game draws,
+    and it sits next to the rule that explains what doubling means. The row
+    wraps rather than squeezing the rules line, since the two together need
+    356px against a phone's 339 — and that height change is only safe because a
+    doubler is set when the hand is dealt, never mid-hand.
 - The recap now stamps **the build number inside the shared screenshot**:
   "Hand 3 · v0.16.0". That image is the format hands actually get reported in,
   and a reported hand is evidence about a specific AI build — without the
