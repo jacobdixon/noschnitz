@@ -27,7 +27,7 @@
    way.
    ========================================================================= */
 import React from "react";
-import { SUIT_SYM, cid, cardPts, trickWinner } from "./engine.js";
+import { SUIT_SYM, SUIT_NAME, cid, cardPts, trickWinner } from "./engine.js";
 import { felt, scoreColor, Card, CARD_ROW_H, Badge } from "./ui.jsx";
 
 export const SEATS = 5;
@@ -78,13 +78,20 @@ export function DealerButton() {
 // badge stack rather than in a strip of its own. Hearts is the only callable
 // red suit (diamonds are trump), and felt.red is tuned for cream card faces, so
 // it gets the lighter red that reads on felt.
+//
+// Glyph and word together, with "Called" dropped — the badge only ever appears
+// on the picker's seat, so what it refers to is already answered by where it
+// is. The word earns the space the word "Called" gave up: ♠ and ♣ are the pair
+// people misread at a glance, and at 9px on a dark felt they are two small
+// black clusters. Naming the suit removes the ambiguity that actually costs
+// something in a game where going for the wrong ace loses the hand.
 function CalledChip({ suit }) {
   return (
     <Badge compact>
-      Called{" "}
       <span style={{ color: suit === "H" ? felt.scoreDown : felt.cream, fontWeight: 900 }}>
         {SUIT_SYM[suit]}
-      </span>
+      </span>{" "}
+      {SUIT_NAME[suit]}
     </Badge>
   );
 }
