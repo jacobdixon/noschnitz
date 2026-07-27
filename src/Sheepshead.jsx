@@ -299,6 +299,15 @@ export default function Sheepshead({ onPlayWithFriends }) {
               {[
                 ["Trump order", () => setShowHelp(true)],
                 ["Scores", () => setShowScores(true)],
+                // Only when a host supplied a handler — the solo game has no
+                // dependency on the networked half and must keep working with
+                // no server at all.
+                //
+                // Labelled for what it does TODAY: it starts a fresh table, so
+                // the hand in progress is left behind. Once a table can be
+                // seeded with the running score, this becomes "Invite others"
+                // and the game carries over.
+                ...(onPlayWithFriends ? [["Play with friends", onPlayWithFriends]] : []),
               ].map(([label, open], i) => (
                 <button
                   key={label}
@@ -376,19 +385,11 @@ export default function Sheepshead({ onPlayWithFriends }) {
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
           {g.dealer === 0 && <DealerButton />}
           <RoleBadges g={g} seat={0} />
-          {/* Sits beside Last Trick rather than in the header: the header row
-              already measures 429px of content against 363px of space at
-              375px wide, so a third button there clips the title. This row
-              has room to spare. */}
-          {onPlayWithFriends && (
-            <button
-              onClick={onPlayWithFriends}
-              style={{ ...btnGhost, marginLeft: "auto", borderColor: felt.brass, color: felt.brass }}
-            >
-              Friends
-            </button>
-          )}
-          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: onPlayWithFriends ? 8 : "auto" }}>Last Trick</button>
+          {/* "Friends" used to live here — beside Last Trick rather than in the
+              header, because the header couldn't fit a third button. The menu
+              solves that properly, so it has moved there and this row is back
+              to carrying one thing. */}
+          <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </div>
         {/* The fan holds its height even when empty. The table above is
             `flex: 1 1 auto`, so when the last card of the hand is played this
