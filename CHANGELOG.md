@@ -17,7 +17,7 @@ corresponds to the entries below.
     11px uppercase treatment the headings had.
   - Measured at 375px with a finished hand: the header row is a single 23px
     line, all seven cells one line each, table 318px inside a 318px scroller —
-    no sideways scroll on the grid and no page overflow. (`PENDING`)
+    no sideways scroll on the grid and no page overflow. (`c9ed246`)
 
 ## [0.11.0] - 2026-07-27
 - The recap now opens with the hand-end summary — who won, the label, and the
