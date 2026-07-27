@@ -6,6 +6,25 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.4] - 2026-07-27
+- The header moves into `src/header.jsx`: title, build stamp, house-rules line,
+  doubler badge and the menu. No visual or behavioural change — the second half
+  of the same groundwork as 0.16.3.
+  - `rules` arrives as a prop, which is the point of doing this separately from
+    the felt. Solo's rules are a module constant so every player necessarily
+    agrees; at a table they have to be state, because everyone sitting down has
+    to be playing the same game. Threading that through afterwards would mean
+    touching this markup twice.
+  - Menu entries are passed as data rather than rendered fixed, because that is
+    where the two halves genuinely differ — a table adds Invite and later a
+    profile. Nothing conditional lives in the header; it never learns what a
+    "host" is.
+  - Verified behaviour-identical by measurement against the unextracted build:
+    same header text, same 61px height, same menu items, no overflow. The
+    doubler branch was exercised separately by forcing a stake — badge renders,
+    header wraps to 84px as designed. `Sheepshead.jsx` drops to 587 lines,
+    from 800 before this pair of extractions. (`__PENDING__`)
+
 ## [0.16.3] - 2026-07-27
 - The felt moves into `src/felt.jsx`: seat ring, played trick, trick-winner
   banner, blind marker and hand fan. No visual or behavioural change — this is
