@@ -115,17 +115,17 @@ export function createTable({ hostPlayerId, hostName, now, rand, id } = {}) {
 
 /* -------------------------------- Queries -------------------------------- */
 
-// Matches "away" seats as well as "human" ones: a seat you stepped away from is
-// still YOUR seat, and this is what lets you reclaim it (COM-3.2) rather than
-// being handed whatever is free.
-export const seatOf = (table, playerId) =>
-  playerId == null ? -1 : table.seats.findIndex((s) => isClaimed(s) && s.playerId === playerId);
-
 // Three seat kinds:
 //   "human" — claimed, the player is present, they play their own cards
 //   "away"  — claimed, the player is absent, AI covers (COM-3.1/3.3)
 //   "ai"    — unclaimed house AI, and the only kind a newcomer may take
 export const isClaimed = (seat) => seat.kind === "human" || seat.kind === "away";
+
+// Matches "away" seats as well as "human" ones: a seat you stepped away from is
+// still YOUR seat, and this is what lets you reclaim it (COM-3.2) rather than
+// being handed whatever is free.
+export const seatOf = (table, playerId) =>
+  playerId == null ? -1 : table.seats.findIndex((s) => isClaimed(s) && s.playerId === playerId);
 
 // How long a seat goes unheard-from before the AI covers it. Long enough to
 // survive a tunnel or a phone locking during someone else's turn, short enough

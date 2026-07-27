@@ -272,6 +272,13 @@ export function createEventsHandler(options = {}) {
       sendEvent("state", { version: t.version, table: tableViewFor(t, seatIn(t), playerId) }, t.version);
     };
 
+    // Declared before close() rather than at their assignments below, because
+    // the two genuinely reference each other: close() clears them, and the
+    // timers they hold call close(). Hoisting the bindings breaks the cycle
+    // for a reader (and for no-use-before-define) without changing behaviour.
+    let poll;
+    let life;
+
     const close = () => {
       if (closed) return;
       closed = true;
@@ -397,9 +404,9 @@ export function createEventsHandler(options = {}) {
       }
     };
 
-    const poll = setIntervalFn(tick, pollMs);
+    poll = setIntervalFn(tick, pollMs);
 
-    const life = setTimeoutFn(() => {
+    life = setTimeoutFn(() => {
       if (closed) return;
       // The distinct event is the whole point: without it the client can't
       // tell a scheduled handoff from a dropped connection, and would back off

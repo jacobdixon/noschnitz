@@ -41,6 +41,11 @@ export default [
     linterOptions: { reportUnusedDisableDirectives: true },
     rules: {
       "no-undef": "error",
+      // The sibling failure, and one no-undef cannot see: the binding exists in
+      // scope, just later. Hooks near the top of a component that reach for a
+      // `const` declared below the early returns throw "Cannot access 'g'
+      // before initialization" and blank the screen — again with a clean build.
+      "no-use-before-define": ["error", { functions: false, classes: false, variables: true }],
       // The other half of the same problem: a binding left behind after the
       // code that used it is gone. Harmless on its own, but it is what turns
       // an import list into an unreliable description of what a file needs.

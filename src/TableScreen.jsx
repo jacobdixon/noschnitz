@@ -394,13 +394,13 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // Reset between hands. Without this, closing the recap is the only thing
   // that clears it, so a player who left it open would land straight in the
   // recap at the END of the next hand instead of on the summary.
-  useEffect(() => { setShowRecap(false); }, [g?.handNum]);
+  useEffect(() => { setShowRecap(false); }, [table?.g?.handNum]);
   const serverNow = useServerNow(table);
   // Only meaningful once every card is down, and it walks the whole hand,
   // so it is not worth computing on each of the ~30 renders before that.
   const playGrades = useMemo(
-    () => (g?.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
-    [g?.phase, g?.handNum]
+    () => (table?.g?.phase === "handEnd" ? gradeHandPlays(table.g) : { best: null, worst: null }),
+    [table?.g?.phase, table?.g?.handNum]
   );
   useTick(1000);
 
