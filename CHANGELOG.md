@@ -23,7 +23,7 @@ corresponds to the entries below.
     same header text, same 61px height, same menu items, no overflow. The
     doubler branch was exercised separately by forcing a stake — badge renders,
     header wraps to 84px as designed. `Sheepshead.jsx` drops to 587 lines,
-    from 800 before this pair of extractions. (`__PENDING__`)
+    from 800 before this pair of extractions. (`de15a0b`)
 
 ## [0.16.3] - 2026-07-27
 - The felt moves into `src/felt.jsx`: seat ring, played trick, trick-winner
