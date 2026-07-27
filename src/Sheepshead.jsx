@@ -547,10 +547,16 @@ export default function Sheepshead() {
             <table style={{ borderCollapse: "collapse", fontSize: 13, minWidth: "100%" }}>
               <thead>
                 <tr>
-                  <td style={{ padding: "0 6px 6px 0" }}></td>
+                  {/* "TRICK" labels the row once, in the otherwise-empty name
+                      column, so each heading is just its number. Repeating the
+                      word six times cost width in the one place the grid is
+                      tightest — at 375px every heading wrapped onto two lines. */}
+                  <td style={{ padding: "0 6px 6px 0", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" }}>
+                    Trick
+                  </td>
                   {[1, 2, 3, 4, 5, 6].map((t) => (
-                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 11, textTransform: "uppercase", letterSpacing: ".03em" }}>
-                      Trick {t}
+                    <td key={t} style={{ textAlign: "center", padding: "0 4px 6px", color: felt.creamDim, fontSize: 12, fontWeight: 700 }}>
+                      {t}
                     </td>
                   ))}
                 </tr>

@@ -6,6 +6,19 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.11.1] - 2026-07-27
+- The recap grid labels its columns once: "TRICK" now sits in the name column
+  as a row header, and each heading is just its number.
+  - Repeating the word six times spent width in the one place the grid is
+    tightest. At 375px every heading wrapped onto two lines, so the header row
+    was twice as tall as it needed to be and the numbers — the part you
+    actually read — were the smaller half of each cell.
+  - Numbers move to 12px semibold now that they stand alone; "TRICK" keeps the
+    11px uppercase treatment the headings had.
+  - Measured at 375px with a finished hand: the header row is a single 23px
+    line, all seven cells one line each, table 318px inside a 318px scroller —
+    no sideways scroll on the grid and no page overflow. (`PENDING`)
+
 ## [0.11.0] - 2026-07-27
 - The recap now opens with the hand-end summary — who won, the label, and the
   points both ways — instead of just the word "Recap", and shows the two
