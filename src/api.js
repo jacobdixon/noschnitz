@@ -67,28 +67,29 @@ export const bury = (id, playerId, cards, calledSuit) =>
 export const playCard = (id, playerId, card) =>
   request(`/api/tables/${encodeURIComponent(id)}/play`, { method: "POST", body: { playerId, card } });
 
-// Change your display name at any point. Deduped server-side exactly like
-// joining, so it can't sidestep the collision rule.
-export const setName = (id, playerId, name) =>
-  request(`/api/tables/${encodeURIComponent(id)}/name`, { method: "POST", body: { playerId, name } });
+// Every action that changes who holds a seat goes through one endpoint. They
+// were five routes until Vercel's Hobby plan cap of twelve Serverless
+// Functions per deployment bit — see api/tables/[id]/seat.js.
+const seatAction = (id, playerId, action, extra = {}) =>
+  request(`/api/tables/${encodeURIComponent(id)}/seat`, {
+    method: "POST", body: { playerId, action, ...extra },
+  });
 
-// The table reclaiming a seat from someone who has gone. Not a ban — see
-// api/tables/[id]/boot.js.
-export const bootPlayer = (id, playerId, seat) =>
-  request(`/api/tables/${encodeURIComponent(id)}/boot`, { method: "POST", body: { playerId, seat } });
+// COM-3.1 — hand your seat to the AI but keep it reserved.
+export const stepAway = (id, playerId) => seatAction(id, playerId, "away");
 
-// COM-3.2 — take your seat back from the AI. Explicit, not automatic: see
-// api/tables/[id]/back.js.
-export const takeSeatBack = (id, playerId) =>
-  request(`/api/tables/${encodeURIComponent(id)}/back`, { method: "POST", body: { playerId } });
+// COM-3.2 — take it back. Explicit, not automatic: a tab waking in a pocket
+// is weak evidence a human is at the table.
+export const takeSeatBack = (id, playerId) => seatAction(id, playerId, "back");
 
-// COM-3.1 — keeps the seat, hands play to the AI. Reclaiming needs no call:
-// rejoining the table takes the seat back (see joinTable's reclaim path).
-export const stepAway = (id, playerId) =>
-  request(`/api/tables/${encodeURIComponent(id)}/away`, { method: "POST", body: { playerId } });
+// The table reclaiming an abandoned seat. Not a ban.
+export const bootPlayer = (id, playerId, seat) => seatAction(id, playerId, "boot", { seat });
 
-export const leaveTable = (id, playerId) =>
-  request(`/api/tables/${encodeURIComponent(id)}/leave`, { method: "POST", body: { playerId } });
+// Give up your seat entirely, or withdraw a queued join.
+export const leaveTable = (id, playerId) => seatAction(id, playerId, "leave");
+
+// Deduped server-side exactly like joining.
+export const setName = (id, playerId, name) => seatAction(id, playerId, "rename", { name });
 
 // MP-1.2: the link that gets texted to the group.
 export const tableUrl = (id) => `${window.location.origin}/t/${id}`;

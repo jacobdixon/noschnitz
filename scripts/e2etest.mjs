@@ -31,11 +31,7 @@ import stateRoute from "../api/tables/[id]/state.js";
 import playRoute from "../api/tables/[id]/play.js";
 import pickRoute from "../api/tables/[id]/pick.js";
 import buryRoute, { callableSuits } from "../api/tables/[id]/bury.js";
-import leaveRoute from "../api/tables/[id]/leave.js";
-import nameRoute from "../api/tables/[id]/name.js";
-import bootRoute from "../api/tables/[id]/boot.js";
-import awayRoute from "../api/tables/[id]/away.js";
-import backRoute from "../api/tables/[id]/back.js";
+import seatRoute from "../api/tables/[id]/seat.js";
 
 let passed = 0;
 const failures = [];
@@ -362,8 +358,8 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   const before = await store.get(tableId);
   const hostSeat = seatOf(before, HOST);
 
-  const renamed = await call(nameRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "Jacob D" },
+  const renamed = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "rename", name: "Jacob D" },
   });
   check("renaming succeeds", renamed.status === 200, `got ${renamed.status}`);
   check("the new name is stored",
@@ -373,7 +369,7 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
 
   // Re-saving the same name must not keep appending suffixes — the collision
   // check has to exclude your own seat.
-  await call(nameRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "Jacob D" } });
+  await call(seatRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "rename", name: "Jacob D" } });
   check("re-saving your own name doesn't suffix it",
     (await store.get(tableId)).seats[hostSeat]?.name === "Jacob D",
     `got ${(await store.get(tableId)).seats[hostSeat]?.name}`);
@@ -381,18 +377,18 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   // But it must still collide with everyone else, including the AI.
   const aiName = (await store.get(tableId)).seats.find((x) => x.kind === "ai")?.name;
   if (aiName) {
-    await call(nameRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, name: aiName } });
+    await call(seatRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "rename", name: aiName } });
     const after = (await store.get(tableId)).seats[hostSeat]?.name;
     check("renaming still collides with an AI name", after !== aiName, `got ${after}`);
   }
 
-  const blank = await call(nameRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "   " },
+  const blank = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "rename", name: "   " },
   });
   check("a blank name is rejected", blank.status === 400, `got ${blank.status}`);
 
-  const stranger = await call(nameRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", name: "X" },
+  const stranger = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", action: "rename", name: "X" },
   });
   check("a stranger cannot rename a seat", stranger.status === 403, `got ${stranger.status}`);
 }
@@ -411,8 +407,8 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     (await store.get(tableId)).version === versionBefore,
     `${versionBefore} -> ${(await store.get(tableId)).version}`);
 
-  const left = await call(leaveRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: DAVE },
+  const left = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: DAVE, action: "leave" },
   });
   check("leaving succeeds", left.status === 200, `got ${left.status}`);
   const afterLeave = await store.get(tableId);
@@ -432,9 +428,9 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   const victimPid = victim >= 0 ? live.seats[victim].playerId : null;
 
   if (victim >= 0) {
-    const tooSoon = await call(bootRoute, {
-      method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: victim },
-    });
+    const tooSoon = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "boot", seat: victim },
+  });
     check("booting a present player is refused", tooSoon.status === 400, `got ${tooSoon.status}`);
     check("refusal uses a stable code", tooSoon.body?.error?.code === "still-present");
     check("the refused boot changed nothing",
@@ -449,9 +445,9 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     };
     await store.put(aged, cur.version);
 
-    const ok = await call(bootRoute, {
-      method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: victim },
-    });
+    const ok = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "boot", seat: victim },
+  });
     check("booting a long-absent player succeeds", ok.status === 200, `got ${ok.status} ${ok.body?.error?.code || ""}`);
     check("the seat goes back to the house AI",
       (await store.get(tableId)).seats[victim]?.kind === "ai");
@@ -470,19 +466,19 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
       `status=${back.status} join=${back.body?.status}`);
   }
 
-  const self = await call(bootRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: hostSeat },
+  const self = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "boot", seat: hostSeat },
   });
   check("you cannot boot yourself", self.status === 403, `got ${self.status}`);
   check("self-boot uses a stable code", self.body?.error?.code === "cannot-boot-self");
 
-  const stranger = await call(bootRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", seat: 0 },
+  const stranger = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", action: "boot", seat: 0 },
   });
   check("a stranger cannot boot anyone", stranger.status === 403, `got ${stranger.status}`);
 
-  const bad = await call(bootRoute, {
-    method: "POST", query: { id: tableId }, body: { playerId: HOST, seat: 9 },
+  const bad = await call(seatRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, action: "boot", seat: 9 },
   });
   check("an out-of-range seat is rejected", bad.status === 400, `got ${bad.status}`);
 }
@@ -526,8 +522,8 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     seats: cur.seats.map((x, i) => (i === daveSeat ? { ...x, lastSeen: Date.now() - 10 * 60 * 1000 } : x)),
   }, cur.version);
 
-  const booted = await call(bootRoute, {
-    method: "POST", query: { id: rid }, body: { playerId: "pid-rm-host", seat: daveSeat },
+  const booted = await call(seatRoute, {
+    method: "POST", query: { id: rid }, body: { playerId: "pid-rm-host", action: "boot", seat: daveSeat },
   });
   check("removing the player succeeds", booted.status === 200, `got ${booted.status}`);
 
@@ -593,27 +589,27 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   await call(joinRoute, { method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave", name: "Dave" } });
   const seat = seatOf(await store.get(bid), "pid-back-dave");
 
-  const away = await call(awayRoute, {
-    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  const away = await call(seatRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave", action: "away" },
   });
   check("stepping away succeeds", away.status === 200, `got ${away.status}`);
   check("the seat is now AI-covered", (await store.get(bid)).seats[seat]?.kind === "away");
 
-  const back = await call(backRoute, {
-    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  const back = await call(seatRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave", action: "back" },
   });
   check("taking the seat back succeeds", back.status === 200, `got ${back.status}`);
   check("control is restored", (await store.get(bid)).seats[seat]?.kind === "human");
   check("the response reports the right seat", back.body?.you === seat);
   assertNoLeak("back", back.body, await store.get(bid), seat, "pid-back-dave", ALL_IDS);
 
-  const stranger = await call(backRoute, {
-    method: "POST", query: { id: bid }, body: { playerId: "pid-not-here" },
+  const stranger = await call(seatRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-not-here", action: "back" },
   });
   check("a stranger cannot take a seat back", stranger.status === 403, `got ${stranger.status}`);
 
-  const twice = await call(backRoute, {
-    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  const twice = await call(seatRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave", action: "back" },
   });
   check("taking back a seat you already control is harmless", twice.status === 200);
 }
