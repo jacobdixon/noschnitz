@@ -32,6 +32,7 @@ import playRoute from "../api/tables/[id]/play.js";
 import pickRoute from "../api/tables/[id]/pick.js";
 import buryRoute, { callableSuits } from "../api/tables/[id]/bury.js";
 import leaveRoute from "../api/tables/[id]/leave.js";
+import nameRoute from "../api/tables/[id]/name.js";
 
 let passed = 0;
 const failures = [];
@@ -347,6 +348,50 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     `sizes=${after.g.hands.map((h) => (h ? h.length : "null")).join(",")}`);
   check("the redealt hand starts from a clean pass count", after.g.passes < 5);
   assertNoLeak("fifth pass", res.body, after, hostSeat, HOST, ALL_IDS);
+}
+
+// --- naming: set at the door, changeable afterwards -----------------------
+{
+  // The host used to be named the literal string "Host" because the create
+  // flow never asked, and a returning guest was auto-joined with whatever
+  // localStorage held — so there was no point at which a name could be chosen
+  // or corrected. The rename route is what makes it correctable.
+  const before = await store.get(tableId);
+  const hostSeat = seatOf(before, HOST);
+
+  const renamed = await call(nameRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "Jacob D" },
+  });
+  check("renaming succeeds", renamed.status === 200, `got ${renamed.status}`);
+  check("the new name is stored",
+    (await store.get(tableId)).seats[hostSeat]?.name === "Jacob D",
+    `got ${(await store.get(tableId)).seats[hostSeat]?.name}`);
+  assertNoLeak("rename", renamed.body, await store.get(tableId), hostSeat, HOST, ALL_IDS);
+
+  // Re-saving the same name must not keep appending suffixes — the collision
+  // check has to exclude your own seat.
+  await call(nameRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "Jacob D" } });
+  check("re-saving your own name doesn't suffix it",
+    (await store.get(tableId)).seats[hostSeat]?.name === "Jacob D",
+    `got ${(await store.get(tableId)).seats[hostSeat]?.name}`);
+
+  // But it must still collide with everyone else, including the AI.
+  const aiName = (await store.get(tableId)).seats.find((x) => x.kind === "ai")?.name;
+  if (aiName) {
+    await call(nameRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST, name: aiName } });
+    const after = (await store.get(tableId)).seats[hostSeat]?.name;
+    check("renaming still collides with an AI name", after !== aiName, `got ${after}`);
+  }
+
+  const blank = await call(nameRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: HOST, name: "   " },
+  });
+  check("a blank name is rejected", blank.status === 400, `got ${blank.status}`);
+
+  const stranger = await call(nameRoute, {
+    method: "POST", query: { id: tableId }, body: { playerId: "pid-nobody", name: "X" },
+  });
+  check("a stranger cannot rename a seat", stranger.status === 403, `got ${stranger.status}`);
 }
 
 // --- state + leave --------------------------------------------------------

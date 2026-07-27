@@ -242,7 +242,11 @@ function TrumpModal({ onClose }) {
 }
 
 // #34 — running scores, which previously existed nowhere on the table screen.
-function ScoresModal({ table, onClose }) {
+function ScoresModal({ table, onClose, onRename, busy }) {
+  const mySeat = table.you;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(mySeat >= 0 ? table.seats[mySeat]?.name || "" : "");
+
   return (
     <Modal onClose={onClose}>
       <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 2 }}>
@@ -265,6 +269,33 @@ function ScoresModal({ table, onClose }) {
           ))}
         </tbody>
       </table>
+      {/* Changing your name lives here because this is the one screen that
+          already lists everybody by name — it's where you notice yours is
+          wrong. Server-side it goes through the same collision rule as
+          joining. */}
+      {mySeat >= 0 && (editing ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && draft.trim() && onRename(draft)}
+            maxLength={24}
+            autoFocus
+            style={{
+              flex: 1, minWidth: 0, padding: "8px 10px", fontSize: 16, borderRadius: 8,
+              border: `1px solid ${felt.brassDim}`, background: "#00000030", color: felt.cream,
+            }}
+          />
+          <button style={btnGold} disabled={busy || !draft.trim()} onClick={() => onRename(draft)}>
+            Save
+          </button>
+        </div>
+      ) : (
+        <button style={{ ...btnGhost, marginBottom: 14 }} onClick={() => setEditing(true)}>
+          Change my name
+        </button>
+      ))}
+
       <button style={btnPlain} onClick={onClose}>Close</button>
     </Modal>
   );
@@ -640,7 +671,17 @@ export default function TableScreen({ tableId, playerId, playerName }) {
       </div>
 
       {modal === "trump" && <TrumpModal onClose={() => setModal(null)} />}
-      {modal === "scores" && <ScoresModal table={table} onClose={() => setModal(null)} />}
+      {modal === "scores" && (
+        <ScoresModal
+          table={table}
+          busy={busy}
+          onClose={() => setModal(null)}
+          onRename={(n) => act(async () => {
+            await api.setName(tableId, playerId, n);
+            setModal(null);
+          })}
+        />
+      )}
       {modal === "invite" && <InviteModal table={table} onClose={() => setModal(null)} />}
       {modal === "lastTrick" && (
         <LastTrickModal table={table} mySeat={mySeat} onClose={() => setModal(null)} />

@@ -67,6 +67,11 @@ export const bury = (id, playerId, cards, calledSuit) =>
 export const playCard = (id, playerId, card) =>
   request(`/api/tables/${encodeURIComponent(id)}/play`, { method: "POST", body: { playerId, card } });
 
+// Change your display name at any point. Deduped server-side exactly like
+// joining, so it can't sidestep the collision rule.
+export const setName = (id, playerId, name) =>
+  request(`/api/tables/${encodeURIComponent(id)}/name`, { method: "POST", body: { playerId, name } });
+
 // COM-3.1 — keeps the seat, hands play to the AI. Reclaiming needs no call:
 // rejoining the table takes the seat back (see joinTable's reclaim path).
 export const stepAway = (id, playerId) =>

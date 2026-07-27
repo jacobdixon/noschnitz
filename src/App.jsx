@@ -48,56 +48,24 @@ export default function App() {
    password) and MP-3.2 (a returning guest on the same device is remembered,
    so the prompt is skipped entirely on a second visit).
    ------------------------------------------------------------------------ */
-function JoinGate({ tableId, onLeave }) {
-  const playerId = getPlayerId();
-  const remembered = getPlayerName();
-  const [name, setName] = useState(remembered);
-  const [joined, setJoined] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-
-  // Join is idempotent server-side: a returning player reclaims the seat they
-  // already hold rather than consuming a second one, so it's safe to fire on
-  // every mount without checking first.
-  const join = async (displayName) => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const clean = setPlayerName(displayName);
-      const res = await api.joinTable(tableId, playerId, clean);
-      if (res.status === "full") {
-        setErr("That table is full — five people are already playing.");
-        return;
-      }
-      setJoined(true);
-    } catch (e) {
-      setErr(e.code === "no-such-table"
-        ? "That table has expired. Tables only last as long as the session."
-        : e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (remembered) join(remembered);
-    // Mount only: re-running on every keystroke would spam the join route.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (joined) return <TableScreen tableId={tableId} playerId={playerId} playerName={name} />;
-
+// One screen, used before creating a table and before sitting down at a new
+// one. Prefilled from localStorage so a returning player doesn't retype
+// anything — which is what MP-3.2 actually asked for. It was previously
+// implemented as "never ask again", so the host was silently named "Host" and
+// nobody could ever change what they were called.
+function NameStep({ title, blurb, cta, initial, busy, err, onSubmit, onCancel }) {
+  const [name, setName] = useState(initial || "");
+  const ready = name.trim().length > 0;
   return (
     <Screen>
       <div style={{ fontFamily: "Georgia, serif", fontSize: 28, fontWeight: 900, color: felt.brass, marginBottom: 6 }}>
-        Join the table
+        {title}
       </div>
-      <div style={{ color: felt.creamDim, marginBottom: 18, fontSize: 15 }}>
-        Pick a name. That's it — no account.
-      </div>
+      <div style={{ color: felt.creamDim, marginBottom: 18, fontSize: 15, maxWidth: 320 }}>{blurb}</div>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && name.trim() && join(name)}
+        onKeyDown={(e) => e.key === "Enter" && ready && onSubmit(name)}
         placeholder="Your name"
         maxLength={24}
         autoFocus
@@ -109,28 +77,120 @@ function JoinGate({ tableId, onLeave }) {
       />
       {err && <div style={{ color: felt.red, marginBottom: 12, maxWidth: 300 }}>{err}</div>}
       <div style={{ display: "flex", gap: 10 }}>
-        <button style={btnGold} disabled={busy || !name.trim()} onClick={() => join(name)}>
-          {busy ? "Sitting down…" : "Sit down"}
+        <button style={btnGold} disabled={busy || !ready} onClick={() => onSubmit(name)}>
+          {busy ? "One moment…" : cta}
         </button>
-        <button style={btnPlain} onClick={onLeave}>Solo game</button>
+        {onCancel && <button style={btnPlain} onClick={onCancel}>Back</button>}
       </div>
     </Screen>
   );
 }
 
-function Home({ onTable }) {
+function JoinGate({ tableId, onLeave }) {
+  const playerId = getPlayerId();
+  const [phase, setPhase] = useState("checking"); // checking | naming | joined | error
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  // MP-1.1 — one click to a table, no setup, no configuration screen.
-  const create = async () => {
+  // The distinction that was missing before. RETURNING to a seat you already
+  // hold — a refresh, a reconnect, coming back after stepping away — must be
+  // seamless and silent. ARRIVING somewhere you have no seat is the moment to
+  // ask who you are, every time, because it's the only moment the answer can
+  // still be changed without it feeling like a settings screen.
+  //
+  // Previously any player with a remembered name was auto-joined at both, so
+  // there was no point at which a name could be chosen or corrected.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getState(tableId, playerId);
+        if (cancelled) return;
+        if (res?.table?.you >= 0) {
+          setPhase("joined"); // already ours — straight in
+          return;
+        }
+        setPhase("naming");
+      } catch (e) {
+        if (cancelled) return;
+        if (e.code === "no-such-table") {
+          setErr("That table has expired. Tables only last as long as the session.");
+          setPhase("error");
+          return;
+        }
+        // Anything else (offline, a blip): let them try to sit down anyway
+        // rather than blocking on a check that is only an optimisation.
+        setPhase("naming");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tableId, playerId]);
+
+  const join = async (displayName) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const clean = setPlayerName(displayName);
+      const res = await api.joinTable(tableId, playerId, clean);
+      if (res.status === "full") {
+        setErr("That table is full — five people are already playing.");
+        return;
+      }
+      setPhase("joined");
+    } catch (e) {
+      setErr(e.code === "no-such-table"
+        ? "That table has expired. Tables only last as long as the session."
+        : e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (phase === "joined") return <TableScreen tableId={tableId} playerId={playerId} />;
+
+  if (phase === "checking") {
+    return <Screen><div style={{ color: felt.creamDim }}>Finding the table…</div></Screen>;
+  }
+
+  if (phase === "error") {
+    return (
+      <Screen>
+        <div style={{ color: felt.red, marginBottom: 16, maxWidth: 320 }}>{err}</div>
+        <button style={btnPlain} onClick={onLeave}>Solo game</button>
+      </Screen>
+    );
+  }
+
+  return (
+    <NameStep
+      title="Join the table"
+      blurb="Pick a name. That's it — no account, no password."
+      cta={busy ? "Sitting down…" : "Sit down"}
+      initial={getPlayerName()}
+      busy={busy}
+      err={err}
+      onSubmit={join}
+      onCancel={onLeave}
+    />
+  );
+}
+
+function Home({ onTable }) {
+  const [naming, setNaming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  // MP-1.1 is still one tap to a table — the name step is prefilled, so for a
+  // returning host it's tap, tap. What it is NOT any more is silent: the host
+  // used to be named the literal string "Host" because this flow never asked,
+  // and that is the first thing everyone else sees on the roster.
+  const create = async (displayName) => {
     setBusy(true);
     setErr(null);
     try {
       const playerId = getPlayerId();
-      const name = getPlayerName() || "Host";
-      setPlayerName(name);
-      const res = await api.createTable(playerId, name);
+      const clean = setPlayerName(displayName);
+      const res = await api.createTable(playerId, clean);
       onTable(res.table.id);
     } catch (e) {
       setErr(e.message || "Couldn't create a table.");
@@ -138,22 +198,26 @@ function Home({ onTable }) {
     }
   };
 
+  if (naming) {
+    return (
+      <NameStep
+        title="Play with friends"
+        blurb="What should everyone call you? Empty seats are played by the AI, so you can start whenever you like."
+        cta="Create the table"
+        initial={getPlayerName()}
+        busy={busy}
+        err={err}
+        onSubmit={create}
+        onCancel={() => { setNaming(false); setErr(null); }}
+      />
+    );
+  }
+
   // The entry point lives in the solo game's own header, next to Trump and
   // Scores. It was first floated over the bottom-left corner, which put a
   // translucent button directly on top of the player's own cards — visually
   // illegible against the cream card faces, and covering a card besides.
-  return (
-    <>
-      <Sheepshead onPlayWithFriends={busy ? undefined : create} />
-      {err && (
-        <div style={{
-          position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 15,
-          background: "#000000cc", color: felt.red, fontSize: 13,
-          padding: "8px 12px", textAlign: "center",
-        }}>{err}</div>
-      )}
-    </>
-  );
+  return <Sheepshead onPlayWithFriends={() => setNaming(true)} />;
 }
 
 function Screen({ children }) {
