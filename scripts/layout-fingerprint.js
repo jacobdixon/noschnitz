@@ -21,16 +21,22 @@
 (() => {
   const round = (n) => Math.round(n);
 
-  // The felt is the positioning context everything else is measured against.
-  const feltEl = [...document.querySelectorAll("div")].find(
-    (d) => getComputedStyle(d).position === "relative" && d.querySelector('div[style*="absolute"]')
+  // Seat columns are the fixed-width absolutely-positioned stacks.
+  const seatEls = [...document.querySelectorAll("div")].filter(
+    (d) => d.style.position === "absolute" && d.style.width === "84px"
   );
+
+  // The felt is the positioning context everything else is measured against,
+  // and it has to be the seats' own offsetParent rather than a guess. Picking
+  // "the first relative div with an absolute child" found a DIFFERENT element
+  // on the two screens — an outer full-bleed wrapper on one, the felt itself
+  // on the other — which silently shifted every number and made a solo capture
+  // look like a match for multiplayer.
+  const feltEl = seatEls[0]?.offsetParent;
   const felt = feltEl?.getBoundingClientRect();
   const rel = (r) => (felt ? { x: round(r.x - felt.x), y: round(r.y - felt.y) } : null);
 
-  // Seat columns are the fixed-width absolutely-positioned stacks.
-  const seats = [...document.querySelectorAll("div")]
-    .filter((d) => d.style.position === "absolute" && d.style.width === "84px")
+  const seats = seatEls
     .map((d) => ({ ...rel(d.getBoundingClientRect()), text: d.innerText.replace(/\n/g, "|") }))
     .sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -55,6 +61,13 @@
       viewport: [innerWidth, innerHeight],
       headerHeight: header ? round(header.height) : null,
       feltHeight: felt ? round(felt.height) : null,
+      // Seat positions are percentages of this, so two screens can share the
+      // felt component exactly and still report different seat pixels. Without
+      // the width the diff is unreadable: solo insets the felt 6px a side
+      // (363), multiplayer runs it full-bleed (375), and that alone accounts
+      // for 73/206/7/272 vs 75/216/8/284.
+      feltWidth: felt ? round(felt.width) : null,
+      feltTop: felt ? round(felt.y) : null,
       seats,
       trickCards: trick,
       hand: {
