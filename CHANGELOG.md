@@ -36,7 +36,7 @@ corresponds to the entries below.
   four children), table grew to 507px, exactly one dealer button renders, all
   four seat columns sit inside the table edge with no horizontal overflow, and
   the recap capture region contains the version while the Share button stays
-  out of it. (`PENDING`)
+  out of it. (`e21ef8c`)
 
 ## [0.15.0] - 2026-07-27
 - The header now states the house rules, and the two buttons that lived up
