@@ -759,11 +759,16 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           and disappear as a hand progresses, and without a floor the felt above
           resized every time — most visibly as the last card of a trick landed
           and the deal button arrived. */}
-      <div style={{ flexShrink: 0, minHeight: ACTION_MIN_HEIGHT }}>
+      {/* Solo's padding and alignment, to the pixel. Carrying the 7px inside
+          the status line instead left this block 89px tall against solo's 98,
+          and since the felt is flex:1 it absorbed the difference \u2014 516px
+          instead of 507. Seat tops are percentages of that height, so a 9px
+          discrepancy down here was moving every seat on the table. */}
+      <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: ACTION_MIN_HEIGHT }}>
         {/* Where solo keeps it: above the actions, not floating inside the
             felt. Held blank until the reveal catches up, so it can't announce
             a turn before the cards that caused it have landed. */}
-        <div style={{ fontSize: 16, padding: "7px 12px 0", textAlign: "center", color: felt.creamDim, fontStyle: "italic" }}>
+        <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
           {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : "\u00a0"}
         </div>
       {g.phase === "picking" && g.pickTurn === mySeat && (
