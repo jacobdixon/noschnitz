@@ -6,6 +6,38 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.16.0] - 2026-07-27
+- The play-area header is gone, and everything it carried moved to the thing it
+  describes.
+  - The dealer wears a poker-style **D button** beside their avatar; seat 0 has
+    no avatar on the table, so it sits in the YOUR HAND row instead. The called
+    suit rides on the **picker's badge stack**, where it belongs — they chose
+    it. "picked" and "alone" were already duplicated by those same badges, so
+    the strip was restating three things and owning one.
+  - That hands ~38px back to the table, which is the part of the screen you
+    actually look at.
+  - The Doubler badge moves to the top centre of the table, clear of the seats
+    at 4% and the trick cards at 26%. It has to stay legible for the whole hand
+    it applies to, since it's inherited from a hand nobody picked.
+- The recap now stamps **the build number inside the shared screenshot**:
+  "Hand 3 · v0.16.0". That image is the format hands actually get reported in,
+  and a reported hand is evidence about a specific AI build — without the
+  version in the picture, "the AI misplayed this" can't be matched against what
+  the AI was at the time. Hand number moved inside the capture region with it;
+  only the Share button stays outside.
+- Two long-standing wording bugs, both noticed in passing and held for this
+  pass:
+  - The status line said "You takes the trick" — seat 0 is named "You", and it
+    was being interpolated into a third-person sentence.
+  - The hand-end and recap headings said "Pickers win" even when the picker went
+    alone, which is wrong on exactly the hands where the win is most impressive.
+    Now "Picker wins". Both call sites fixed together.
+- Verified in the browser at 375px: contract strip gone (the root is down to
+  four children), table grew to 507px, exactly one dealer button renders, all
+  four seat columns sit inside the table edge with no horizontal overflow, and
+  the recap capture region contains the version while the Share button stays
+  out of it. (`PENDING`)
+
 ## [0.15.0] - 2026-07-27
 - The header now states the house rules, and the two buttons that lived up
   there have moved into a menu.
