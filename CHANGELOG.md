@@ -6,6 +6,30 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.15.0] - 2026-07-27
+- The header now states the house rules, and the two buttons that lived up
+  there have moved into a menu.
+  - "Called Ace · No Leasters · Double on the Bump" sits under the title, above
+    the rail, and stays there all game. Two of those three were already true and
+    unstated; the third arrived in 0.14.0 and changes what a hand is worth, so
+    it needed saying somewhere permanent rather than being discovered when a set
+    picker paid double.
+  - Held as a list rather than one sentence. The planned version of that line
+    lets you change the rules, and a rule you can toggle has to be an
+    addressable thing rather than a substring. It is deliberately *not* a button
+    yet — a control that does nothing when pressed reads as broken, so it stays
+    text until it has somewhere to go.
+  - Trump and Scores become items under a hamburger. Two buttons was already
+    most of the header's width, and the rules line needed room; the menu also
+    gives the rules editor and anything after it a place to land that doesn't
+    cost width. Menu closes on select and on any click outside, tracks
+    `aria-expanded`, and its items carry `role="menuitem"`.
+  - Verified in the browser at 375px and desktop: menu opens, selects, closes on
+    outside click with no stray backdrop left behind, and sits inside the table
+    edge (203-357px within a 375px root). The rules line measures 230px of text
+    in 339px of space at phone width — one line, with room for a fourth rule.
+    (`PENDING`)
+
 ## [0.14.0] - 2026-07-27
 - Two house scoring rules, both on by default: **double on the bump** and a
   **doubler after a passed-out hand**.
