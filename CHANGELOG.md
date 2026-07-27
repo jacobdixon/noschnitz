@@ -6,6 +6,18 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.11.2] - 2026-07-27
+- The buried pair in the recap is shown as rank-and-suit glyphs rather than two
+  card faces — the same shorthand the grid below already uses.
+  - 0.11.0 rendered them as full cards, which made the two cards nobody played
+    the largest thing on a screen whose subject is the 30 cards that were. The
+    whole recap now reads in one visual language.
+  - The buried row goes from 132px to 18px, which pulls the trick grid back up
+    into view without scrolling on a phone.
+  - Verified at 375px on a finished hand: renders "BURIED A♥ 10♣", red suits in
+    the same red the grid uses, no card elements left in the row, no page
+    overflow. (`13a6ac2`)
+
 ## [0.11.1] - 2026-07-27
 - The recap grid labels its columns once: "TRICK" now sits in the name column
   as a row header, and each heading is just its number.
