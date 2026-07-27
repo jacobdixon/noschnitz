@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.9.1] - 2026-07-27
+- The table no longer lurches when you play your last card. The hand fan holds
+  its height whether or not it has cards in it, so the layout stays exactly as
+  it was with cards in front of you.
+  - The fan reserved no height of its own, and the table above it is
+    `flex: 1 1 auto`. Playing the sixth card emptied the fan and handed the
+    table 91px, so every seat and every card of the final trick jumped — right
+    at the moment you're watching the last trick resolve, and just before the
+    hand-end modal covers it.
+  - 91px because a `Card` is content-box: the declared 80px height plus 2x4
+    padding and 2x1.5 border. Pulled out as `CARD_ROW_H` next to the component
+    that defines those numbers, rather than left as a magic constant.
+  - Measured in the browser across a full auto-played hand. Before: the table
+    area held 661px for six cards down to one, then jumped to 752px at zero.
+    After: 661px at every card count including zero — one distinct value for
+    the whole hand.
+  - Also settles a smaller 8px shift nobody had reported, between the burying
+    fan (8 cards at 0.9 scale, 83px) and normal play (91px). Both now measure
+    101px including the row's padding. (`c6460fa`)
+
 ## [0.9.0] - 2026-07-27
 - Defenders now gang up on a lone picker properly. Against someone who went
   alone, the AI defenders were refusing to schmear on the opening trick, so the
