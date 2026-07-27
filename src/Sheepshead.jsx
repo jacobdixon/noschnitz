@@ -79,6 +79,11 @@ function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
 // is holding cards — see the note where it's used.
 const CARD_ROW_H = 91;
 
+// The house rules this table plays by, shown under the title for the whole
+// game. A list rather than a sentence: the planned version of that line lets
+// you change them, and each rule has to be addressable for that to work.
+const HOUSE_RULES = ["Called Ace", "No Leasters", "Double on the Bump"];
+
 // `compact` is for the recap grid, where the badge sits in the name column of
 // a six-column table: at full size it widens that column enough to push the
 // last trick off-screen on a phone.
@@ -100,6 +105,7 @@ export default function Sheepshead() {
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const recapCaptureRef = useRef(null);
 
   /* ---------- engine loop ---------- */
@@ -304,17 +310,70 @@ export default function Sheepshead() {
       borderLeft: `6px solid ${felt.rail}`, borderRight: `6px solid ${felt.rail}`,
     }}>
       {/* Header */}
-      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
-        <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
-          SHEEPSHEAD
+      <div style={{ flexShrink: 0, position: "relative", padding: "8px 12px", borderBottom: `2px solid ${felt.rail}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 900, letterSpacing: ".14em", fontSize: 19, color: felt.brass }}>
+            SHEEPSHEAD
+          </div>
+          <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
+            v{__APP_VERSION__}
+          </div>
+          <button
+            onClick={() => setShowMenu((v) => !v)}
+            aria-label="Menu"
+            aria-haspopup="menu"
+            aria-expanded={showMenu}
+            style={{ ...btnGhost, display: "flex", alignItems: "center", padding: "5px 9px" }}
+          >
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M1 1h14M1 6h14M1 11h14" />
+            </svg>
+          </button>
         </div>
-        <div style={{ fontSize: 8, opacity: 0.35, letterSpacing: ".02em", userSelect: "none" }}>
-          v{__APP_VERSION__}
+
+        {/* The house rules, above the rail and there for the whole game. Kept as
+            data rather than one sentence because the next version of this line
+            lets you change them, and a rule you can toggle has to be an
+            addressable thing rather than a substring. Not a button yet — a
+            control that does nothing when you press it reads as broken, so it
+            stays text until it has somewhere to go. */}
+        <div style={{ marginTop: 4, fontSize: 11, letterSpacing: ".04em", color: felt.creamDim, opacity: 0.75, userSelect: "none" }}>
+          {HOUSE_RULES.join(" · ")}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setShowHelp(true)} style={btnGhost}>Trump</button>
-          <button onClick={() => setShowScores(true)} style={btnGhost}>Scores</button>
-        </div>
+
+        {showMenu && (
+          <>
+            {/* Catches the click that dismisses the menu. Sits under the menu
+                but over everything else, so the next tap anywhere closes it
+                instead of also hitting a card. */}
+            <div onClick={() => setShowMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
+            <div role="menu" style={{
+              position: "absolute", right: 12, top: "calc(100% - 4px)", zIndex: 16,
+              background: felt.bgDeep, border: `2px solid ${felt.rail}`, borderRadius: 8,
+              boxShadow: "0 8px 24px rgba(0,0,0,.5)", overflow: "hidden", minWidth: 150,
+            }}>
+              {[
+                ["Trump order", () => setShowHelp(true)],
+                ["Scores", () => setShowScores(true)],
+              ].map(([label, open], i) => (
+                <button
+                  key={label}
+                  role="menuitem"
+                  onClick={() => { setShowMenu(false); open(); }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    background: "transparent", color: felt.cream,
+                    border: "none", borderTop: i === 0 ? "none" : "1px solid #ffffff18",
+                    padding: "11px 14px", fontSize: 15, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Contract strip */}
