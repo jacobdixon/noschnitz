@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+<<<<<<< HEAD
+## [0.16.3] - 2026-07-27
+- The felt moves into `src/felt.jsx`: seat ring, played trick, trick-winner
+  banner, blind marker and hand fan. No visual or behavioural change — this is
+  groundwork so the multiplayer table renders from these components instead of
+  a second copy that drifts, which is what happened over the past week.
+  - Two props carry everything that differs between the halves: `names` (solo
+    passes its fixed cast, a table passes whoever sat down) and `mySeat` (solo
+    is always 0; at a table you get whichever seat was free and still expect to
+    be at the bottom of your own screen). At `mySeat` 0 the rotation is the
+    identity, so solo renders exactly as before.
+  - `rules` deliberately stays out: the house-rules line and the doubler chip
+    both live in the header, so that prop belongs to the header extraction.
+  - Nothing in the felt reads another player's hand — seat lines show score and
+    trick count, not cards held — which is what lets a table feed it a view
+    where the other four hands are absent.
+  - Verified behaviour-identical by measuring the rendered result against
+    unmodified master rather than by inspection. `Sheepshead.jsx` drops from
+    800 to 676 lines. (`848c7d4`)
+=======
 ## [0.16.2] - 2026-07-27
 - "Play with friends" moved into the menu, alongside Trump order and Scores.
   It had been sitting beside Last Trick since the menu didn't exist yet — the
@@ -16,6 +36,7 @@ corresponds to the entries below.
   - Labelled for what it does today: it starts a fresh table, leaving the hand
     in progress behind. Once a table can be seeded with the running score this
     becomes "Invite others" and the game carries over instead. (`cb0130f`)
+>>>>>>> origin/master
 
 ## [0.16.1] - 2026-07-27
 - Shared presentational pieces move into `src/ui.jsx`, matching the multiplayer

@@ -6,6 +6,7 @@ import {
 } from "./engine.js";
 
 import { felt, scoreColor, Card, CARD_ROW_H, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { Felt, HandFan, RoleBadges, DealerButton, SEAT_POS } from "./felt.jsx";
 
 // The house rules this table plays by, shown under the title for the whole
 // game. A list rather than a sentence: the planned version of that line lets
@@ -185,19 +186,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
     () => (g.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
     [g.phase, g.handNum]
   );
-  const seatPos = [null,
-    { left: "2%", top: "46%" },
-    { left: "20%", top: "4%" },
-    { right: "20%", top: "4%" },
-    { right: "2%", top: "46%" },
-  ];
-  const trickPos = {
-    0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
-    1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
-    2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
-    3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
-    4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
-  };
   // Seat 0 is "You", so anything that reads back a seat name needs the
   // second person or it comes out as "You takes the trick".
   const takesTheTrick = (i) => (i === 0 ? "You take the trick" : `${NAMES[i]} takes the trick`);
@@ -209,46 +197,10 @@ export default function Sheepshead({ onPlayWithFriends }) {
     return g.alone || g.partner === null ? "Picker wins" : "Pickers win";
   };
 
-  // The called suit belongs to the picker — they chose it — so it rides on their
-  // badge stack rather than in a strip of its own. Hearts is the only callable
-  // red suit (diamonds are trump), and `felt.red` is tuned for cream card faces,
-  // so it gets the lighter red that reads on felt.
-  const calledChip = () => (
-    <Badge compact>
-      Called{" "}
-      <span style={{ color: g.calledSuit === "H" ? felt.scoreDown : felt.cream, fontWeight: 900 }}>
-        {SUIT_SYM[g.calledSuit]}
-      </span>
-    </Badge>
-  );
 
-  const roleTag = (i) => {
-    if (g.picker === i) return (
-      <>
-        <Badge gold>Picker{g.alone ? " · Alone" : ""}</Badge>
-        {g.calledSuit && calledChip()}
-      </>
-    );
-    if (g.partnerRevealed && g.partner === i) return <Badge gold>Partner</Badge>;
-    return null;
-  };
 
   // Poker-style dealer button. Seats 1-4 wear it beside their avatar; seat 0
   // has no avatar on the table, so it sits in the YOUR HAND row instead.
-  const dealerButton = () => (
-    <span
-      title="Dealer"
-      aria-label="Dealer"
-      style={{
-        width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-        background: felt.cream, color: "#2A2108",
-        border: `1.5px solid ${felt.brassDim}`, boxShadow: "0 1px 3px rgba(0,0,0,.5)",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "Georgia, serif", fontWeight: 900, fontSize: 11, lineHeight: 1,
-        userSelect: "none",
-      }}
-    >D</span>
-  );
 
   const statusLine = () => {
     if (g.phase === "picking") {
@@ -383,69 +335,12 @@ export default function Sheepshead({ onPlayWithFriends }) {
           always duplicated by those same badges. That hands its ~28px back to
           the table, which is the part of the screen you actually look at. */}
 
-      {/* Table */}
-      <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} style={{ position: "absolute", ...seatPos[i], display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 84 }}>
-            {/* Avatar and dealer button share a positioning context so the
-                button can sit against the avatar's edge the way it sits by a
-                player's elbow at a real table, without disturbing the column
-                below it. */}
-            <div style={{ position: "relative", width: 44, height: 44 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: "50%", background: felt.chip,
-                border: `2px solid ${g.phase === "playing" && g.turn === i ? felt.brass : (g.phase === "picking" && g.pickTurn === i ? felt.brass : "#ffffff2e")}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
-                boxShadow: (g.turn === i || g.pickTurn === i) ? `0 0 10px ${felt.brass}66` : "none",
-                transition: "border .2s, box-shadow .2s",
-              }}>
-                {NAMES[i][0]}
-              </div>
-              {g.dealer === i && (
-                <span style={{ position: "absolute", right: -7, bottom: -2 }}>{dealerButton()}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
-            {/* Running score rather than cards remaining. Everyone still
-                holding cards has the same number of them as you do, so that
-                count told you nothing you couldn't read off your own hand;
-                where each opponent stands in the match is the thing you
-                actually want at a glance. */}
-            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: felt.creamDim }}>
-                <span style={{ color: scoreColor(g.scores[i]), fontWeight: 700 }}>
-                  {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
-                </span>
-                {" · "}{g.trickCounts[i]} {g.trickCounts[i] === 1 ? "trick" : "tricks"}
-              </span>
-            </div>
-            {roleTag(i)}
-          </div>
-        ))}
-
-        {/* trick cards */}
-        {g.trick.map((t) => (
-          <div key={cid(t.card)} style={{ position: "absolute", ...trickPos[t.player], zIndex: 2 }}>
-            <Card card={t.card} small />
-          </div>
-        ))}
-        {g.trick.length === 5 && (
-          <div style={{
-            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-            background: "#000000aa", padding: "4px 12px", borderRadius: 6, fontSize: 16, fontWeight: 700, color: felt.brass, zIndex: 3,
-          }}>
-            {NAMES[trickWinner(g.trick)]} +{g.trick.reduce((s, t) => s + cardPts(t.card), 0)}
-          </div>
-        )}
-
-        {/* blind marker during picking */}
-        {g.phase === "picking" && g.passes < 5 && (
-          <div style={{ position: "absolute", left: "50%", top: "44%", transform: "translate(-50%,-50%)", display: "flex", gap: 6 }}>
-            <Card faceDown small /><Card faceDown small />
-          </div>
-        )}
-      </div>
+      {/* Table. The felt lives in felt.jsx so the multiplayer table renders
+          from the same components rather than a second copy that drifts —
+          which is exactly what happened over the last week. Solo passes its
+          fixed cast and seat 0; a table passes real names and whichever seat
+          you got. */}
+      <Felt g={g} names={NAMES} mySeat={0} />
 
       {/* Status + actions */}
       <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
@@ -488,8 +383,8 @@ export default function Sheepshead({ onPlayWithFriends }) {
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
-          {g.dealer === 0 && dealerButton()}
-          {roleTag(0)}
+          {g.dealer === 0 && <DealerButton />}
+          <RoleBadges g={g} seat={0} />
           {/* "Friends" used to live here — beside Last Trick rather than in the
               header, because the header couldn't fit a third button. The menu
               solves that properly, so it has moved there and this row is back
@@ -503,35 +398,16 @@ export default function Sheepshead({ onPlayWithFriends }) {
             it resolve. Reserving the row keeps the layout exactly as it was
             with cards in front of you. It also settles the smaller 8px shift
             between the burying fan (8 cards at 0.9 scale) and normal play. */}
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 10, minHeight: CARD_ROW_H }}>
-          {(() => {
-            // More than 6 cards only happens transiently while burying (holding
-            // the blind before discarding 2) — shrink the fan a bit so the
-            // leftmost card's rank doesn't get crowded off narrow phone widths.
-            const fanScale = g.hands[0].length > 6 ? 0.9 : 1;
-            const overlap = Math.round(14 * fanScale);
-            return g.hands[0].map((c, i) => {
-              const inBury = g.phase === "bury";
-              const playable = g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c));
-              const selected = g.selected.some((x) => cid(x) === cid(c));
-              return (
-                <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: i }}>
-                  <Card
-                    card={c}
-                    scale={fanScale}
-                    selected={selected}
-                    dim={g.phase === "playing" && g.turn === 0 && !playable}
-                    onClick={
-                      inBury ? () => toggleBury(c)
-                      : playable ? () => humanPlay(c)
-                      : undefined
-                    }
-                  />
-                </div>
-              );
-            });
-          })()}
-        </div>
+        <HandFan
+          cards={g.hands[0]}
+          isSelected={(c) => g.selected.some((x) => cid(x) === cid(c))}
+          isDim={(c) => g.phase === "playing" && g.turn === 0 && !legalNow.includes(cid(c))}
+          onCardClick={(c) => {
+            if (g.phase === "bury") return () => toggleBury(c);
+            if (g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c))) return () => humanPlay(c);
+            return undefined;
+          }}
+        />
       </div>
 
       {/* Hand end modal */}
@@ -745,7 +621,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
                   const isWinner = i === g.lastTrick.winner;
                   const pos = i === 0
                     ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
-                    : seatPos[i];
+                    : SEAT_POS[i];
                   return (
                     <div key={i} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: 74 }}>
                       <div style={{
