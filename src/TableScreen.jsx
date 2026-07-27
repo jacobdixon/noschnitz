@@ -415,7 +415,7 @@ function InviteModal({ table, onClose }) {
 // Tapping a seat. Today it holds presence and the boot control; it's also the
 // natural home for a profile link and lifetime stats once players are more than
 // a localStorage token.
-function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy }) {
+function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy, err }) {
   const s = table.seats[seat];
   if (!s) return null;
   const idle = idleMs(table, seat, serverNow());
@@ -440,6 +440,17 @@ function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy }) {
         <div style={{ fontSize: 14, color: idle > AWAY_AFTER_MS ? felt.red : felt.creamDim, marginBottom: 14 }}>
           {idle > IDLE_HINT_MS ? `Last seen ${formatIdle(idle)} ago` : "Here now"}
         </div>
+      )}
+
+      {/* The error has to live in here. It used to render in a bar between the
+          felt and the actions — underneath this modal's overlay — so a refused
+          boot ("they just checked back in") looked like a button that did
+          nothing at all. */}
+      {err && (
+        <div style={{
+          background: "#00000040", color: felt.red, fontSize: 13,
+          padding: "8px 10px", borderRadius: 8, marginBottom: 12,
+        }}>{err}</div>
       )}
 
       {!isMe && s.kind !== "ai" && (
@@ -467,7 +478,7 @@ function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy }) {
 
 /* --------------------------------- Table ---------------------------------- */
 
-export default function TableScreen({ tableId, playerId, playerName }) {
+export default function TableScreen({ tableId, playerId, onRejoin }) {
   const { table, connected, error } = useTableStream(tableId, playerId);
   // Called before any early return — hooks can't be conditional, and the
   // paced cursor has to keep running while the rest of the screen decides
@@ -528,14 +539,38 @@ export default function TableScreen({ tableId, playerId, playerName }) {
   const mySeat = table.you;
   const g = table.g;
 
-  // A spectator or a queued joiner holds the link but has no seat yet.
+  // No seat. Two very different situations that used to render the same
+  // message: someone waiting for the next hand, and someone whose seat was
+  // reclaimed. Telling a removed player "you'll be seated at the start of the
+  // next hand" is simply false — they aren't in the queue, so nothing will
+  // ever seat them, and the screen offered no way back.
   if (mySeat < 0) {
+    const queued = (table.pendingJoins || []).some((p) => p.isYou);
+    const seatsFree = table.seats.some((s) => s.kind === "ai");
     return (
       <Centered>
-        <div style={{ marginBottom: 8 }}>You're in the queue.</div>
-        <div style={{ fontSize: 14, color: felt.creamDim }}>
-          You'll be seated at the start of the next hand.
+        <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>
+          {queued ? "You're in the queue" : "You're not at the table"}
         </div>
+        <div style={{ fontSize: 14, color: felt.creamDim, marginBottom: 18, maxWidth: 320 }}>
+          {queued
+            ? "You'll be seated at the start of the next hand."
+            : seatsFree
+              ? "Your seat was given up or reclaimed. There's room — you can sit back down."
+              : "Your seat was given up or reclaimed, and the table is full right now."}
+        </div>
+        {!queued && (
+          <div style={{ display: "flex", gap: 10 }}>
+            {onRejoin && (
+              <button style={btnGold} onClick={onRejoin}>
+                {seatsFree ? "Sit back down" : "Join when a seat opens"}
+              </button>
+            )}
+          </div>
+        )}
+        {queued && table.g && (
+          <div style={{ fontSize: 13, color: felt.creamDim }}>Hand {table.g.handNum} in progress…</div>
+        )}
       </Centered>
     );
   }
@@ -806,6 +841,7 @@ export default function TableScreen({ tableId, playerId, playerName }) {
           seat={seatModal}
           serverNow={serverNow}
           busy={busy}
+          err={err}
           onClose={() => setSeatModal(null)}
           onBoot={(seat) => act(async () => {
             await api.bootPlayer(tableId, playerId, seat);

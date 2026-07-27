@@ -62,5 +62,5 @@ export default async function handler(req, res) {
   }
 
   const seat = seatOf(out.table, playerId);
-  return sendJson(res, 200, { you: seat, table: tableViewFor(out.table, seat) });
+  return sendJson(res, 200, { you: seat, table: tableViewFor(out.table, seat, playerId) });
 }

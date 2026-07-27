@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     const created = await store.create(table);
     if (created.ok) {
       const seat = seatOf(created.table, playerId);
-      return sendJson(res, 201, { table: tableViewFor(created.table, seat), you: seat });
+      return sendJson(res, 201, { table: tableViewFor(created.table, seat, playerId), you: seat });
     }
   }
 

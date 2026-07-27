@@ -485,6 +485,65 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   check("an out-of-range seat is rejected", bad.status === 400, `got ${bad.status}`);
 }
 
+// --- a removed player must be able to tell, and get back ------------------
+{
+  // Two bugs compounded here. The redactor was called without the viewer's
+  // playerId almost everywhere, so pendingJoins[].isYou was ALWAYS false — the
+  // client couldn't distinguish "queued for next hand" from "your seat was
+  // reclaimed" and told removed players they'd be seated shortly, which was
+  // simply untrue: nothing would ever seat them.
+  const fresh = await call(createTableRoute, {
+    method: "POST", body: { hostName: "H", playerId: "pid-rm-host" },
+  });
+  const rid = fresh.body.table.id;
+  await call(joinRoute, { method: "POST", query: { id: rid }, body: { playerId: "pid-rm-dave", name: "Dave" } });
+  await call(startRoute, { method: "POST", query: { id: rid }, body: { playerId: "pid-rm-host" } });
+
+  // Someone joining mid-hand is queued — and must be able to see that it's them.
+  const queued = await call(joinRoute, {
+    method: "POST", query: { id: rid }, body: { playerId: "pid-rm-late", name: "Late" },
+  });
+  check("a mid-hand joiner is queued", queued.body?.status === "pending");
+  const lateView = await call(stateRoute, { method: "GET", query: { id: rid, playerId: "pid-rm-late" } });
+  check("a queued player can tell the queue entry is theirs",
+    (lateView.body?.table?.pendingJoins || []).some((p) => p.isYou),
+    `pendingJoins=${JSON.stringify(lateView.body?.table?.pendingJoins)}`);
+  check("a queued player sees no seat", lateView.body?.table?.you === -1);
+
+  // Someone else's queue entry must NOT be flagged as theirs.
+  const hostView = await call(stateRoute, { method: "GET", query: { id: rid, playerId: "pid-rm-host" } });
+  check("another player's queue entry isn't flagged as yours",
+    (hostView.body?.table?.pendingJoins || []).every((p) => !p.isYou));
+
+  // Now remove Dave, and confirm a removed player is distinguishable from a
+  // queued one: no seat AND no queue entry.
+  const cur = await store.get(rid);
+  const daveSeat = seatOf(cur, "pid-rm-dave");
+  await store.put({
+    ...cur, version: cur.version + 1,
+    seats: cur.seats.map((x, i) => (i === daveSeat ? { ...x, lastSeen: Date.now() - 10 * 60 * 1000 } : x)),
+  }, cur.version);
+
+  const booted = await call(bootRoute, {
+    method: "POST", query: { id: rid }, body: { playerId: "pid-rm-host", seat: daveSeat },
+  });
+  check("removing the player succeeds", booted.status === 200, `got ${booted.status}`);
+
+  const daveView = await call(stateRoute, { method: "GET", query: { id: rid, playerId: "pid-rm-dave" } });
+  check("a removed player has no seat", daveView.body?.table?.you === -1);
+  check("a removed player is NOT in the queue — nothing would ever seat them",
+    !(daveView.body?.table?.pendingJoins || []).some((p) => p.isYou));
+  check("a removed player can see a seat is free to take",
+    daveView.body?.table?.seats?.some((x) => x.kind === "ai"));
+
+  // And they can actually get back in.
+  const back = await call(joinRoute, {
+    method: "POST", query: { id: rid }, body: { playerId: "pid-rm-dave", name: "Dave" },
+  });
+  check("a removed player can rejoin", back.status === 200 && ["seated", "pending"].includes(back.body?.status),
+    `status=${back.status} join=${back.body?.status}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

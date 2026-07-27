@@ -145,5 +145,5 @@ export default async function handler(req, res) {
       break;
   }
 
-  return sendJson(res, 200, { you: out.seat, table: tableViewFor(out.table, out.seat) });
+  return sendJson(res, 200, { you: out.seat, table: tableViewFor(out.table, out.seat, playerId) });
 }

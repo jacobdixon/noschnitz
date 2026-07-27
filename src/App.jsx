@@ -146,7 +146,18 @@ function JoinGate({ tableId, onLeave }) {
     }
   };
 
-  if (phase === "joined") return <TableScreen tableId={tableId} playerId={playerId} />;
+  // Rejoining after being removed goes back through the name step rather than
+  // silently re-seating: they may want a different name, and the table may be
+  // full, which the join route reports properly.
+  if (phase === "joined") {
+    return (
+      <TableScreen
+        tableId={tableId}
+        playerId={playerId}
+        onRejoin={() => { setErr(null); setPhase("naming"); }}
+      />
+    );
+  }
 
   if (phase === "checking") {
     return <Screen><div style={{ color: felt.creamDim }}>Finding the table…</div></Screen>;

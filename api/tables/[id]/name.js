@@ -60,5 +60,5 @@ export default async function handler(req, res) {
     return fail(res, 403, "not-seated", "You aren't seated at this table.");
   }
 
-  return sendJson(res, 200, { you: out.seat, table: tableViewFor(out.table, out.seat) });
+  return sendJson(res, 200, { you: out.seat, table: tableViewFor(out.table, out.seat, playerId) });
 }

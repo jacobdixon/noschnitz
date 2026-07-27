@@ -267,7 +267,7 @@ export function createEventsHandler(options = {}) {
     // and every other player's playerId are stripped by tableViewFor.
     const sendState = (t) => {
       lastVersion = t.version;
-      sendEvent("state", { version: t.version, table: tableViewFor(t, seatIn(t)) }, t.version);
+      sendEvent("state", { version: t.version, table: tableViewFor(t, seatIn(t), playerId) }, t.version);
     };
 
     const close = () => {
