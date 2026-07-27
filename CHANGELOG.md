@@ -22,7 +22,7 @@ corresponds to the entries below.
   - "Hand N" and Share keep the top row; the summary and grid sit below.
   - Verified in the browser at 375px on a finished hand: header, points line,
     both buried cards, the six-trick grid and the legend all render inside the
-    capture region with no horizontal overflow. (`PENDING`)
+    capture region with no horizontal overflow. (`4413ec0`)
 
 ## [0.10.1] - 2026-07-27
 - The 90-point result now reads "No Schneider!" rather than "Schneider!" — the
