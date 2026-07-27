@@ -6,6 +6,24 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.10.0] - 2026-07-27
+- Each opponent's seat now shows their running score instead of how many cards
+  they're holding — green when they're up, red when they're down.
+  - The card count was dead weight: everyone still in the hand holds exactly as
+    many cards as you do, so it only ever repeated what your own hand already
+    told you. Where each player stands in the match is the thing you actually
+    glance up for, and it previously meant opening the Scores modal mid-hand.
+  - Score colours are a new pair in the theme rather than a reuse of the
+    existing `red`/`brass`: `red` is tuned for card pips on a cream card face
+    and goes muddy on dark felt. Zero is neutral cream, not green — nobody is
+    winning before a hand has been scored.
+  - Trick count stays, and now reads "1 trick" rather than "1 tricks". That
+    was a pre-existing wart, fixed here because it sits in the same span.
+  - Verified in the browser across a scored hand: +4 and +2 render green
+    (`#5BBE72`), -2 red (`#E0685C`), 0 neutral cream. At 375px the strip adds
+    no horizontal overflow — the widest seat text measures 63px inside the
+    84px seat column. (`PENDING`)
+
 ## [0.9.1] - 2026-07-27
 - The table no longer lurches when you play your last card. The hand fan holds
   its height whether or not it has cards in it, so the layout stays exactly as

@@ -17,7 +17,16 @@ const felt = {
   red: "#B3392F",
   black: "#28241E",
   chip: "#1B4D3B",
+  // Score colours are their own pair rather than reusing `red`/`brass`: `red`
+  // is tuned for card pips on a cream card face and goes muddy on dark felt.
+  scoreUp: "#5BBE72",
+  scoreDown: "#E0685C",
 };
+
+// Green when a player is up, red when they're down, neutral at dead even —
+// zero is neither, and colouring it green would read as "winning" before a
+// single hand has been scored.
+const scoreColor = (n) => (n > 0 ? felt.scoreUp : n < 0 ? felt.scoreDown : felt.creamDim);
 
 function Card({ card, small, onClick, dim, selected, faceDown, scale = 1 }) {
   // Card box dimensions stay put (so the table/hand layout doesn't get
@@ -330,8 +339,18 @@ export default function Sheepshead() {
               {NAMES[i][0]}
             </div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{NAMES[i]}</div>
+            {/* Running score rather than cards remaining. Everyone still
+                holding cards has the same number of them as you do, so that
+                count told you nothing you couldn't read off your own hand;
+                where each opponent stands in the match is the thing you
+                actually want at a glance. */}
             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: felt.creamDim }}>{g.hands[i].length}🂠 · {g.trickCounts[i]} tricks</span>
+              <span style={{ fontSize: 12, color: felt.creamDim }}>
+                <span style={{ color: scoreColor(g.scores[i]), fontWeight: 700 }}>
+                  {g.scores[i] >= 0 ? "+" : ""}{g.scores[i]}
+                </span>
+                {" · "}{g.trickCounts[i]} {g.trickCounts[i] === 1 ? "trick" : "tricks"}
+              </span>
             </div>
             {roleTag(i)}
           </div>
