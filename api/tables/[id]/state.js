@@ -23,10 +23,12 @@ import { markSeen, seatOf } from "../../../src/table.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { sendJson, fail, methodGuard } from "../../_lib/http.js";
+import { requireMultiplayer } from "../../_lib/flags.js";
 import { tableViewFor } from "../../_lib/redact.js";
 
 export default async function handler(req, res) {
   if (!methodGuard(req, res, "GET")) return;
+  if (!requireMultiplayer(res)) return;
 
   const { id, playerId: rawPlayerId } = req.query || {};
   if (!id) return fail(res, 400, "bad-request", "Missing table id.");

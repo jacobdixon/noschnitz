@@ -18,6 +18,7 @@ import TableScreen from "./TableScreen.jsx";
 import { felt, btnGold, btnPlain } from "./ui.jsx";
 import { getPlayerId, getPlayerName, setPlayerName } from "./identity.js";
 import * as api from "./api.js";
+import { MULTIPLAYER_ENABLED } from "./flags.js";
 
 const tableIdFromPath = () => {
   const m = window.location.pathname.match(/^\/t\/([A-Za-z0-9-]+)\/?$/);
@@ -39,7 +40,16 @@ export default function App() {
     setTableId(id);
   };
 
-  if (tableId) return <JoinGate tableId={tableId} onLeave={() => go("/", null)} />;
+  // Both entry points are gated, not just the menu. A table link that's
+  // already been shared would otherwise still open on production, where there
+  // is no store behind the API — which fails worse than not existing, because
+  // it looks like the table was lost rather than never built.
+  //
+  // With the flag off at build time this whole branch is dead code and Vite
+  // strips it, so the multiplayer client isn't in the production bundle at all.
+  if (MULTIPLAYER_ENABLED && tableId) {
+    return <JoinGate tableId={tableId} onLeave={() => go("/", null)} />;
+  }
   return <Home onTable={(id) => go(`/t/${id}`, id)} />;
 }
 
@@ -228,7 +238,7 @@ function Home({ onTable }) {
   // Scores. It was first floated over the bottom-left corner, which put a
   // translucent button directly on top of the player's own cards — visually
   // illegible against the cream card faces, and covering a card besides.
-  return <Sheepshead onPlayWithFriends={() => setNaming(true)} />;
+  return <Sheepshead onPlayWithFriends={MULTIPLAYER_ENABLED ? () => setNaming(true) : undefined} />;
 }
 
 function Screen({ children }) {

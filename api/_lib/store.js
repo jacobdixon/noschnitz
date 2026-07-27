@@ -18,15 +18,20 @@ import { createMemoryStore } from "../../src/store/memory.js";
 
 let cached = null;
 
-export function getStore(env = process.env) {
-  if (cached) return cached;
-
-  const hasCreds = Boolean(
+// Whether a real, persistent store is configured. Separate from getStore so the
+// feature gate can ask without instantiating anything — and so the answer is
+// the same one getStore uses to decide, rather than a second guess at it.
+export function hasRealStore(env = process.env) {
+  return Boolean(
     (env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL) &&
     (env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN)
   );
+}
 
-  if (hasCreds) {
+export function getStore(env = process.env) {
+  if (cached) return cached;
+
+  if (hasRealStore(env)) {
     cached = createUpstashStore({ env });
   } else {
     if (env.VERCEL) {

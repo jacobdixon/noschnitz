@@ -32,6 +32,7 @@ import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
 import { readJson, sendJson, fail, methodGuard } from "../../_lib/http.js";
+import { requireMultiplayer } from "../../_lib/flags.js";
 import { tableViewFor } from "../../_lib/redact.js";
 
 // Mirrors the option list the single-player UI builds, kept in one place here
@@ -49,6 +50,7 @@ export function callableSuits(hand, buried) {
 
 export default async function handler(req, res) {
   if (!methodGuard(req, res, "POST")) return;
+  if (!requireMultiplayer(res)) return;
 
   const { id } = req.query || {};
   if (!id) return fail(res, 400, "bad-request", "Missing table id.");

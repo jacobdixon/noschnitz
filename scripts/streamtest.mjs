@@ -148,7 +148,10 @@ function open(store, reqOpts, handlerOpts = {}) {
   const counted = { ...store, gets: 0, async get(id) { counted.gets++; return store.get(id); } };
   const handler = createEventsHandler({
     store: counted,
-    env: {}, // no Redis credentials -> the reader falls back to the store
+    // Multiplayer enabled with credentials present so the feature gate lets the
+    // handler run. The version reader still falls back to the injected store
+    // because that is passed directly — nothing here talks to Upstash.
+    env: { MULTIPLAYER: "1", KV_REST_API_URL: "test", KV_REST_API_TOKEN: "test" },
     now: clock.now,
     setInterval: clock.setInterval,
     clearInterval: clock.clearInterval,

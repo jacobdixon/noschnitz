@@ -18,6 +18,14 @@
 
    Usage: node scripts/e2etest.mjs
    ========================================================================= */
+// The routes are gated behind the multiplayer flag and a configured store.
+// Both are set here so the suite exercises the routes rather than the gate —
+// scripts/flagtest.mjs is what covers the gate itself. The credentials only
+// satisfy hasRealStore; _resetStore below injects the store these tests use.
+process.env.MULTIPLAYER = "1";
+process.env.KV_REST_API_URL ||= "test";
+process.env.KV_REST_API_TOKEN ||= "test";
+
 import { call } from "./_mockhttp.mjs";
 import { _resetStore } from "../api/_lib/store.js";
 import { createMemoryStore } from "../src/store/memory.js";

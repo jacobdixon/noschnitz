@@ -61,6 +61,7 @@ import { redisFromEnv } from "../../../src/store/upstash.js";
 import { getStore } from "../../_lib/store.js";
 import { tableViewFor } from "../../_lib/redact.js";
 import { fail, methodGuard } from "../../_lib/http.js";
+import { requireMultiplayer } from "../../_lib/flags.js";
 
 // How often a tick checks the version.
 //
@@ -193,6 +194,7 @@ export function createEventsHandler(options = {}) {
 
   return async function eventsHandler(req, res) {
     if (!methodGuard(req, res, "GET")) return;
+  if (!requireMultiplayer(res, env)) return;
 
     const q = paramsOf(req);
     const id = q.id;
