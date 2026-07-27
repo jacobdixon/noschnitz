@@ -107,7 +107,12 @@ export default function Sheepshead() {
     let t;
     if (g.phase === "picking") {
       if (g.passes === 5) {
-        t = setTimeout(() => setG((s) => ({ ...freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1), message: null })), 1600);
+        // Nobody picked, so this hand is thrown in and the next one pays
+        // double. Stacks if it happens twice running.
+        t = setTimeout(() => setG((s) => ({
+          ...freshHand((s.dealer + 1) % 5, s.scores, s.handNum + 1, (s.doubler || 1) * 2),
+          message: null,
+        })), 1600);
       } else if (g.pickTurn !== 0) {
         t = setTimeout(() => setG((s) => {
           if (s.phase !== "picking" || s.pickTurn === 0 || s.passes === 5) return s;
@@ -313,7 +318,13 @@ export default function Sheepshead() {
       </div>
 
       {/* Contract strip */}
-      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28, width: "100%" }}>
+      {/* No `width: 100%` here. The strip is a flex item in a column, so it
+          already stretches; adding it on top of 12px of horizontal padding
+          under content-box sizing made the strip 387px wide inside a 363px
+          box. The root clips overflow, so the extra 24px was invisible for as
+          long as nothing was right-aligned — the Doubler badge was the first
+          thing to land in it and got cut in half. */}
+      <div style={{ flexShrink: 0, display: "flex", gap: 10, alignItems: "center", padding: "5px 12px", fontSize: 15, color: felt.creamDim, minHeight: 28 }}>
         <span>Dealer: {NAMES[g.dealer]}</span>
         {g.picker !== null && <span>· {NAMES[g.picker]} picked</span>}
         {g.calledSuit && (
@@ -322,6 +333,20 @@ export default function Sheepshead() {
           </span>
         )}
         {g.picker !== null && g.alone && <span style={{ color: felt.brass }}>· Alone</span>}
+        {/* Sits at the end of the contract strip and stays put for the whole
+            hand: the stake is part of the contract, and it's inherited from a
+            hand nobody picked, so there's no other moment it would be
+            explained. Pushed right so it reads as a stake rather than another
+            fact about the deal. */}
+        {(g.doubler || 1) > 1 && (
+          <span style={{
+            marginLeft: "auto", color: "#2A2108", background: felt.brass,
+            fontWeight: 800, fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase",
+            padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+          }}>
+            Doubler{g.doubler > 2 ? ` ×${g.doubler}` : ""}
+          </span>
+        )}
       </div>
 
       {/* Table */}

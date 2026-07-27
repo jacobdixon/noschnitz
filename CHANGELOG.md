@@ -6,6 +6,43 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.14.0] - 2026-07-27
+- Two house scoring rules, both on by default: **double on the bump** and a
+  **doubler after a passed-out hand**.
+  - *Double on the bump* — a set picker pays twice. The reason it works out:
+    the picking team wins about 61-62% of the hands it takes, which alone would
+    argue for something milder, but it also wins them *bigger* than it loses
+    them — average multiplier 1.49 winning against 1.17 losing, because it holds
+    the blind and the burial. Feed that asymmetry in and the break-even win rate
+    for picking lands at roughly 61%, right where the game actually runs.
+  - Measured over 200,000 hands: picker EV falls from **+1.27 to +0.10** per
+    picked hand overall (alone +2.04 -> +0.24, partnered +0.93 -> +0.04). What
+    that buys isn't fairness between seats — the game was always zero-sum, and
+    every seat picks about equally often. It's that at +1.27 picking was close
+    to free, so loose picking paid about as well as good picking. At +0.10 it's
+    a decision again.
+  - The current AI pick threshold needs no retuning: swept it, and
+    `handStrength >= 10` is the only setting where picking stays near neutral
+    under the new rule (>= 11 goes back to +0.39, >= 12 to +0.71).
+  - *Doubler* — nobody picks, the hand is thrown in, and the next one pays
+    double. Stacks if it happens twice running, shown as `DOUBLER ×4` and so on.
+    Carried on the game state rather than recomputed, since the hand that pays
+    it isn't the hand that caused it.
+  - Both stack with the existing multipliers, so a set no-schneider is 4x and a
+    set no-tricker is 6x. Winning big is *not* doubled — the bump is a penalty
+    on the picker, not a general multiplier.
+  - Adds `npm run scoringtest` (folded into `npm test`): 38 assertions on
+    constructed finished hands, kept in their own harness because "what is this
+    hand worth" fails for entirely different reasons than "which card should the
+    AI play". Every case also asserts the hand is zero-sum, which is the
+    invariant most likely to break quietly if a stake is ever applied to one
+    side only.
+- Fixes a long-standing layout bug the Doubler badge exposed: the contract strip
+  carried both `width: 100%` and 12px of horizontal padding under content-box
+  sizing, making it 387px wide inside a 363px box. The root clips overflow, so
+  the extra 24px was invisible for as long as nothing was right-aligned — the
+  badge was the first thing to land in it, and rendered cut in half. (`0de4e84`)
+
 ## [0.13.0] - 2026-07-27
 - Taking a trick off your own side now has to buy something. Reported from
   expert play: Gus picked, his partner Duane led Q-hearts, Gus overtook with

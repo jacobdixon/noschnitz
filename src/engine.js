@@ -559,7 +559,11 @@ export function aiChooseCard(g, idx) {
 }
 
 /* ------------------------------ Game setup ------------------------------ */
-export function freshHand(dealer, scores, handNum) {
+// `doubler` scales the whole hand and is inherited, not earned: a hand nobody
+// picks is thrown in and the next one pays double. Passing it in rather than
+// deriving it keeps the rule where it belongs — the hand that pays is not the
+// hand that caused it.
+export function freshHand(dealer, scores, handNum, doubler = 1) {
   const deck = makeDeck();
   const hands = [[], [], [], [], []];
   let di = 0;
@@ -579,6 +583,7 @@ export function freshHand(dealer, scores, handNum) {
     calledAcePlayed: false,
     calledSuitLed: false,
     alone: false,
+    doubler,
     pickTurn: (dealer + 1) % 5,
     passes: 0,
     played: [],
@@ -669,22 +674,43 @@ export function scoreHand(g) {
     if (teamTricks === 0) { mult = 3; label = "No-tricker!"; }
     else if (teamPts <= 30) { mult = 2; label = "No Schneider!"; }
   }
+  // Double on the bump: a set picker pays twice. The picking team wins about
+  // 61-62% of the hands it takes, and wins them bigger than it loses them
+  // (average multiplier 1.49 winning against 1.17 losing, because they hold the
+  // blind and the burial). Left alone that makes picking worth about +1.27 a
+  // hand — close enough to free that loose picking is rewarded as well as good
+  // picking. Doubling the loss brings it to roughly +0.10, which turns picking
+  // back into a decision instead of a formality.
+  const bumped = !pickerWins;
+
+  // A passed-out hand doubles the next one, and stacks if it happens twice
+  // running. Carried on the state rather than recomputed, since the hand that
+  // pays it is not the hand that caused it.
+  const doubler = g.doubler || 1;
+
+  // Everything that scales the hand, in one place. Zero-sum either way: what
+  // one side pays, the other collects.
+  const stake = mult * doubler * (bumped ? 2 : 1);
+
   const scores = [...g.scores];
   const sign = pickerWins ? 1 : -1;
   if (g.alone || g.partner === null) {
-    scores[g.picker] += sign * 4 * mult;
-    for (let p = 0; p < 5; p++) if (p !== g.picker) scores[p] -= sign * mult;
+    scores[g.picker] += sign * 4 * stake;
+    for (let p = 0; p < 5; p++) if (p !== g.picker) scores[p] -= sign * stake;
   } else {
-    scores[g.picker] += sign * 2 * mult;
-    scores[g.partner] += sign * 1 * mult;
-    for (let p = 0; p < 5; p++) if (!pickerTeam.includes(p)) scores[p] -= sign * mult;
+    scores[g.picker] += sign * 2 * stake;
+    scores[g.partner] += sign * 1 * stake;
+    for (let p = 0; p < 5; p++) if (!pickerTeam.includes(p)) scores[p] -= sign * stake;
   }
   const handDelta = scores.map((s, i) => s - g.scores[i]);
   return {
     ...g,
     phase: "handEnd",
     scores,
-    result: { teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam, handDelta },
+    result: {
+      teamPts, defPts, pickerWins, mult, label, buriedPts, pickerTeam, handDelta,
+      bumped, doubler, stake,
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "simulate": "node scripts/simulate.mjs",
     "aiskilltest": "node scripts/aiskilltest.mjs",
-    "test": "node scripts/aiskilltest.mjs"
+    "test": "node scripts/aiskilltest.mjs && node scripts/scoringtest.mjs",
+    "scoringtest": "node scripts/scoringtest.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
