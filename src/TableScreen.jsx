@@ -364,6 +364,32 @@ function ScoresModal({ table, onClose, onRename, busy }) {
         </button>
       ))}
 
+      {/* Your own seat. Stepping away has existed as a route since COM-3 but
+          had no control anywhere in the UI — so the only way a seat became
+          AI-covered was by going quiet, which is the accidental path rather
+          than the deliberate one. */}
+      {isMe && (s.kind === "away" ? (
+        <>
+          <button style={{ ...btnGold, marginBottom: 8 }} disabled={busy} onClick={onBack}>
+            Take my seat back
+          </button>
+          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+            Your cards were never touched — the AI was only choosing plays.
+            Control returns at your next decision.
+          </div>
+        </>
+      ) : (
+        <>
+          <button style={{ ...btnPlain, marginBottom: 8 }} disabled={busy} onClick={onAway}>
+            Step away
+          </button>
+          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+            The AI plays your seat until you come back. The seat stays yours —
+            nobody else can take it.
+          </div>
+        </>
+      ))}
+
       <button style={btnPlain} onClick={onClose}>Close</button>
     </Modal>
   );
@@ -431,7 +457,7 @@ function InviteModal({ table, onClose }) {
 // Tapping a seat. Today it holds presence and the boot control; it's also the
 // natural home for a profile link and lifetime stats once players are more than
 // a localStorage token.
-function PlayerModal({ table, seat, serverNow, onBoot, onClose, busy, err }) {
+function PlayerModal({ table, seat, serverNow, onBoot, onAway, onBack, onClose, busy, err }) {
   const s = table.seats[seat];
   if (!s) return null;
   const idle = idleMs(table, seat, serverNow());
@@ -631,7 +657,8 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // what everyone else played, your cards aren't live. Otherwise you can play
   // into a trick that visually has two cards in it and watch your own card
   // appear before theirs.
-  const isMyTurn = g.phase === "playing" && g.turn === mySeat && caughtUp;
+  const iAmAway = table.seats[mySeat]?.kind === "away";
+  const isMyTurn = g.phase === "playing" && g.turn === mySeat && caughtUp && !iAmAway;
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
@@ -779,6 +806,26 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         </div>
       </div>
 
+      {/* COM-3.2. Deliberately a banner rather than something tucked in a
+          modal: a player who has just come back needs to find this without
+          hunting, and until they do, the AI is playing their cards. */}
+      {iAmAway && (
+        <div style={{
+          flexShrink: 0, display: "flex", alignItems: "center", gap: 10,
+          background: felt.brass, color: "#241C06",
+          padding: "8px 12px", fontSize: 14, fontWeight: 700,
+        }}>
+          <span style={{ flex: 1, minWidth: 0 }}>The AI is playing your seat.</span>
+          <button
+            style={{ ...btnPlain, background: "#241C0622", color: "#241C06", border: "1px solid #241C0655", fontSize: 14, padding: "6px 12px" }}
+            disabled={busy}
+            onClick={() => act(() => api.takeSeatBack(tableId, playerId))}
+          >
+            {busy ? "…" : "Take it back"}
+          </button>
+        </div>
+      )}
+
       {err && (
         <div style={{ background: "#00000040", color: felt.red, padding: "6px 12px", fontSize: 13 }}>
           {err}
@@ -891,6 +938,14 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           onClose={() => setSeatModal(null)}
           onBoot={(seat) => act(async () => {
             await api.bootPlayer(tableId, playerId, seat);
+            setSeatModal(null);
+          })}
+          onAway={() => act(async () => {
+            await api.stepAway(tableId, playerId);
+            setSeatModal(null);
+          })}
+          onBack={() => act(async () => {
+            await api.takeSeatBack(tableId, playerId);
             setSeatModal(null);
           })}
         />

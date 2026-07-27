@@ -291,6 +291,29 @@ export function stepAway(table, { playerId, now }) {
   return commit({ ...table, seats }, now);
 }
 
+// COM-3.2 — taking your seat back from the AI.
+//
+// The counterpart to stepAway, and it was missing entirely: joinTable reclaims
+// an away seat, but nothing in the client ever called it for a player who
+// still HELD a seat — the presence ping only touches lastSeen, and the join
+// gate sends an already-seated player straight through without joining. So
+// once the AI covered a seat, its owner had no way back at all.
+//
+// Deliberately explicit rather than automatic. A tab that wakes in somebody's
+// pocket and resumes pinging is weak evidence a human is at the table, and
+// auto-reclaiming on that would hand the seat back to nobody and stall the
+// hand all over again. Coming back is a thing you do, not a thing that happens
+// to you.
+export function resumeSeat(table, { playerId, now }) {
+  const idx = seatOf(table, playerId);
+  if (idx < 0) return table;
+  if (table.seats[idx].kind === "human") return table;
+  const seats = table.seats.map((s, i) =>
+    i === idx ? { ...s, kind: "human", lastSeen: now } : s
+  );
+  return commit({ ...table, seats }, now);
+}
+
 // COM-3.4 — the table must never stall on somebody who stopped responding.
 // Anyone unheard-from for longer than `awayAfterMs` gets covered by the AI so
 // play continues; they reclaim their seat by simply coming back (see joinTable).

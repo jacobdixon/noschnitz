@@ -34,6 +34,8 @@ import buryRoute, { callableSuits } from "../api/tables/[id]/bury.js";
 import leaveRoute from "../api/tables/[id]/leave.js";
 import nameRoute from "../api/tables/[id]/name.js";
 import bootRoute from "../api/tables/[id]/boot.js";
+import awayRoute from "../api/tables/[id]/away.js";
+import backRoute from "../api/tables/[id]/back.js";
 
 let passed = 0;
 const failures = [];
@@ -580,6 +582,40 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
   // So the player who never checked in is the one who becomes removable.
   check("the silent player is removable", isBootable(after, daveSeat, Date.now()));
   check("the player who checked in is not", !isBootable(after, hostSeat, Date.now()));
+}
+
+// --- away / back through the real routes ----------------------------------
+{
+  const fresh = await call(createTableRoute, {
+    method: "POST", body: { hostName: "H", playerId: "pid-back-host" },
+  });
+  const bid = fresh.body.table.id;
+  await call(joinRoute, { method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave", name: "Dave" } });
+  const seat = seatOf(await store.get(bid), "pid-back-dave");
+
+  const away = await call(awayRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  });
+  check("stepping away succeeds", away.status === 200, `got ${away.status}`);
+  check("the seat is now AI-covered", (await store.get(bid)).seats[seat]?.kind === "away");
+
+  const back = await call(backRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  });
+  check("taking the seat back succeeds", back.status === 200, `got ${back.status}`);
+  check("control is restored", (await store.get(bid)).seats[seat]?.kind === "human");
+  check("the response reports the right seat", back.body?.you === seat);
+  assertNoLeak("back", back.body, await store.get(bid), seat, "pid-back-dave", ALL_IDS);
+
+  const stranger = await call(backRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-not-here" },
+  });
+  check("a stranger cannot take a seat back", stranger.status === 403, `got ${stranger.status}`);
+
+  const twice = await call(backRoute, {
+    method: "POST", query: { id: bid }, body: { playerId: "pid-back-dave" },
+  });
+  check("taking back a seat you already control is harmless", twice.status === 200);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);

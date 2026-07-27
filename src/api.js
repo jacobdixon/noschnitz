@@ -77,6 +77,11 @@ export const setName = (id, playerId, name) =>
 export const bootPlayer = (id, playerId, seat) =>
   request(`/api/tables/${encodeURIComponent(id)}/boot`, { method: "POST", body: { playerId, seat } });
 
+// COM-3.2 — take your seat back from the AI. Explicit, not automatic: see
+// api/tables/[id]/back.js.
+export const takeSeatBack = (id, playerId) =>
+  request(`/api/tables/${encodeURIComponent(id)}/back`, { method: "POST", body: { playerId } });
+
 // COM-3.1 — keeps the seat, hands play to the AI. Reclaiming needs no call:
 // rejoining the table takes the seat back (see joinTable's reclaim path).
 export const stepAway = (id, playerId) =>

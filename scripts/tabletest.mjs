@@ -13,7 +13,7 @@ import {
   createTable, joinTable, leaveTable, applyPendingJoins, startHand,
   markSeen, seatOf, humanSeats, aiSeatIndexes, uniqueName, makeTableCode,
   atHandBoundary, AI_NAMES, stepAway, coverIdleSeats, AWAY_AFTER_MS,
-  idleMs, isBootable, bootSeat,
+  idleMs, isBootable, bootSeat, resumeSeat,
 } from "../src/table.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { mutate } from "../src/store/mutate.js";
@@ -348,6 +348,47 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   const aiSeat0 = aiSeatIndexes(t)[0];
   check("a house AI seat is never bootable", !isBootable(t, aiSeat0, T0 + AWAY_AFTER_MS * 10));
   check("booting an AI seat is a no-op", bootSeat(t, { seat: aiSeat0, now: T0 }) === t);
+}
+
+
+/* ------------------- COM-3.2: taking your seat back ----------------------- */
+{
+  // The gap this closes: joinTable reclaims an away seat, but nothing in the
+  // client ever reached it for a player who still HELD a seat. The presence
+  // ping only touches lastSeen and the join gate sends an already-seated
+  // player straight through, so once the AI covered a seat its owner had no
+  // route back at all.
+  let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  const seat = seatOf(t, "p-dave");
+
+  // Deliberate step away, then back.
+  const away = stepAway(t, { playerId: "p-dave", now: T0 + 10 });
+  check("stepping away hands the seat to the AI", away.seats[seat]?.kind === "away");
+  const back = resumeSeat(away, { playerId: "p-dave", now: T0 + 20 });
+  check("taking it back restores control", back.seats[seat]?.kind === "human");
+  check("taking it back refreshes presence", back.seats[seat]?.lastSeen === T0 + 20);
+  check("taking it back keeps the same seat", seatOf(back, "p-dave") === seat);
+  check("taking it back bumps the version", back.version > away.version);
+
+  // The accidental path — covered for going quiet — must be reversible too.
+  const started = startHand(t, T0);
+  const blocking = { ...started, g: { ...started.g, phase: "picking", pickTurn: seat, passes: 0 } };
+  const covered = coverIdleSeats(blocking, T0 + AWAY_AFTER_MS + 1);
+  check("going quiet gets you covered", covered.seats[seat]?.kind === "away");
+  const recovered = resumeSeat(covered, { playerId: "p-dave", now: T0 + AWAY_AFTER_MS + 2 });
+  check("a player covered for going quiet can also take it back",
+    recovered.seats[seat]?.kind === "human");
+  check("and is no longer eligible to be covered again immediately",
+    coverIdleSeats(recovered, T0 + AWAY_AFTER_MS + 3).seats[seat]?.kind === "human");
+
+  // Nothing to do, and nothing to steal.
+  check("taking back a seat you already control is a no-op",
+    resumeSeat(t, { playerId: "p-dave", now: T0 + 50 }) === t);
+  check("a stranger cannot take back a seat",
+    resumeSeat(away, { playerId: "p-nobody", now: T0 + 50 }) === away);
+  const hostSeat = seatOf(away, "p-host");
+  check("taking your seat back doesn't disturb anyone else's",
+    resumeSeat(away, { playerId: "p-dave", now: T0 + 50 }).seats[hostSeat]?.kind === "human");
 }
 
 /* ------------------------- Versioning + CAS store ------------------------- */
