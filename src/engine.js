@@ -702,22 +702,44 @@ export function aiChooseCard(g, idx, opts = {}) {
       // beaten later. Double-dummy that is worth 8 points, and it is the
       // conventional play.
       //
-      // MEASURED AND NOT SHIPPED, default off. The concept is real and the
-      // gap it names is real — the gate above asks only whether the trick
-      // becomes ours, never what it costs them. But as a general rule it does
-      // not pay: +0.0006/seat/hand ahead in 3 of 3 seeds at 5,000 hands, which
-      // decayed to +0.0001 ahead in 3 of 5 at 9,000 x 5. It changes the play in
-      // 0.31% of decisions and 4.1% of hands, so the average is diluted about
-      // twenty-five fold — and inside those hands the trump spent forcing is
-      // roughly worth the trick it would have won later.
+      // MEASURED AND NOT SHIPPED, default off, in two rounds.
       //
-      // Left switchable because the hand that prompted it is genuinely misplayed
-      // and a sharper trigger might pay where this blunt one does not.
+      // Blunt (fire whenever the trick is gone and a winner is held):
+      //   +0.0006/seat/hand ahead 3 of 3 at 5,000 hands, decaying to +0.0001
+      //   ahead 3 of 5 at 9,000 x 5.
+      // Sharpened, from profiling 172 firing positions scored double-dummy —
+      // the ones where forcing helped spent a stronger card (mean equity 4.8
+      // against 5.7) and were held by seats with less trump (1.5 against 1.8):
+      //   forceMaxTrump 2  +0.0007 ahead 3 of 3 at 5,000, +0.0005 ahead 3 of 5
+      //                    at 9,000 x 5
+      //   forceMaxEquity 4 / 5 both inside the same band.
+      //
+      // The interesting number is the gap between theory and play. Across those
+      // 172 positions forcing is worth +1.52 points each, double-dummy, and it
+      // fires in roughly 1.9% of hands from trick three — which would be about
+      // +0.03/hand if it were converted. It measures at a twentieth of that,
+      // so the advantage is real and this engine does not follow it up. That is
+      // a statement about the rest of the hand, not about this branch, and no
+      // trigger here can fix it.
+      //
+      // Left switchable rather than deleted: the hand that prompted it really
+      // is misplayed, and the follow-up is a thing that could improve.
       if (!affordable.length && opts.forceWhenLost && asIs <= 1e-9 && winners.length) {
         const cheapest = [...winners].sort((a, b) => power(a) - power(b))[0];
+        // Sharpened from a sample of the positions where this fires, scored
+        // double-dummy. Where it helped, the forcing card was stronger (mean
+        // equity 4.8 against 5.7) and the seat held fewer trump (1.5 against
+        // 1.8) — spend a card that can still make them work, and only when
+        // trump is not the thing you are hoarding.
+        const equityOk =
+          opts.forceMaxEquity === undefined ||
+          cardEquity(g, idx, cheapest, unseen) <= opts.forceMaxEquity;
+        const trumpOk =
+          opts.forceMaxTrump === undefined ||
+          g.hands[idx].filter(isTrump).length <= opts.forceMaxTrump;
         // Only when it actually costs them something: forcing with a card the
         // winner can beat with what they already played is just a donation.
-        if (securityAfterPlay(g, idx, cheapest) > asIs) return cheapest;
+        if (equityOk && trumpOk && securityAfterPlay(g, idx, cheapest) > asIs) return cheapest;
       }
 
       if (!affordable.length) return shedCard(g, idx, legal, ourTrick, opts);
