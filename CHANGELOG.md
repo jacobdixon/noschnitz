@@ -6,6 +6,38 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.19.0] - 2026-07-28
+- **The AI now always takes a trick with the cheapest card that wins it.** The
+  "secure with strength" rule — reach for the strongest winner when the trick is
+  fat (10+ points) or late (trick 4+) — is deleted outright rather than refined.
+  Worth **+0.089/seat/hand, ahead in 5 of 5 seeds** (20,000 hands per split,
+  z ~ 19). For scale, 0.18.0 was +0.013 on the identical harness, so this is
+  roughly seven times that gain and the largest single play change to date.
+  - The premise of the old rule was wrong. A trick won by one rank scores
+    exactly what a trick won by eight scores, and the surplus rank is a later
+    trick you no longer win. There is essentially nothing for "reach for
+    strength" to buy, so no amount of tuning around it could pay.
+  - 0.18.0 softened the same rule with a sufficiency filter instead of removing
+    it, which is why it measured as a real but small win at the time. It was
+    mitigating a bad heuristic, not fixing one.
+  - **Reported from a real hand** (v0.18.0, hand 1): with a fail club led, the
+    picker held Q-clubs Q-hearts J-spades J-hearts and took a 13-point trick
+    with Q-hearts where J-hearts took the identical 13. The sufficiency filter
+    could not certify the Jack, because `trickSecurity` counts beaters the one
+    seat left to act could not legally play — that seat was following a fail
+    suit and could not trump in — so the code fell through to strength and
+    burned a Queen for nothing.
+  - **A plausible-sounding fix measured worse and was discarded.** Making the
+    sufficiency test legality-aware by pricing the security gain the way the
+    overtake branch does lands between -0.005/seat/hand (tight threshold, and
+    significantly *negative*) and +0.016 (loose threshold) — the whole curve is
+    dominated by simply playing the cheapest winner. Recorded so the idea isn't
+    retried: the conservatism in `trickSecurity` is not the problem, the rule
+    consuming it was.
+  - `lastToPlay` and `trickPts` are gone from `aiChooseCard`; both existed only
+    to gate the deleted branch, and the last-to-play case now falls out of the
+    general rule for free.
+
 ## [0.18.0] - 2026-07-28
 - Once the AI is winning a trick, it takes it with the cheapest card that is
   actually sufficient rather than the strongest card it holds. Item 2 of the
