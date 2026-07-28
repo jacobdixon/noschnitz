@@ -317,8 +317,33 @@ export function cardEquity(g, viewer, card, unseen = unaccountedFor(g, viewer)) 
 // diamond banks more AND keeps the stronger card. Power trump is parted with
 // last and weakest-first. Without that ordering the class rule would happily
 // throw a Queen for one point over a Jack, which is the mistake 0.8.0 fixed.
-function shedCard(g, idx, legal, wantPoints) {
+function shedCard(g, idx, legal, wantPoints, opts = {}) {
   const unseen = unaccountedFor(g, idx);
+
+  // MEASURED AND REJECTED — kept as a switch so nobody has to rebuild it to
+  // re-check. The argument was: when the trick is NOT ours the only question
+  // is how few points cross the table, so shed the cheapest card and use
+  // deadness merely as a tiebreak. It came from a real hand where a defender
+  // holding 10♣ (dead — the ace and three trump beat it), 8♥ (worthless) and
+  // J♥ shed the TEN into a trick his side had a 12% chance of holding, and his
+  // side then won both remaining tricks, so the ten was bankable at home. It
+  // cost 10 points, double-dummy.
+  //
+  // It is still the wrong rule: -0.0278/seat/hand, behind in 3 of 3 seeds at
+  // 5,000 hands per split (scripts/abtest.mjs). A dead card is going to be
+  // captured whatever happens, so choosing WHEN to let it go is worth more
+  // than the points saved on any one trick — and holding live cards to shed
+  // later is what costs the tricks. That hand is a good policy losing, not a
+  // bad policy showing.
+  if (!wantPoints && opts.shedCheapestWhenLosing) {
+    return [...legal].sort(
+      (a, b) =>
+        cardPts(a) - cardPts(b) ||
+        cardEquity(g, idx, b, unseen) - cardEquity(g, idx, a, unseen) ||
+        power(a) - power(b),
+    )[0];
+  }
+
   const scored = legal.map((card) => ({ card, equity: cardEquity(g, idx, card, unseen) }));
   const deadest = Math.max(...scored.map((s) => s.equity));
   const cls = scored.filter((s) => s.equity === deadest).map((s) => s.card);
@@ -437,16 +462,24 @@ export function solveEndgameCard(g) {
 export const SCHMEAR_CONFIDENCE = 0.85;
 
 // How much safer taking a trick off our own side has to make it before it's
-// worth the card. Reported from expert play: the partner led Q-hearts, the
+// worth the card.
+//
+// Swept and left alone. 0.08 / 0.12 / 0.20 / 0.30 all land inside the noise:
+// 0.12 looked like +0.0013 ahead in 3 of 3 seeds at 3,000 hands per split and
+// evaporated to -0.0004, ahead in 2 of 5, at 9,000 x 5. Worth recording
+// because a real hand landed at a gain of 0.147 against this 0.150 gate and
+// the near-miss looks like evidence the number is wrong. It isn't: the curve
+// is flat here, and three thousandths either way buys nothing. Reported from expert play: the partner led Q-hearts, the
 // picker overtook with Q-spades, and Q-clubs took it anyway. From the picker's
 // seat Q-hearts and Q-spades were beaten by exactly the same one outstanding
 // card, so the overtake bought nothing at all — it just moved the trick from
 // his partner's third-best trump onto his own second-best, and lost both.
 export const OVERTAKE_MIN_GAIN = 0.15;
 
-export function aiChooseCard(g, idx) {
+export function aiChooseCard(g, idx, opts = {}) {
   // Last two tricks: solve exactly rather than using heuristics.
   if (g.tricksDone >= 4) return solveEndgameCard(g);
+  const overtakeGate = opts.overtakeMinGain ?? OVERTAKE_MIN_GAIN;
 
   const legal = legalPlays(g, idx);
   if (legal.length === 1) return legal[0];
@@ -611,7 +644,7 @@ export function aiChooseCard(g, idx) {
 
       // Nothing worth paying. Get out of the way rather than falling through to
       // the winners logic below and overtaking our own teammate.
-      return shedCard(g, idx, legal, ourTrick);
+      return shedCard(g, idx, legal, ourTrick, opts);
     }
 
     // The trick isn't safe enough to pay into, so the choice is between taking
@@ -656,9 +689,9 @@ export function aiChooseCard(g, idx) {
         return beaters === 0 ? 4 : beaters === 1 ? 2 : 1;
       };
       const affordable = winners.filter(
-        (c) => securityAfterPlay(g, idx, c) - asIs >= OVERTAKE_MIN_GAIN * priceOf(c) - 1e-9,
+        (c) => securityAfterPlay(g, idx, c) - asIs >= overtakeGate * priceOf(c) - 1e-9,
       );
-      if (!affordable.length) return shedCard(g, idx, legal, ourTrick);
+      if (!affordable.length) return shedCard(g, idx, legal, ourTrick, opts);
       // Cheapest overtake that pays for itself, not the strongest one available.
       return affordable.sort((a, b) => power(a) - power(b))[0];
     }
@@ -696,7 +729,7 @@ export function aiChooseCard(g, idx) {
   // path that threw a boss Jack to keep a dead Ace. `ourTrick` carries the
   // ownership down here now, so the same shed serves both cases with the sign
   // flipped.
-  return shedCard(g, idx, legal, ourTrick);
+  return shedCard(g, idx, legal, ourTrick, opts);
 }
 
 /* ------------------------------ Game setup ------------------------------ */

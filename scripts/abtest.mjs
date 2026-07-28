@@ -1,49 +1,32 @@
 #!/usr/bin/env node
 /* ============================================================================
-   Head-to-head A/B harness for card-play changes.
+   A/B harness for AI tuning.
 
-   `npm run simulate` drives all five seats with the same AI, so it answers
-   "what do outcomes look like" but cannot answer "is this change stronger" —
-   a change that helps pickers and hurts defenders equally moves nothing.
-   `npm run aiskilltest` asserts specific behaviours but says nothing about
-   whether a behaviour is worth having. This fills the gap, and it is the tool
-   that produced the per-seat numbers quoted in engine.js and CHANGELOG.md.
+   The convention the engine's tuning notes are written against: put the
+   VARIANT in one seat and the current engine in the other four, deal the same
+   hands to both arms, and measure points per seat per hand. A change that only
+   looks good when everyone plays it has not been shown to be stronger — it may
+   just have changed the game.
 
-   Method: the variant occupies ONE seat and the baseline the other four. Each
-   deal is played six times — once all-baseline as a reference, then once per
-   seat with the variant in that seat — so every comparison is on identical
-   cards. Picking always uses the baseline, so both runs enter the play phase
-   from an identical position and the measurement isolates card play.
+   Each deal is played twice, from an identical shuffle:
 
-   Metric is points/seat/hand: the variant seat's hand score minus the same
-   seat's score in the reference run. Because most seat-hands come out
-   identical, the pairing kills nearly all the variance — the reported CI is
-   computed over the paired differences, not over raw scores, which is why a
-   ~0.01 effect is resolvable at 20,000 hands.
+     control   all five seats on the current engine
+     variant   seat S on the variant, the other four unchanged
 
-   Usage:
-     node scripts/abtest.mjs [hands] [seed] --variant <path-to-engine.js>
+   and we score seat S in both. Rotating S over all five seats cancels seat
+   effects (the dealer rotates, so seats are not symmetric within one hand).
+   Repeated over several seeds, because one seed is an anecdote.
 
-   Omit --variant to run the null control, which MUST report exactly 0.0000.
-   Run that whenever you change this harness: it is the only check that the
-   plumbing itself is not introducing a difference.
+   Usage: node scripts/abtest.mjs <hands> [--seeds n] [--opt key=value ...]
+     node scripts/abtest.mjs 4000 --seeds 3 --opt shedCheapestWhenLosing=true
+     node scripts/abtest.mjs 4000 --seeds 3 --opt overtakeMinGain=0.10
    ========================================================================= */
-import * as B from "../src/engine.js";
+import {
+  freshHand, assignPartner, applyPlay, resolveTrick,
+  handStrength, aiBuryAndCall, aiChooseCard, scoreHand,
+} from "../src/engine.js";
 
-const argv = process.argv.slice(2);
-const flag = (name) => {
-  const i = argv.indexOf(name);
-  return i === -1 ? null : argv[i + 1];
-};
-const positional = argv.filter((a, i) => !a.startsWith("--") && !(i > 0 && argv[i - 1].startsWith("--")));
-const HANDS = Number(positional[0] || 20000);
-const SEED = Number(positional[1] || 12345);
-const variantPath = flag("--variant");
-const V = variantPath ? await import(variantPath.startsWith(".") || variantPath.startsWith("/")
-  ? variantPath : `./${variantPath}`) : B;
-
-// Deterministic dealing. makeDeck() uses Math.random, which would give the
-// baseline and variant runs different cards and make the whole thing noise.
+/* -------- deterministic RNG so both arms see the identical shuffle -------- */
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -53,87 +36,85 @@ function mulberry32(a) {
   };
 }
 
-function deal(rng) {
-  const d = B.ALL_CARDS.map((c) => ({ ...c }));
-  for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [d[i], d[j]] = [d[j], d[i]];
+// freshHand deals off makeDeck()'s own shuffle, so to replay a deal we shuffle
+// the hands ourselves from a seeded stream and overwrite what it produced.
+function dealWith(rand, dealer) {
+  const g = freshHand(dealer, [0, 0, 0, 0, 0], 1);
+  const deck = [...g.hands.flat(), ...g.blind];
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  return d;
+  const hands = [0, 1, 2, 3, 4].map((p) => deck.slice(p * 6, p * 6 + 6));
+  return { ...g, hands, blind: deck.slice(30, 32) };
 }
 
-function setup(deck, dealer) {
-  const hands = [[], [], [], [], []];
-  let di = 0;
-  for (let p = 0; p < 5; p++) for (let k = 0; k < 6; k++) hands[p].push(deck[di++]);
-  return {
-    phase: "picking", handNum: 1, dealer, hands: hands.map(B.sortHand),
-    blind: [deck[di++], deck[di++]], buried: [], picker: null, partner: null,
-    partnerRevealed: false, calledSuit: null, calledAcePlayed: false,
-    calledSuitLed: false, alone: false, doubler: 1, pickTurn: (dealer + 1) % 5,
-    passes: 0, played: [], trick: [], leader: (dealer + 1) % 5, turn: (dealer + 1) % 5,
-    tricksDone: 0, trickCounts: [0, 0, 0, 0, 0], ptsTaken: [0, 0, 0, 0, 0],
-    lastTrick: null, trickHistory: [], selected: [], scores: [0, 0, 0, 0, 0],
-    message: null, result: null,
-  };
-}
+/* ------------------------------ one playout ------------------------------ */
+// `optsFor(seat)` returns the tuning options that seat plays with.
+function playHand(start, optsFor) {
+  let g = start;
 
-// Baseline picking for both runs, so any divergence is card play alone.
-function picking(g) {
   while (g.phase === "picking" && g.passes < 5) {
     const idx = g.pickTurn;
-    const hs = B.handStrength(g.hands[idx]);
-    if (!(hs >= 10 || (g.passes === 4 && hs >= 8))) {
-      g = { ...g, passes: g.passes + 1, pickTurn: (idx + 1) % 5 };
-      continue;
-    }
-    const { buried, call, hand } = B.aiBuryAndCall([...g.hands[idx], ...g.blind]);
-    return B.assignPartner({
-      ...g, picker: idx, hands: g.hands.map((h, i) => (i === idx ? hand : h)),
-      buried, calledSuit: call, phase: "playing", trick: [], turn: g.leader,
+    const wants = handStrength(g.hands[idx]) >= 10 || (g.passes === 4 && handStrength(g.hands[idx]) >= 8);
+    if (!wants) { g = { ...g, passes: g.passes + 1, pickTurn: (idx + 1) % 5 }; continue; }
+    const eight = [...g.hands[idx], ...g.blind];
+    const { buried, call, hand } = aiBuryAndCall(eight);
+    g = assignPartner({
+      ...g, picker: idx, buried, calledSuit: call,
+      hands: g.hands.map((h, i) => (i === idx ? hand : h)),
+      phase: "playing", trick: [], turn: g.leader,
     });
   }
-  return g;
-}
+  if (g.phase !== "playing") return null;   // thrown in — no score to compare
 
-function playOut(g, variantSeat) {
-  while (g.phase === "playing" && g.tricksDone < 6) {
-    if (g.trick.length === 5) { g = B.resolveTrick(g); continue; }
+  let guard = 0;
+  while (g.phase === "playing" && guard++ < 60) {
     const idx = g.turn;
-    const choose = idx === variantSeat ? V.aiChooseCard : B.aiChooseCard;
-    g = B.applyPlay(g, idx, choose(g, idx));
+    if (idx < 0) { g = resolveTrick(g); continue; }
+    g = applyPlay(g, idx, aiChooseCard(g, idx, optsFor(idx)));
+    if (g.trick.length === 5) g = resolveTrick(g);
   }
-  return g;
+  if (g.phase !== "handEnd") return null;
+  return scoreHand(g).result.handDelta;
 }
 
-const rng = mulberry32(SEED);
-const perSeat = [0, 0, 0, 0, 0];
-const diffs = [];
-let played = 0, changed = 0;
+/* --------------------------------- main ---------------------------------- */
+const args = process.argv.slice(2);
+const hands = parseInt(args[0] || "2000", 10);
+const seedArg = args.indexOf("--seeds");
+const seeds = seedArg >= 0 ? parseInt(args[seedArg + 1], 10) : 3;
 
-const t0 = Date.now();
-for (let i = 0; i < HANDS; i++) {
-  const start = picking(setup(deal(rng), i % 5));
-  if (start.phase !== "playing") continue; // thrown in — nothing to play
-  played++;
-  const ref = playOut(start, -1);
-  for (let k = 0; k < 5; k++) {
-    const d = playOut(start, k).scores[k] - ref.scores[k];
-    perSeat[k] += d;
-    diffs.push(d);
-    if (d !== 0) changed++;
-  }
+const variant = {};
+for (let i = 0; i < args.length; i++) {
+  if (args[i] !== "--opt") continue;
+  const [k, v] = args[i + 1].split("=");
+  variant[k] = v === "true" ? true : v === "false" ? false : Number(v);
 }
 
-const n = diffs.length;
-const total = perSeat.reduce((a, b) => a + b, 0);
-const mean = total / n;
-const variance = diffs.reduce((a, d) => a + (d - mean) ** 2, 0) / (n - 1);
-const se = Math.sqrt(variance / n);
+const NONE = () => ({});
+console.log(`variant: ${JSON.stringify(variant)}`);
+console.log(`${hands} hands x ${seeds} seeds, variant in one seat against four unchanged\n`);
 
-console.log(`A/B: ${variantPath ?? "(null control — expect exactly 0.0000)"}`);
-console.log(`  ${played} hands played (seed ${SEED}) in ${Date.now() - t0}ms`);
-console.log(`  per-seat delta:  ${perSeat.map((d) => (d / played).toFixed(4)).join("  ")}`);
-console.log(`  points/seat/hand: ${mean >= 0 ? "+" : ""}${mean.toFixed(4)}` +
-  `  95% CI +/-${(1.96 * se).toFixed(4)}  z=${se ? (mean / se).toFixed(2) : "n/a"}`);
-console.log(`  seat-hands changed: ${changed} / ${n} (${(100 * changed / n).toFixed(1)}%)`);
+const perSeed = [];
+for (let seed = 1; seed <= seeds; seed++) {
+  const rand = mulberry32(seed * 7919);
+  let deltaSum = 0, counted = 0, skipped = 0;
+  for (let h = 0; h < hands; h++) {
+    const dealer = h % 5;
+    const seat = h % 5;                       // rotate which seat carries it
+    const start = dealWith(rand, dealer);
+    const control = playHand(start, NONE);
+    const test = playHand(start, (p) => (p === seat ? variant : {}));
+    if (!control || !test) { skipped++; continue; }
+    deltaSum += test[seat] - control[seat];
+    counted++;
+  }
+  const per = deltaSum / counted;
+  perSeed.push(per);
+  console.log(`  seed ${seed}: ${per >= 0 ? "+" : ""}${per.toFixed(4)} per seat per hand   (${counted} scored, ${skipped} skipped)`);
+}
+
+const mean = perSeed.reduce((a, b) => a + b, 0) / perSeed.length;
+const ahead = perSeed.filter((d) => d > 0).length;
+console.log(`\n  mean ${mean >= 0 ? "+" : ""}${mean.toFixed(4)}/seat/hand, ahead in ${ahead} of ${perSeed.length} seeds`);
