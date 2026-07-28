@@ -23,6 +23,7 @@ import { SUIT_SYM, SUIT_NAME, cid, legalPlays, gradeHandPlays } from "./engine.j
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
+import { displayState } from "./displayState.js";
 import { Felt, HandFan } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
 import { TrumpModal, ScoresModal, LastTrickModal, HandEndModal, RecapModal } from "./modals.jsx";
@@ -94,27 +95,6 @@ function formatIdle(ms) {
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
 
-// What the felt should draw right now, which is deliberately not what the
-// server most recently said.
-//
-// Two differences, both about time. The trick shown is the paced frame rather
-// than g.trick — the server resolves every AI seat inside one request, so its
-// trick jumps by four cards at once and has usually been cleared again before
-// the client sees it. And the card you just played is on the table before the
-// server has confirmed it.
-//
-// Synthesising a state keeps Felt ignorant of both: it renders a game, and this
-// decides which game that is. Masking `turn` while the reveal catches up also
-// stops the active-seat glow racing ahead of the cards.
-function displayState(g, frame, optimistic, caughtUp) {
-  const trick = [
-    ...frame.cards,
-    ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
-      ? [optimistic]
-      : []),
-  ];
-  return { ...g, trick, turn: caughtUp ? g.turn : -1, pickTurn: caughtUp ? g.pickTurn : -1 };
-}
 
 /* ------------------------- Sharing the table link -------------------------- */
 
