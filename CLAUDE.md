@@ -9,7 +9,7 @@ for what's next.
 Sheepshead (5-handed, call-an-ace variant) card game, React + Vite SPA, deployed to
 **noschnitz.com** via Vercel. Solo play against 4 AI opponents today (Gus, Bunny,
 Duane, Patty — Wisconsin-themed, 4-5 chars each). Source at
-`https://github.com/jacobdixon/noschnitz.git`, currently at **v0.7.2**.
+`https://github.com/jacobdixon/noschnitz.git`, currently at **v0.18.0**.
 
 ## Where things live
 - `src/engine.js` — pure game logic, zero React/UI. All rules, AI, and the endgame
@@ -158,3 +158,55 @@ network dependency, instant to try).
 4. A GitHub PAT was used inline in shell commands throughout this session for git
    pushes and issue creation — it was flagged for rotation; assume it may no longer
    be valid and get a fresh one if git/API auth fails.
+
+## Open action items (not code — things only a human can do)
+
+### Make the repo private — PENDING, needs a human
+As of 2026-07-28 `jacobdixon/noschnitz` is still **public** (0 stars, 0 forks, 9 open
+issues, default branch `master`).
+
+**An agent session cannot do this.** Anthropic's agent proxy blocks repository-settings
+writes outright, independent of token scope:
+
+```
+PATCH /repos/jacobdixon/noschnitz  {"private": true}
+403 {"message":"Repository settings writes are not permitted through this proxy."}
+```
+
+The GitHub MCP server exposes no repo-settings tool either, and there is no `gh` CLI in
+the remote environment. Don't burn time re-attempting it in a future session — the
+answer will be the same 403.
+
+To do it by hand: repo **Settings → Danger Zone → Change repository visibility → Make
+private**, confirm with `jacobdixon/noschnitz`.
+
+Consequences, checked against this project specifically:
+- **noschnitz.com keeps running.** Repo visibility is independent of the deployment, and
+  Vercel's GitHub integration supports private repos on Hobby.
+- **The issue board goes private with it** — the epics/stories in `ROADMAP.md`'s "Now"
+  bucket become owner + collaborator only. Add anyone in the group who reads that board
+  as a collaborator *before* flipping.
+- **Tags and releases go private** too.
+- **Nothing gets stranded**: 0 forks means no fork detaches.
+
+### PAT rotation — still open, and going private does not fix it
+Item 4 above notes a PAT was used inline in shell commands and flagged for rotation.
+If the motivation for going private is that exposure, note that **private does not undo
+public** — anything already pushed publicly may have been cloned or indexed. Rotating the
+token is the actual remediation. A secret-scanning pass over the history to confirm
+whether it ever landed in a commit was offered and not yet run.
+
+## Doc accuracy warning (read before trusting the sections above)
+The narrative sections of this file predate the current state of the repo and have
+drifted. Known-stale as of 2026-07-28:
+- The version line said `v0.7.2`; actual is **v0.18.0** (corrected above).
+- "Branch + deploy discipline" claims `master` is **frozen at v0.7.3**. It is not —
+  `master` is at `fa73aba` and has taken merges since, including
+  `11b4cc4 v0.18.0: engine play improvements from the double-dummy play brief (#60)`.
+  Whether the master-is-production / `v2`-is-the-dev-branch policy still holds was not
+  re-confirmed; verify with `git log origin/master` before relying on it.
+- "What's already built (v0.1.0 → v0.7.2)" covers only through v0.7.2 and is missing
+  roughly ten versions of work.
+
+These were left in place rather than rewritten, since correcting them requires knowing
+current intent. Reconcile them the next time someone has the context to do it.
