@@ -54,7 +54,7 @@ corresponds to the entries below.
     the AI should have known.
   - The live recap still uses the rollout grader in `engine.js`. Eleven seconds
     is not a thing to do at hand end, and the exact grader is an analysis tool
-    first.
+    first. (`34093b6`)
 
 ## [0.18.0] - 2026-07-28
 - Once the AI is winning a trick, it takes it with the cheapest card that is
