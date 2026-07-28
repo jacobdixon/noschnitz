@@ -20,7 +20,7 @@
    ========================================================================= */
 import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
-  isTrump, cid, freshHand,
+  isTrump, cid, freshHand, aiChooseCard, trickSecurity,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
 import { advanceAI } from "../src/ai-runner.js";
@@ -683,6 +683,50 @@ for (let humans = 0; humans <= 5; humans++) {
   check("a present human still blocks even when another seat is covered",
     gP.phase === "handEnd" || partial.seats[seatToAct]?.kind === "human",
     `stopped on ${partial.seats[seatToAct]?.kind} in ${gP.phase}`);
+}
+
+/* ------------------- reported hand: cutting the called suit --------------- */
+{
+  // noschnitz.com hand 28, v0.21.0, trick 3. Seats: 0 You (the picker's
+  // partner), 1 Gus, 2 Bunny (picker), 3 Duane, 4 Patty. Clubs were called and
+  // the club ace is still out. Gus leads K♣, Bunny follows 7♣, and Duane — a
+  // defender, void in clubs, holding J♦ — laid the TEN OF HEARTS on it. The
+  // partner then took the whole pile with A♣ two seats later.
+  //
+  // Duane read the trick as certain because the only seat he KNEW to be an
+  // opponent had already played. But the called ace was still out, and the
+  // seat holding it is by definition on the other side. Cutting with J♦ takes
+  // the trick instead; the swing between the two lines was 42 points and it
+  // decided the hand.
+  const C = (x) => ({ rank: x.slice(0, -1), suit: x.slice(-1) });
+  const H = (a) => a.map(C);
+  const g = {
+    picker: 2, partner: 0, calledSuit: "C", calledRank: "A",
+    phase: "playing", turn: 3, partnerRevealed: false, calledAcePlayed: false,
+    calledSuitLed: true, tricksDone: 2, ptsTaken: [0, 0, 0, 0, 0],
+    played: H(["7D", "AD", "QH", "QS", "8D", "7H", "JH", "8H", "AH", "KH"]),
+    trick: [{ player: 1, card: C("KC") }, { player: 2, card: C("7C") }],
+    hands: [H(["AC", "JS", "9D", "KS"]), H(["QD", "AS", "7S"]), H(["QC", "10D", "KD"]),
+            H(["10H", "JD", "9S", "9H"]), H(["9C", "JC", "10S", "8S"])],
+    blind: [], buried: H(["10C", "8C"]),
+  };
+
+  check("a live called ace makes the trick uncertain for a defender",
+    trickSecurity(g, 3) < 0.85, trickSecurity(g, 3).toFixed(3));
+  check("...and it read as certain before the fix",
+    trickSecurity(g, 3, { priceCalledAce: false }) === 1);
+  check("the defender cuts the called suit instead of schmearing",
+    cid(aiChooseCard(g, 3)) === "JD", cid(aiChooseCard(g, 3)));
+
+  // The picker's own side is not made timid by this: the called ace landing is
+  // their partner taking the trick, which is what they want.
+  check("the picker is not discouraged by the ace he called",
+    trickSecurity({ ...g, turn: 2 }, 2) === trickSecurity({ ...g, turn: 2 }, 2, { priceCalledAce: false }));
+
+  // Once the ace is down there is nothing left to fear from it.
+  check("with the ace played the rule stops applying",
+    trickSecurity({ ...g, calledAcePlayed: true }, 3) ===
+    trickSecurity({ ...g, calledAcePlayed: true }, 3, { priceCalledAce: false }));
 }
 
 /* ------------------------------- Report --------------------------------- */
