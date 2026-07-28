@@ -61,8 +61,11 @@ export const startHand = (id, playerId) =>
 export const pick = (id, playerId, action) =>
   request(`/api/tables/${encodeURIComponent(id)}/pick`, { method: "POST", body: { playerId, action } });
 
-export const bury = (id, playerId, cards, calledSuit) =>
-  request(`/api/tables/${encodeURIComponent(id)}/bury`, { method: "POST", body: { playerId, cards, calledSuit } });
+export const bury = (id, playerId, cards, calledSuit, calledRank = "A") =>
+  request(`/api/tables/${encodeURIComponent(id)}/bury`, {
+    method: "POST",
+    body: { playerId, cards, calledSuit, calledRank },
+  });
 
 export const playCard = (id, playerId, card) =>
   request(`/api/tables/${encodeURIComponent(id)}/play`, { method: "POST", body: { playerId, card } });

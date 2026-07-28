@@ -175,6 +175,18 @@ const line = (g, over = {}) =>
   check("the call is spoken with the suit",
     say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "C" } }) ===
       "Patty calls ♣ Clubs.");
+  check("a ten call names the ten",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "S", calledRank: "10" } }) ===
+      "Patty calls ♠ Spades 10.",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "S", calledRank: "10" } }));
+  check("an under call says under",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "H", calledRank: "A", calledUnder: true } }) ===
+      "Patty calls ♥ Hearts, under.",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "H", calledRank: "A", calledUnder: true } }));
+  check("an ordinary ace call says neither",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "C", calledRank: "A" } }) ===
+      "Patty calls ♣ Clubs.");
+
   check("going alone is spoken as going alone",
     say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: null } }) ===
       "Patty goes alone.");

@@ -65,7 +65,12 @@ export function buildDecisionSequence(g) {
   // and the suit is what everyone is waiting to hear. Only once it has actually
   // happened — while the picker is still choosing, there is nothing to show.
   if (g.phase === "playing" || g.phase === "handEnd") {
-    out.push({ type: "bury", seat: g.picker, calledSuit: g.calledSuit ?? null });
+    out.push({
+      type: "bury", seat: g.picker,
+      calledSuit: g.calledSuit ?? null,
+      calledRank: g.calledRank ?? null,
+      calledUnder: Boolean(g.calledUnder),
+    });
   }
 
   return out;

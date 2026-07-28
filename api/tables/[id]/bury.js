@@ -1,8 +1,10 @@
 /* ============================================================================
    POST /api/tables/[id]/bury — bury two cards and call an ace (or go alone).
 
-   Body: { playerId, cards: [{ rank, suit }, { rank, suit }], calledSuit }
+   Body: { playerId, cards: [...], calledSuit, calledRank }
          calledSuit is "C" | "S" | "H", or null to go alone.
+         calledRank is "A" normally, or "10" when the picker holds all three
+         fail aces and calls a ten instead. Validated as a pair.
    200:  { you, table: <redacted> }
    400:  the bury or the call is illegal
    403:  you aren't the picker
@@ -27,7 +29,7 @@
    null — a client claiming a suit anyway is rejected.
    ========================================================================= */
 import { seatOf, commit, markSeen } from "../../../src/table.js";
-import { isTrump, cid, assignPartner } from "../../../src/engine.js";
+import { cid, assignPartner, callOptions } from "../../../src/engine.js";
 import { advanceTable } from "../../../src/ai-runner.js";
 import { mutate } from "../../../src/store/mutate.js";
 import { getStore } from "../../_lib/store.js";
@@ -37,16 +39,11 @@ import { tableViewFor } from "../../_lib/redact.js";
 
 // Mirrors the option list the single-player UI builds, kept in one place here
 // so the server is the authority on what's callable.
-export function callableSuits(hand, buried) {
-  const failsBy = { C: [], S: [], H: [] };
-  hand.filter((c) => !isTrump(c)).forEach((c) => failsBy[c.suit]?.push(c));
-  return ["C", "S", "H"].filter(
-    (su) =>
-      failsBy[su].length > 0 &&
-      !failsBy[su].some((c) => c.rank === "A") &&
-      !buried.some((c) => c.suit === su && c.rank === "A" && !isTrump(c))
-  );
-}
+// The rule itself lives in the engine — this endpoint is still the authority,
+// it just stops being a separate transcription of it. It was one of five, and
+// the only one a tampered client is checked against, so it is the worst one to
+// let drift.
+export const callableSuits = (hand, buried) => callOptions(hand, buried);
 
 export default async function handler(req, res) {
   if (!methodGuard(req, res, "POST")) return;
@@ -75,6 +72,13 @@ export default async function handler(req, res) {
   if (calledSuit !== null && !["C", "S", "H"].includes(calledSuit)) {
     return fail(res, 400, "bad-request", "calledSuit must be C, S, H, or null.");
   }
+  // Which card names the partner: the ace normally, the ten when the picker
+  // held all three aces. Validated as a PAIR below — a client may not mix a
+  // suit it is allowed to call with a rank it is not.
+  const calledRank = body.calledRank ?? "A";
+  if (calledSuit !== null && !["A", "10"].includes(calledRank)) {
+    return fail(res, 400, "bad-request", "calledRank must be A or 10.");
+  }
 
   const store = getStore();
   const out = await mutate(store, id, (table) => {
@@ -99,9 +103,10 @@ export default async function handler(req, res) {
     const hand = g.hands[seat].filter((c) => !wanted.includes(cid(c)));
     const opts = callableSuits(hand, held);
 
+    const chosen = opts.find((o) => o.suit === calledSuit && o.rank === calledRank);
     if (opts.length === 0) {
       if (calledSuit !== null) return { table, denied: "no-callable-suit", seat };
-    } else if (!opts.includes(calledSuit)) {
+    } else if (!chosen) {
       return { table, denied: "bad-call", seat };
     }
 
@@ -112,6 +117,11 @@ export default async function handler(req, res) {
       hands,
       buried: held,
       calledSuit,
+      calledRank: calledSuit === null ? null : calledRank,
+      // Public, because it is announced at the table and it changes how the
+      // hand plays for everyone: the picker can neither lead nor follow the
+      // suit they called.
+      calledUnder: chosen?.kind === "under",
       selected: [],
       phase: "playing",
       trick: [],

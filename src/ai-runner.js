@@ -76,7 +76,7 @@ function aiWantsToPick(g, idx) {
 // phases to click through.
 function aiTakeBlind(g, idx) {
   const eight = [...g.hands[idx], ...g.blind];
-  const { buried, call, hand } = aiBuryAndCall(eight);
+  const { buried, call, callRank, callKind, hand } = aiBuryAndCall(eight);
   const hands = g.hands.map((h, i) => (i === idx ? sortHand(hand) : h));
   return assignPartner({
     ...g,
@@ -84,6 +84,8 @@ function aiTakeBlind(g, idx) {
     hands,
     buried,
     calledSuit: call,
+    calledRank: call === null ? null : callRank,
+    calledUnder: callKind === "under",
     phase: "playing",
     trick: [],
     turn: g.leader,

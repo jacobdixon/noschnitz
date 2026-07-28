@@ -52,9 +52,15 @@ export default function Sheepshead({ onPlayWithFriends }) {
           }
           // AI picks: take blind, bury, call
           const eight = [...s.hands[idx], ...s.blind];
-          const { buried, call, hand } = aiBuryAndCall(eight);
+          const { buried, call, callRank, callKind, hand } = aiBuryAndCall(eight);
           const hands = s.hands.map((h, i) => (i === idx ? sortHand(hand) : h));
-          let ns = { ...s, picker: idx, hands, buried, calledSuit: call, phase: "playing", trick: [], turn: s.leader, message: null };
+          let ns = {
+            ...s, picker: idx, hands, buried,
+            calledSuit: call,
+            calledRank: call === null ? null : callRank,
+            calledUnder: callKind === "under",
+            phase: "playing", trick: [], turn: s.leader, message: null,
+          };
           ns = assignPartner(ns);
           return ns;
         }), 750);
@@ -107,9 +113,17 @@ export default function Sheepshead({ onPlayWithFriends }) {
     });
   };
 
-  const callAce = (suit) => {
+  // Takes the whole option, not a suit: the call is a (suit, rank) pair now,
+  // because the picker who holds every fail ace calls a ten instead.
+  const callAce = (opt) => {
     setG((s) => {
-      let ns = { ...s, calledSuit: suit, phase: "playing", trick: [], turn: s.leader, message: null };
+      let ns = {
+        ...s,
+        calledSuit: opt ? opt.suit : null,
+        calledRank: opt ? opt.rank : null,
+        calledUnder: opt ? opt.kind === "under" : false,
+        phase: "playing", trick: [], turn: s.leader, message: null,
+      };
       ns = assignPartner(ns);
       return ns;
     });
@@ -201,7 +215,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
         )}
 
         {g.phase === "call" && (
-          <CallButtons options={g.callOptions} onCall={(opt) => callAce(opt ? opt.suit : null)} />
+          <CallButtons options={g.callOptions} onCall={callAce} />
         )}
 
         {progressLine({ g, mySeat: 0 }) && (

@@ -103,13 +103,19 @@ export function DealerButton() {
 // people misread at a glance, and at 9px on a dark felt they are two small
 // black clusters. Naming the suit removes the ambiguity that actually costs
 // something in a game where going for the wrong ace loses the hand.
-function CalledChip({ suit }) {
+function CalledChip({ suit, rank, under }) {
   return (
     <Badge compact>
       <span style={{ color: suit === "H" ? felt.scoreDown : felt.cream, fontWeight: 900 }}>
         {SUIT_SYM[suit]}
       </span>{" "}
       {SUIT_NAME[suit]}
+      {/* The rank only when it is not the ace, because the ace is the default
+          everyone assumes — and "under" is announced at the table, so it
+          belongs on the badge rather than being something you deduce three
+          tricks later when the picker fails to follow. */}
+      {rank && rank !== "A" ? ` ${rank}` : ""}
+      {under ? " under" : ""}
     </Badge>
   );
 }
@@ -130,7 +136,9 @@ export function RoleBadges({ g, seat }) {
     return (
       <>
         <Badge gold>Picker{g.alone ? " · Alone" : ""}</Badge>
-        {g.calledSuit && <CalledChip suit={g.calledSuit} />}
+        {g.calledSuit && (
+          <CalledChip suit={g.calledSuit} rank={g.calledRank} under={g.calledUnder} />
+        )}
       </>
     );
   }
