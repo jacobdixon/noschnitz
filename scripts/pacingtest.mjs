@@ -271,14 +271,22 @@ if (!hand) {
   // Measured at 3,565ms on beta before this was fixed.
   const g = hand.final;
   const seq = buildPlaySequence(g);
-  // A card that is provably NOT in this hand's sequence. Hardcoding A♠ made
-  // this flaky: the fixture is a random deal, so sometimes the ace was already
-  // in the very trick being checked, the stand-in was correctly deduped, and
-  // the count assertion failed for the right reason.
-  const inPlay = new Set(seq.map((p) => p.card.rank + p.card.suit));
-  const spare = ["AS", "AH", "AC", "KS", "KH", "KC", "10S", "10H"].find((id) => !inPlay.has(id));
-  const mine = { card: { rank: spare.slice(0, -1), suit: spare.slice(-1) }, player: 0 };
-  check("found a card outside this deal to stand in with", Boolean(spare));
+  // A card provably NOT in this hand's sequence — which is harder than it
+  // sounds. Hardcoding A♠ was flaky because the fixture is a random deal and
+  // the ace was often in the very trick being checked. Picking from a list of
+  // likely candidates was worse: a full hand plays 30 of the 32 cards, so the
+  // list gets exhausted and the test crashes rather than fails.
+  //
+  // The buried pair is exactly the two cards that are never played. It is the
+  // only guaranteed answer.
+  const buried = g.buried || [];
+  check("the fixture buried two cards to stand in with", buried.length > 0,
+    "no buried cards, so the stand-in has nothing safe to use");
+  const stand = buried[0];
+  const spare = stand ? stand.rank + stand.suit : null;
+  const mine = { card: stand, player: 0 };
+  check("the stand-in really is outside the deal",
+    Boolean(spare) && !seq.some((p) => p.card.rank + p.card.suit === spare), spare || "none");
 
   // A completed trick that has been swept: cards gone, `cleared` set.
   const firstTrick = seq.filter((p) => p.trickIndex === 0).length;

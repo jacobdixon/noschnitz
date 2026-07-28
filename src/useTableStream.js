@@ -37,6 +37,23 @@ export const BACKOFF_START_MS = 500;
 export const BACKOFF_MAX_MS = 15_000;
 export const BACKOFF_FACTOR = 2;
 
+// A connection that opens and then says nothing is the failure this could not
+// see. From a flight recorder on a real table: conn=7 opened, never reached
+// `opened`, and sat there for THREE AND A HALF HOURS while the tab was in the
+// background — no error, no frame, nothing to react to. It recovered only when
+// the tab came back and the browser finally errored the socket.
+//
+// EventSource has no timeout of its own, so silence is indistinguishable from
+// a quiet table. These give it a clock:
+//
+//   CONNECT   a stream that hasn't delivered its first frame is broken. The
+//             server sends state (or a comment) immediately on connect.
+//   SILENCE   the server hands off every STREAM_LIFETIME_MS (50s) and
+//             heartbeats every 15s, so a healthy connection is never quiet for
+//             long. Past this, assume it is dead rather than idle.
+export const CONNECT_TIMEOUT_MS = 10_000;
+export const SILENCE_TIMEOUT_MS = 75_000;
+
 export function useTableStream(tableId, playerId) {
   const [table, setTable] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -74,7 +91,11 @@ export function useTableStream(tableId, playerId) {
     const onVisibility = () => logStream("visibility", { state: document.visibilityState });
     document.addEventListener("visibilitychange", onVisibility);
 
+    let watchdog = null;
+
     const closeSource = () => {
+      clearTimeout(watchdog);
+      watchdog = null;
       if (!source) return;
       source.close();
       source = null;
@@ -90,6 +111,21 @@ export function useTableStream(tableId, playerId) {
       retryTimer = setTimeout(open, delay);
     };
 
+    // Restarted on every sign of life. If it ever fires, the connection went
+    // quiet in a way EventSource will not report, so it is torn down and
+    // reopened rather than waited on.
+    const armWatchdog = (ms, why, conn) => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        if (cancelled) return;
+        logStream("stalled", { conn, after: why });
+        setConnected(false);
+        // Deliberately not backed off: this is a stall, not a server that is
+        // refusing us, and the reconnect carries `since` so nothing is missed.
+        scheduleReopen(0);
+      }, ms);
+    };
+
     function open() {
       if (cancelled) return;
 
@@ -102,6 +138,7 @@ export function useTableStream(tableId, playerId) {
       source = es;
       const n = ++seq;
       logStream("open", { conn: n, since: versionRef.current });
+      armWatchdog(CONNECT_TIMEOUT_MS, "connect", n);
 
       es.addEventListener("state", (ev) => {
         if (cancelled || source !== es) return;
@@ -118,6 +155,7 @@ export function useTableStream(tableId, playerId) {
         if (payload.version <= versionRef.current) return;
 
         logStream("state", { conn: n, version: payload.version });
+        armWatchdog(SILENCE_TIMEOUT_MS, "silence", n);
         versionRef.current = payload.version;
         // A frame arrived, so whatever went wrong before is over. Resetting
         // here rather than on `open` means a server that accepts connections
@@ -138,6 +176,7 @@ export function useTableStream(tableId, playerId) {
       // held table rather than replacing it: this must not disturb the version,
       // the game state, or anything the paced trick cursor is tracking.
       es.addEventListener("presence", (ev) => {
+        armWatchdog(SILENCE_TIMEOUT_MS, "silence", n);
         let data;
         try { data = JSON.parse(ev.data); } catch { return; }
         if (!data || !Array.isArray(data.lastSeen)) return;
@@ -180,6 +219,7 @@ export function useTableStream(tableId, playerId) {
       es.onopen = () => {
         if (cancelled || source !== es) return;
         logStream("opened", { conn: n });
+        armWatchdog(SILENCE_TIMEOUT_MS, "silence", n);
         setConnected(true);
         setError(null);
       };

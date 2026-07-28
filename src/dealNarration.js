@@ -117,15 +117,41 @@ export function useDealNarration(g, { decisionMs = DECISION_MS, buryMs = BURY_MS
     if (shown > sequence.length) setShown(sequence.length);
   }, [sequence.length, shown]);
 
+  // Depends on PRIMITIVES only. `sequence` is rebuilt on every render, so
+  // having the array itself in here re-ran this effect every render, cleared
+  // the pending timer and started a new one. The table screen re-renders once
+  // a second for the idle clock and again on every presence frame, so any two
+  // renders closer together than a beat meant the timer never fired at all:
+  // the narration never finished, caughtUp never became true, and the whole
+  // table sat frozen with every affordance gated. That is a freeze, not a
+  // missed animation.
+  const nextKind = at < sequence.length ? sequence[at].type : null;
+  const total = sequence.length;
+  const handNum = g?.handNum ?? null;
   useEffect(() => {
-    if (at >= sequence.length) return;
-    const next = sequence[at];
+    if (at >= total) return;
     const t = setTimeout(
-      () => setShown((n) => Math.min(n + 1, sequence.length)),
-      next?.type === "bury" ? buryMs : decisionMs
+      () => setShown(Math.min(at + 1, total)),
+      nextKind === "bury" ? buryMs : decisionMs
     );
     return () => clearTimeout(t);
-  }, [at, shown, sequence.length, sequence, decisionMs, buryMs]);
+  }, [at, total, nextKind, decisionMs, buryMs]);
+
+  // A hard stop, because this holds the whole table. Everything downstream
+  // waits on `done` — the cards, the status line, every affordance — so a beat
+  // that fails to advance for any reason is not a missed animation, it is a
+  // frozen game. One did: the stepping effect depended on an array rebuilt
+  // every render, so a busy screen could reset its timer indefinitely.
+  //
+  // That specific cause is fixed above. This makes the whole class of it
+  // survivable: however the beats go wrong, the table starts within the
+  // narration's own worst case and plays on.
+  useEffect(() => {
+    if (total === 0) return;
+    const budget = total * Math.max(decisionMs, buryMs) + 2000;
+    const t = setTimeout(() => setShown(total), budget);
+    return () => clearTimeout(t);
+  }, [handNum, total, decisionMs, buryMs]);
 
   return {
     shown: sequence.slice(0, at),
