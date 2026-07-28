@@ -188,12 +188,24 @@ export function callOptions(hand, buried = []) {
       .map((suit) => ({ kind: "ten", suit, rank: "10" }));
   }
 
-  // 3. Otherwise the aces you lack are all in suits you are void in — so call
-  //    one of those anyway, "under". You can never lead or follow it, which is
-  //    the whole cost: your partner is on their own in that suit all hand.
-  return CALLABLE_SUITS
-    .filter((su) => fails[su].length === 0 && !holds(su, "A"))
-    .map((suit) => ({ kind: "under", suit, rank: "A" }));
+  // 3. Under would go here, and is DISABLED until it is built properly.
+  //
+  // What shipped was wrong at the core: it read "calling under" as calling a
+  // suit you are void in, and then let the picker play anything when that suit
+  // was led — including trumping their own called suit, which was reported
+  // from real play immediately.
+  //
+  // Under is not being void. It is designating one of your six cards to stand
+  // in for the called suit: it plays as the lowest card of that suit, must be
+  // played when the suit is led, may be led, and sits face down until the hand
+  // is over. None of that machinery exists yet, and a rule this central is
+  // worse half-built than absent — without the designated card the picker is
+  // simply exempt from the call, which is strictly better than playing it
+  // straight and makes the call free.
+  //
+  // Hands that would qualify go alone, as they did before, until the real
+  // mechanic lands.
+  return [];
 }
 
 // A stable number from a set of cards. Used to vary a choice that has no

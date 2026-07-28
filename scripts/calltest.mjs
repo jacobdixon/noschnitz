@@ -45,18 +45,19 @@ const show = (o) => o.map((x) => `${x.kind}:${x.rank}${x.suit}`).join(" ");
 
 /* ----------------------------------- under -------------------------------- */
 {
-  // Holds the club ace, and is void in spades and hearts. Nothing ordinary is
-  // callable, so both void suits open up as `under`.
-  const o = callOptions(H(["AC", "9C", "QC", "QS", "JD", "AD"]));
-  check("void suits become callable under", o.length === 2, show(o));
-  check("...marked as under", o.every((x) => x.kind === "under" && x.rank === "A"), show(o));
-  check("...and only the suits actually void",
-    o.map((x) => x.suit).sort().join("") === "HS", show(o));
+  // DISABLED pending the real mechanic. Under is not "call a suit you are void
+  // in" — it is designating a card to stand in for that suit — and the version
+  // that shipped let the picker trump their own called suit, which is strictly
+  // better than playing it straight. These assert it stays off rather than
+  // silently coming back in the broken shape.
+  const voidHand = callOptions(H(["AC", "9C", "QC", "QS", "JD", "AD"]));
+  check("under is not offered while unbuilt", voidHand.length === 0, show(voidHand));
 
-  // Under never appears while an ordinary call exists.
-  const ordinary = callOptions(H(["KC", "QC", "QS", "JD", "AD", "9H"]));
-  check("under is not offered when an ace call exists",
-    ordinary.every((x) => x.kind === "ace"), show(ordinary));
+  const trumpOnly = callOptions(H(["QC", "QS", "QH", "QD", "JC", "JS"]));
+  check("a hand of pure trump goes alone for now", trumpOnly.length === 0, show(trumpOnly));
+
+  check("no option anywhere is marked under",
+    [voidHand, trumpOnly].every((o) => !o.some((x) => x.kind === "under")));
 }
 
 /* ------------------------------------ ten --------------------------------- */
@@ -77,11 +78,10 @@ const show = (o) => o.map((x) => `${x.kind}:${x.rank}${x.suit}`).join(" ");
   const o = callOptions(H(["AC", "AS", "AH", "10C", "10S", "10H"]));
   check("all aces and all tens leaves you alone", o.length === 0, show(o));
 
-  // Pure trump: no fail at all, so no suit is void-with-an-ace-outstanding in
-  // the useful sense — every callable suit qualifies as under.
+  // Pure trump has no fail card to keep, so it is exactly the shape that will
+  // call under once that is built. For now it goes alone.
   const trumpOnly = callOptions(H(["QC", "QS", "QH", "QD", "JC", "JS"]));
-  check("a hand of pure trump can still call under", trumpOnly.length === 3, show(trumpOnly));
-  check("...as under", trumpOnly.every((x) => x.kind === "under"), show(trumpOnly));
+  check("a hand of pure trump goes alone for now", trumpOnly.length === 0, show(trumpOnly));
 }
 
 /* ----------------------- the called card names the partner ---------------- */
@@ -154,4 +154,4 @@ if (failures.length) {
   failures.forEach((f) => console.error(`  ${f}`));
   process.exit(1);
 }
-console.log("PASS — ace, under and ten all name a partner correctly.");
+console.log("PASS — ace and ten name a partner correctly; under stays off until built.");
