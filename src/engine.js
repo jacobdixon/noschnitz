@@ -469,14 +469,42 @@ export function aiChooseCard(g, idx) {
         }
         if (trumps[0].rank === "Q") return trumps[0]; // top trump is always a safe, pressuring lead
         if (oppTrumpLeft <= 2 && trumps.length >= 2) return trumps[0]; // opponents nearly tapped out — press now
-        if (trumps.length >= 3) return trumps[0]; // real depth, original conservative bar
+        // Holding any trump at all, the picker's side leads trump. The old bar
+        // here was `trumps.length >= 3` — "real depth" — and the depth was the
+        // wrong quantity to measure. Pulling trump works because the defenders
+        // must *follow* it, so even a trump that cannot win the trick still
+        // strips two trump from the defense and shortens the suit protecting
+        // their fail points. A hand of three low diamonds bleeds just as well
+        // as a hand of three Queens; it simply does not win while doing it.
+        //
+        // Loosening this gate to "any trump" is worth +0.019/seat/hand (ahead
+        // in 5 of 5 seeds at 20,000 hands per split, z 8.5-11.9). Every attempt
+        // to *tighten* it measured worse, monotonically so: requiring 4+ trump
+        // costs 0.019, dropping the rule entirely costs 0.035, and gating it on
+        // the top trump's `cardEquity` costs between 0.008 and 0.034 depending
+        // on the threshold. The conventional wisdom — partner leads trump —
+        // turns out to be right further down into weak holdings than the engine
+        // believed.
+        //
+        // Which trump to lead is a separate question from whether to lead one.
+        // Lead the top trump when it can plausibly hold the trick; otherwise
+        // the lead is purely a bleed, and a bleed should not also donate
+        // points, so send the weakest instead (+0.019 vs +0.012 for always
+        // leading the top trump, +0.007 for always leading the weakest).
+        return isPowerTrump(trumps[0]) || cardEquity(g, idx, trumps[0]) <= 1
+          ? trumps[0]
+          : trumps[trumps.length - 1];
       }
+      // Reached only with a hand of pure fail, so the trump-lead rule above has
+      // already declined to fire. Note this makes the picker's "call for the
+      // ace" lead conditional on holding no trump: tested against a version
+      // that kept it available while holding trump, which measured worse on
+      // every seed (+0.013/+0.017/+0.015 against +0.016/+0.020/+0.019).
       if (idx === g.picker && g.calledSuit && !g.calledAcePlayed) {
         const cs = fails.filter((c) => c.suit === g.calledSuit);
         if (cs.length && g.tricksDone >= 2) return cs.sort((a, b) => failPower(a) - failPower(b))[0]; // call for the ace
       }
-      if (fails.length) return fails.sort((a, b) => cardPts(a) - cardPts(b) || failPower(a) - failPower(b))[0];
-      return trumps[trumps.length - 1];
+      return fails.sort((a, b) => cardPts(a) - cardPts(b) || failPower(a) - failPower(b))[0];
     } else {
       // Defenders: hunt for the picker's partner. Leading a short called-suit
       // holding forces whoever holds the called ace to play it right now

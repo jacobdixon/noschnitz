@@ -6,6 +6,37 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.20.0] - 2026-07-28
+- **The picker's side now leads trump whenever it holds any**, instead of only
+  with three or more. Worth **+0.019/seat/hand, ahead in 5 of 5 seeds**
+  (20,000 hands per split, z 8.5-11.9), measured with `npm run abtest`.
+  - The old bar was `trumps.length >= 3` — "real depth" — and depth was the
+    wrong quantity. Pulling trump works because the defenders must *follow* it:
+    even a trump that cannot win the trick still strips two trump from the
+    defense and shortens the suit protecting their fail points. Three low
+    diamonds bleed as well as three Queens; they simply don't win while doing
+    it. The conventional wisdom — partner leads trump — turns out to hold
+    further down into weak holdings than the engine believed.
+  - **Every attempt to tighten the gate measured worse, monotonically.**
+    Requiring 4+ trump costs 0.019/seat/hand; deleting the rule outright costs
+    0.035; gating on the top trump's `cardEquity` costs between 0.008 and 0.034
+    depending on threshold. This was originally investigated on the *suspicion*
+    that the gate was too loose — that a hand of 9-8-7 of diamonds would lead
+    into eleven higher trumps. It does, and it should.
+  - **Which trump to lead is a separate question from whether to lead one.**
+    Lead the top trump when it can plausibly hold the trick (a Queen or Jack, or
+    at most one unaccounted-for card beats it); otherwise the lead is purely a
+    bleed and shouldn't also donate points, so the weakest goes instead. Worth
+    +0.019 against +0.012 for always leading the top trump and +0.007 for
+    always leading the weakest.
+  - **Side effect, measured and kept:** the picker's "call for the ace" lead is
+    now reachable only with a hand of pure fail. A version that kept it
+    available while holding trump measured worse on every seed
+    (+0.013/+0.017/+0.015 against +0.016/+0.020/+0.019).
+  - Note this branch is picker-side only, so it widens the AI's picker/defender
+    asymmetry: in self-play the picker win rate moves 63.4% -> 65.4% and average
+    picker-team points 70.6 -> 72.0. Defending against the AI is now harder.
+
 ## [0.19.0] - 2026-07-28 (`3bcb4a3`)
 - **The AI now always takes a trick with the cheapest card that wins it.** The
   "secure with strength" rule — reach for the strongest winner when the trick is
