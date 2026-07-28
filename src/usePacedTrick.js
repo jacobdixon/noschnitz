@@ -86,6 +86,13 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
   const handRef = useRef(null);
   const initialised = useRef(false);
 
+  // Derived during RENDER for the same reason the narration is: the effect
+  // that rewinds on a new hand runs after paint, so the first frame of a new
+  // hand was drawn with the old cursor — at the end — and the previous hand's
+  // final trick flashed up before the deal.
+  const newHand = initialised.current && g && g.handNum !== handRef.current;
+  const at = newHand ? 0 : Math.min(revealed, sequence.length);
+
   // Two distinct jobs, and getting them confused cost a bug: the FIRST state we
   // ever see must snap straight to live, while a NEW HAND must rewind to zero.
   //
@@ -125,7 +132,7 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
   }, [sequence.length, revealed]);
 
   useEffect(() => {
-    if (revealed >= sequence.length) return;
+    if (at >= sequence.length) return;
     // Held while the opening of the hand is still being shown — the picking,
     // the bury, the call. Dealing cards over the top of that is the whole
     // problem: the table arrives already in progress.
@@ -134,27 +141,27 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
     // Linger on a completed trick before the next one starts, matching the
     // beat the solo game gets for free from its own timing loop.
     const justCompletedTrick =
-      revealed > 0 &&
-      revealed < sequence.length &&
-      sequence[revealed - 1].trickIndex !== sequence[revealed].trickIndex;
+      at > 0 &&
+      at < sequence.length &&
+      sequence[at - 1].trickIndex !== sequence[at].trickIndex;
 
     const t = setTimeout(
-      () => setRevealed((n) => Math.min(n + 1, sequence.length)),
+      () => setRevealed(Math.min(at + 1, sequence.length)),
       justCompletedTrick ? trickHoldMs : cardMs
     );
     return () => clearTimeout(t);
-  }, [revealed, sequence.length, cardMs, trickHoldMs, paused]);
+  }, [at, revealed, sequence.length, cardMs, trickHoldMs, paused]);
 
   // Sweep a finished trick once its beat is up. Only needed when the cursor has
   // nothing left to advance into — otherwise the next card arriving replaces
   // the trick on its own, which is the AI-plays-next case.
-  const frame = frameAt(sequence, revealed, clearedTrick);
+  const frame = frameAt(sequence, at, newHand ? -1 : clearedTrick);
   useEffect(() => {
     if (!frame.complete) return;
-    if (revealed < sequence.length) return;
+    if (at < sequence.length) return;
     const t = setTimeout(() => setClearedTrick(frame.trickIndex), trickHoldMs);
     return () => clearTimeout(t);
-  }, [frame.complete, frame.trickIndex, revealed, sequence.length, trickHoldMs]);
+  }, [frame.complete, frame.trickIndex, at, revealed, sequence.length, trickHoldMs]);
 
   return {
     ...frame,
@@ -162,7 +169,7 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
     // this to hold back your own legal-play affordances until the table has
     // finished showing what everyone else did — clicking into a half-rendered
     // trick is exactly as confusing as it sounds.
-    caughtUp: revealed >= sequence.length,
-    pending: sequence.length - revealed,
+    caughtUp: at >= sequence.length,
+    pending: sequence.length - at,
   };
 }

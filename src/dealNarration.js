@@ -79,6 +79,14 @@ export function useDealNarration(g, { decisionMs = DECISION_MS, buryMs = BURY_MS
   const handRef = useRef(null);
   const initialised = useRef(false);
 
+  // Derived during RENDER, not left to the effect below. Effects run after the
+  // browser has already painted, so for one frame the new hand was drawn with
+  // the previous cursor — which was at the end. That frame showed the picker's
+  // badge and "Someone's play…" before the narration had started, which is
+  // precisely the flash this whole file exists to remove.
+  const newHand = initialised.current && g && g.handNum !== handRef.current;
+  const at = newHand ? 0 : Math.min(shown, sequence.length);
+
   // Same rule the card pacer learned the hard way: the FIRST state we ever see
   // snaps to live, because we weren't watching. Only a hand that starts while
   // we're here gets narrated.
@@ -110,18 +118,18 @@ export function useDealNarration(g, { decisionMs = DECISION_MS, buryMs = BURY_MS
   }, [sequence.length, shown]);
 
   useEffect(() => {
-    if (shown >= sequence.length) return;
-    const next = sequence[shown];
+    if (at >= sequence.length) return;
+    const next = sequence[at];
     const t = setTimeout(
       () => setShown((n) => Math.min(n + 1, sequence.length)),
       next?.type === "bury" ? buryMs : decisionMs
     );
     return () => clearTimeout(t);
-  }, [shown, sequence.length, sequence, decisionMs, buryMs]);
+  }, [at, shown, sequence.length, sequence, decisionMs, buryMs]);
 
   return {
-    shown: sequence.slice(0, shown),
-    done: shown >= sequence.length,
-    pending: sequence.length - shown,
+    shown: sequence.slice(0, at),
+    done: at >= sequence.length,
+    pending: sequence.length - at,
   };
 }
