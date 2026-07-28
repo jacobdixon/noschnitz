@@ -544,6 +544,109 @@ const trick2 = [
     cid(pick) === "QC", `played ${cid(pick)}`);
 }
 
+/* --------------------------------------------------------------------------
+   Equity classes and trick ownership (2026-07-28 play brief).
+
+   Six hands were reconstructed card-for-card and every decision solved double
+   dummy. Nearly all of the large errors traced to one thing: the AI shed by
+   minimum card points without asking which of the candidates could still win a
+   later trick, or which side owned the trick it was shedding into.
+
+   These three pin the mechanism rather than the literal deals — the source
+   hands aren't reproducible from the brief alone, but each position isolates
+   exactly one of the three symptoms and has an unambiguous right answer.
+   -------------------------------------------------------------------------- */
+
+// Symptom A — the dead-Ace shed. A defender under an unbeatable Queen holds
+// J-spades and A-diamonds. Both lose this trick, so minimum-points throws the
+// Jack; but with the Queens gone J-spades is near-boss of the remaining trump
+// and A-diamonds cannot win another trick. The 11 points are the cheap card
+// here. (Reported: the picker swept 44 two tricks later on a trick J-spades
+// wins outright.)
+{
+  const g = position({
+    hands: [
+      [C("J", "D"), C("9", "D")],
+      [C("K", "H"), C("9", "H")],
+      [C("K", "C"), C("9", "C")],
+      [C("8", "H"), C("7", "H")],
+      [C("J", "S"), C("A", "D")],
+    ],
+    trick: [{ player: 0, card: C("Q", "S") }],
+    picker: 0, partner: null, tricksDone: 3, leader: 0,
+  });
+  check("both candidates lose this trick", legalPlays(g, 4).length === 2);
+  const pick = aiChooseCard(g, 4);
+  check("sheds the dead Ace and keeps the boss Jack, not the reverse",
+    cid(pick) === "AD", `played ${cid(pick)}`);
+}
+
+// Symptom A, sign flipped — ownership has to survive the control flow. Our own
+// side owns the trick with J-clubs; this seat holds only trump strictly below
+// it, so it cannot overtake, and the trick is not safe enough to schmear into.
+// That combination used to fall out of the teammate branch entirely and land in
+// the generic can't-win shed, which minimises points — handing the cheap Jack
+// to a trick our side was taking. All three cards die to the same one
+// outstanding Queen, so the big card is free.
+{
+  const g = position({
+    hands: [
+      [C("J", "S"), C("10", "D"), C("A", "D")],
+      [C("K", "C"), C("9", "C")],
+      [C("Q", "H"), C("8", "H")],
+      [C("K", "H"), C("9", "H")],
+      [C("8", "C"), C("7", "C")],
+    ],
+    trick: [
+      { player: 3, card: C("7", "D") },
+      { player: 4, card: C("8", "D") },
+      { player: 1, card: C("J", "C") },
+    ],
+    picker: 0, partner: 1, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 3, leader: 3,
+  });
+  check("nothing in hand can overtake the partner's J-clubs",
+    legalPlays(g, 0).every((c) => trumpPower(c) < trumpPower(C("J", "C"))));
+  check("and the trick isn't safe enough to schmear into",
+    trickSecurity(g, 0) < SCHMEAR_CONFIDENCE, `security=${trickSecurity(g, 0).toFixed(3)}`);
+  const pick = aiChooseCard(g, 0);
+  check("pays the fat trump into a trick our own side owns",
+    cid(pick) === "AD", `played ${cid(pick)}`);
+}
+
+// Symptom B — overtaking your own side's trick has to be paid for. A defender
+// already owns trick 1 with Q-hearts against a lone picker; this seat, void of
+// the led suit, holds Q-clubs. Taking it converts the trick to a certainty, so
+// a flat security threshold is cleared by exactly the card it is most expensive
+// to spend. The bar scales with the card: an unbeatable one has to buy four
+// times the security. Note the existing "still overtakes when it converts the
+// trick to a certainty" case above still passes — this is a price, not a ban.
+{
+  const g = position({
+    hands: [
+      [C("Q", "D"), C("J", "H"), C("7", "D"), C("K", "H"), C("A", "H"), C("10", "H")],
+      [C("K", "C"), C("9", "C"), C("8", "C"), C("K", "S"), C("10", "S"), C("8", "H")],
+      [C("A", "C"), C("J", "C"), C("J", "D"), C("A", "S"), C("9", "H"), C("8", "S")],
+      [C("Q", "H"), C("J", "S"), C("A", "D"), C("10", "C"), C("K", "D"), C("7", "C")],
+      [C("Q", "C"), C("10", "D"), C("K", "D"), C("9", "S"), C("7", "S"), C("7", "H")],
+    ],
+    trick: [
+      { player: 2, card: C("A", "C") },
+      { player: 3, card: C("Q", "H") },
+    ],
+    picker: 0, partner: null, tricksDone: 0, leader: 2,
+  });
+  const asIs = trickSecurity(g, 4);
+  const taken = securityAfterPlay(g, 4, C("Q", "C"));
+  check("the old flat gate would have permitted this overtake",
+    taken - asIs >= OVERTAKE_MIN_GAIN, `leave=${asIs.toFixed(3)} take=${taken.toFixed(3)}`);
+  const pick = aiChooseCard(g, 4);
+  check("does not spend the boss trump on a trick its own side already owns",
+    cid(pick) !== "QC", `played ${cid(pick)}`);
+  check("and does not dump a fat trump into it either",
+    !isTrump(pick), `played ${cid(pick)}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

@@ -6,6 +6,81 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.17.0] - 2026-07-28
+- The AI stops shedding by card points alone. Six hands were reconstructed
+  card-for-card from result screens and every decision solved double dummy;
+  nearly every large error traced to one question the engine never asked —
+  *which of these cards can still win a later trick, and whose trick am I
+  shedding into.* Both halves of that turn out to be the same computation, so
+  they land together.
+  - **Equity classes.** Legal cards are bucketed by how many unaccounted-for
+    cards can still beat them, and points are allocated only *inside* the
+    weakest bucket, never across buckets. A bare minimum-points shed gets this
+    exactly backwards whenever the cheap card is the valuable one: reported from
+    a hand where a defender under an unbeatable Queen held J-spades — with both
+    higher Queens just played, provably the highest trump left — and threw it to
+    keep a dead A-diamonds. Two tricks later the picker swept 44 on a trick
+    J-spades wins outright. Ranking by points saw a 2 and an 11; ranking by
+    class sees a boss card and a dead one.
+  - **Ownership survives the control flow.** `mateWinning` was already computed
+    and already correct — it just didn't reach the code that needed it. A seat
+    whose own side held the trick, holding nothing able to overtake, with the
+    trick below the schmear-confidence bar, fell out of the teammate branch
+    entirely and landed in the generic can't-win shed, which minimises points.
+    So it donated its *cheapest* card to a trick its own side was taking. The
+    ownership signal is hoisted above the branch and carried into every shed
+    path, which is a plumbing fix rather than a new input.
+  - **`trickSecurity` read as a direction, not a gate.** The sign of a shed is
+    just "is our side more likely than not to still hold this at the end", which
+    breaks even at one half. `SCHMEAR_CONFIDENCE` stays at 0.85 and keeps its
+    own job: schmearing is *choosing* to spend a valuable card and its error is
+    asymmetric, so it wants confidence well above even money. Shedding is
+    forced — a card is going regardless — so the honest breakeven is different.
+    One number, read two ways, which is what lets both branches share one
+    function.
+  - **Overtaking your own side's trick is now priced, not gated.** A flat
+    threshold is cleared most easily by exactly the card it is most expensive to
+    spend: whoever holds the boss trump can always take the trick's security to
+    1.0. Reported from a real hand — a defender's Q-hearts already owned trick 1
+    and their partner over-trumped with Q-clubs, the boss card of the game, on a
+    trick their own side already had, letting a lone picker out for 7-diamonds.
+    The old gate permitted it *because* Q-clubs was unbeatable. The bar now
+    scales with the card's own equity: unbeatable pays 4x, near-boss 2x. It
+    stays a price and not a prohibition, since holding the lead is sometimes the
+    whole plan — the existing "still overtakes when it converts the trick to a
+    certainty" assertion passes unchanged.
+  - **The picker counts their own burial.** Every "what could still beat this"
+    question resolves through one `unaccountedFor()` list, and the picker knows
+    two cards nobody else does. On its own this is worth nothing measurable
+    (+0.0004/seat/hand, ahead in 3 of 5 splits — inside the noise) and it is
+    kept because it is information the seat genuinely has and it sharpens the
+    "provably boss" judgements the class rule depends on, not because the
+    aggregate could see it.
+  - **Measured head to head, old policy against new, assigned per seat.** The
+    game is zero-sum across five seats, so the new-policy seats' average score
+    *is* the effect size — no comparing two separately-run populations. At
+    100,000 hands per split across seven different seat splits the new policy is
+    ahead in **7 of 7**, by +0.018 to +0.032 points per seat per hand. Layered:
+    ownership + equity carries +0.016, the overtake price adds the rest.
+    Picking and the last two tricks are identical in both engines (untouched
+    `aiBuryAndCall`, same exact endgame solver), so this isolates tricks 1-4.
+  - **Both sides get it, and the defenders gain more.** Self-play over 3x100,000
+    hands: picker win rate **61.5-61.8% -> 60.8-60.9%**, schneider rate
+    23.0% -> 21.9%, no-tricker rate 7.2% -> 5.2%, avg picker-team points
+    70.2 -> 69.0. Ranges don't overlap. That direction is expected — two of the
+    three reported symptoms are defender plays, and there are four defenders.
+  - **This opens a calibration question it does not close.** 0.14.0 set the bump
+    multiplier so picking sits near neutral, and at 200,000 hands picker EV has
+    moved from **+0.22 alone / +0.03 partnered to -0.11 / -0.06**. Picking is now
+    slightly negative rather than slightly positive. That wants the bump
+    multiplier re-derived and the `handStrength >= 10` pick threshold re-swept —
+    deliberately left alone here so the play change is measured on its own.
+  - `npm run aiskilltest` grows to 45 assertions with three positions isolating
+    the symptoms above. Four of the new behavioural assertions fail against the
+    previous engine and pass against this one.
+- Strips six committed merge-conflict markers out of `CHANGELOG.md`, left behind
+  when the 0.16.2-0.16.4 entries landed. No entry text changed. (`6528232`)
+
 ## [0.16.4] - 2026-07-27
 - The header moves into `src/header.jsx`: title, build stamp, house-rules line,
   doubler badge and the menu. No visual or behavioural change — the second half
