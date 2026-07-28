@@ -23,6 +23,7 @@ import { cid, legalPlays, gradeHandPlays, callOptions } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
+import { useDealNarration } from "./dealNarration.js";
 import { displayState } from "./displayState.js";
 import { logStream, readStreamLog, formatStreamLog, clearStreamLog } from "./streamLog.js";
 import { statusLine, progressLine } from "./status.js";
@@ -404,8 +405,16 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // Called before any early return — hooks can't be conditional, and the
   // paced cursor has to keep running while the rest of the screen decides
   // what to render.
-  const frame = usePacedTrick(table?.g);
-  const caughtUp = frame.caughtUp;
+  // The opening of the hand, replayed beat by beat: who passed, who picked it
+  // up, the bury and the call. The server does all of it inside the request
+  // that deals, so without this the table is painted already underway.
+  const narration = useDealNarration(table?.g);
+  // Cards wait for the opening to finish. Dealing them over the top of it is
+  // the whole complaint.
+  const frame = usePacedTrick(table?.g, { paused: !narration.done });
+  // Not caught up until BOTH have finished, so nothing you can act on lights
+  // up while the table is still starting.
+  const caughtUp = frame.caughtUp && narration.done;
 
   // The summary used to appear the instant the last card was revealed, which
   // covered that card with a modal before anyone had read it — the hand ended
@@ -699,6 +708,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         g={view}
         names={table.seats.map((s) => s.name)}
         mySeat={mySeat}
+        decisions={narration.done ? undefined : narration.shown}
         onSeatClick={(seat) => setSeatModal(seat)}
         seatExtra={(seat) => {
           const s = table.seats[seat];
@@ -762,7 +772,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
             felt. Held blank until the reveal catches up, so it can't announce
             a turn before the cards that caused it have landed. */}
         <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
-          {caughtUp
+          {caughtUp || !narration.done
             ? statusLine({
                 g: callStep ? { ...view, phase: "call" } : view,
                 names: table.seats.map((x) => x.name),
@@ -770,6 +780,8 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
                 isMyTurn,
                 selected: selected.length,
                 options: myCallOptions,
+                narrating: narration.done ? null : narration.shown[narration.shown.length - 1],
+                dealing: !narration.done,
               })
             : "\u00a0"}
         </div>
