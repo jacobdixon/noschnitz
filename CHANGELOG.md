@@ -77,7 +77,7 @@ corresponds to the entries below.
     deliberately left alone here so the play change is measured on its own.
   - `npm run aiskilltest` grows to 45 assertions with three positions isolating
     the symptoms above. Four of the new behavioural assertions fail against the
-    previous engine and pass against this one.
+    previous engine and pass against this one. (`8f3a7f7`)
 - Strips six committed merge-conflict markers out of `CHANGELOG.md`, left behind
   when the 0.16.2-0.16.4 entries landed. No entry text changed. (`6528232`)
 
