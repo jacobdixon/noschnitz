@@ -265,6 +265,74 @@ export function opponentsYetToAct(g, viewer) {
   return out;
 }
 
+// Everything this seat genuinely cannot place: not yet played, not in hand,
+// and — for the picker, who chose them — not in the burial. Every "what could
+// still beat this" question in the AI resolves to this one list, so they all
+// stay honest about the same information at the same time.
+//
+// The burial matters more than its two cards suggest. The picker buries from
+// eight and often buries a fail Ace to void a suit, so "is my Jack the boss of
+// what's left" is a question the picker can frequently answer exactly and every
+// other seat can only estimate. Leaving it out made the picker reason as if
+// their own discards were still in play.
+export function unaccountedFor(g, viewer) {
+  const seen = new Set([...seenCards(g), ...g.hands[viewer]].map(cid));
+  if (viewer === g.picker) for (const c of g.buried) seen.add(cid(c));
+  return ALL_CARDS.filter((c) => !seen.has(cid(c)));
+}
+
+// How many unaccounted-for cards outrank this one — i.e. could beat it in a
+// trick it led. Zero means it is boss of everything that remains.
+//
+// This is deliberately asked about the card, not about the trick in front of
+// it. Two cards that lose the current trick are not therefore equivalent: the
+// question that decides which one to keep is which of them can still win a
+// LATER trick, and that is what this measures.
+export function cardEquity(g, viewer, card, unseen = unaccountedFor(g, viewer)) {
+  const LEAD = -98, RIVAL = -99;
+  return unseen.filter(
+    (c) => trickWinner([{ player: LEAD, card }, { player: RIVAL, card: c }]) === RIVAL,
+  ).length;
+}
+
+// Which card to part with when this trick is not ours to take with.
+//
+// Cards are bucketed by equity FIRST and points allocated only inside the
+// weakest bucket. That ordering is the whole fix: a 2-point Jack that is boss
+// of the remaining trump is worth vastly more than an 11-point Ace that cannot
+// win another trick, and a bare minimum-points rule sheds exactly backwards in
+// that spot. Reported from a hand where a defender under an unbeatable Queen
+// held J-spades — provably the highest trump left — and threw it to keep a dead
+// A-diamonds; the picker swept 44 two tricks later on a trick J-spades wins.
+//
+// `wantPoints` inverts the allocation for the case where our own side is taking
+// the trick, where the points are banked rather than donated. Same rule, one
+// sign — which is why it lives in one function.
+//
+// Inside a class the ordering is not raw points: it is the trump principle
+// 0.8.0 and 0.12.0 already measured, now applied within the class instead of
+// only on the schmear branch. Fail points go first, because trump takes later
+// tricks. Then fat trump, because every point living in trump lives in the
+// diamonds while all the power lives in the Queens and Jacks — spending the fat
+// diamond banks more AND keeps the stronger card. Power trump is parted with
+// last and weakest-first. Without that ordering the class rule would happily
+// throw a Queen for one point over a Jack, which is the mistake 0.8.0 fixed.
+function shedCard(g, idx, legal, wantPoints) {
+  const unseen = unaccountedFor(g, idx);
+  const scored = legal.map((card) => ({ card, equity: cardEquity(g, idx, card, unseen) }));
+  const deadest = Math.max(...scored.map((s) => s.equity));
+  const cls = scored.filter((s) => s.equity === deadest).map((s) => s.card);
+
+  const fattest = (cards) => [...cards].sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+  if (wantPoints) {
+    const fail = cls.filter((c) => !isTrump(c) && cardPts(c) > 0);
+    if (fail.length) return fattest(fail);
+    const fat = cls.filter((c) => isTrump(c) && !isPowerTrump(c));
+    if (fat.length) return fattest(fat);
+  }
+  return [...cls].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+}
+
 export function trickSecurity(g, viewer) {
   if (!g.trick.length) return 1;
   const opps = opponentsYetToAct(g, viewer);
@@ -274,8 +342,7 @@ export function trickSecurity(g, viewer) {
   const SENTINEL = -99;
   const takesIt = (card) => trickWinner([...g.trick, { player: SENTINEL, card }]) === SENTINEL;
 
-  const seen = new Set([...seenCards(g), ...g.hands[viewer]].map(cid));
-  const unseen = ALL_CARDS.filter((c) => !seen.has(cid(c)));
+  const unseen = unaccountedFor(g, viewer);
   const beaters = unseen.filter(takesIt).length;
   if (!beaters) return 1;
 
@@ -443,35 +510,51 @@ export function aiChooseCard(g, idx) {
   const trickPts = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
   const lastToPlay = g.trick.length === 4;
 
+  // Who owns this trick, and how sure am I — hoisted out of the branch below
+  // because every path that sheds a card needs the answer, not just the ones
+  // that schmear or overtake. Keeping it inside `if (mateWinning)` was the bug:
+  // a seat whose own side held the trick, holding nothing that could overtake,
+  // fell straight out of the block and landed in the generic can't-win shed,
+  // which minimises points. The ownership was computed and then discarded one
+  // branch later.
+  const asIs = mateWinning ? trickSecurity(g, idx) : 0;
+  const trickLooksSafe = asIs >= SCHMEAR_CONFIDENCE;
+
+  // Until the called ace falls, a defender's "teammate" is a guess — the seat
+  // winning may well be the picker's partner, and paying points to the wrong
+  // side is worse than holding on. knowsTeammate() reports every unrevealed
+  // seat as a teammate, which is the right default for deciding who to fight,
+  // but far too loose a basis for handing over 11 points.
+  //
+  // Three ways the partnership is actually known:
+  //   - the called ace has been played, so everyone saw it;
+  //   - the picker went alone, so no partner exists at all (declared at pick
+  //     time and shown all hand, hence public — and note partnerRevealed
+  //     stays false for the whole hand here, so leaving this case out would
+  //     mute defender schmearing exactly when pooling points matters most);
+  //   - the viewer IS the partner and the picker is winning, which the
+  //     partner has known since the ace was called, with no reveal needed.
+  const teammateIsCertain =
+    g.partnerRevealed ||
+    g.partner === null ||
+    (idx === g.partner && winnerSoFar === g.picker);
+
+  const speculativeOpening = g.tricksDone === 0 && !teammateIsCertain;
+
+  // `trickSecurity` read as a direction rather than a gate. A card played into
+  // a trick our side keeps is banked; into one we lose it is donated — so the
+  // sign of the whole shed decision is just "is our side more likely than not
+  // to still hold this at the end", which breaks even at one half.
+  //
+  // That is a different question from SCHMEAR_CONFIDENCE, which stays where it
+  // is. Schmearing is choosing to spend a valuable card, and its error is
+  // asymmetric, so it wants confidence well above even money. Shedding is
+  // forced — a card is going regardless — so the only question is which side
+  // banks the points, and there the honest breakeven is a half. Reading one
+  // number two ways is what lets both branches share `shedCard`.
+  const ourTrick = mateWinning && teammateIsCertain && asIs > 0.5;
+
   if (mateWinning) {
-    // Only pay into a trick our side is actually likely to keep. Below this the
-    // points are more often than not being handed to the picker, and the two
-    // better options are both below: overtake the teammate, or sit on the
-    // points and wait.
-    const asIs = trickSecurity(g, idx);
-    const trickLooksSafe = asIs >= SCHMEAR_CONFIDENCE;
-
-    // Until the called ace falls, a defender's "teammate" is a guess — the seat
-    // winning may well be the picker's partner, and paying points to the wrong
-    // side is worse than holding on. knowsTeammate() reports every unrevealed
-    // seat as a teammate, which is the right default for deciding who to fight,
-    // but far too loose a basis for handing over 11 points.
-    //
-    // Three ways the partnership is actually known:
-    //   - the called ace has been played, so everyone saw it;
-    //   - the picker went alone, so no partner exists at all (declared at pick
-    //     time and shown all hand, hence public — and note partnerRevealed
-    //     stays false for the whole hand here, so leaving this case out would
-    //     mute defender schmearing exactly when pooling points matters most);
-    //   - the viewer IS the partner and the picker is winning, which the
-    //     partner has known since the ace was called, with no reveal needed.
-    const teammateIsCertain =
-      g.partnerRevealed ||
-      g.partner === null ||
-      (idx === g.partner && winnerSoFar === g.picker);
-
-    const speculativeOpening = g.tricksDone === 0 && !teammateIsCertain;
-
     if (trickLooksSafe && !speculativeOpening) {
       // Pay in fail points first. Trump is what takes later tricks, and while
       // there's a free choice no schmear is worth the trick a trump could win.
@@ -500,11 +583,9 @@ export function aiChooseCard(g, idx) {
         }
       }
 
-      // Nothing worth paying. Get out of the way as cheaply as possible rather
-      // than falling through to the winners logic below and overtaking our own
-      // teammate — cheapest by card points first, so a Queen is the last trump
-      // we would ever part with.
-      return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+      // Nothing worth paying. Get out of the way rather than falling through to
+      // the winners logic below and overtaking our own teammate.
+      return shedCard(g, idx, legal, ourTrick);
     }
 
     // The trick isn't safe enough to pay into, so the choice is between taking
@@ -527,35 +608,88 @@ export function aiChooseCard(g, idx) {
     // improving its odds by a single point, and Q-clubs took it anyway. The old
     // code did this because reaching the winners branch below means "I can win",
     // which it treated as "I should win".
+    //
+    // What the flat threshold missed is that the gain has to be paid for. A
+    // seat holding the boss trump can *always* take the trick's security to
+    // 1.0, so a fixed bar is cleared most easily by exactly the card it is
+    // most expensive to spend. Reported from a real hand: a defender's Q-hearts
+    // already owned trick 1 and their partner over-trumped with Q-clubs — the
+    // boss card of the game, spent on a trick their own side already had,
+    // against a lone picker who then got out for 7-diamonds. The old gate
+    // permitted it precisely *because* Q-clubs was unbeatable.
+    //
+    // So the bar a card has to clear scales with what that card is: an
+    // unbeatable card has to buy four times the security of a card half the
+    // table can beat. Note this is a price, not a prohibition — "never overtake
+    // your own side" would be the wrong rule, since holding the lead is
+    // sometimes the entire plan.
     if (winners.length && teammateIsCertain) {
-      let best = null;
-      for (const c of winners) {
-        const gain = securityAfterPlay(g, idx, c) - asIs;
-        const better =
-          !best ||
-          gain > best.gain + 1e-9 ||
-          (Math.abs(gain - best.gain) <= 1e-9 && power(c) < power(best.card));
-        if (better) best = { card: c, gain };
-      }
-      if (best.gain < OVERTAKE_MIN_GAIN) {
-        return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
-      }
-      return best.card;
+      const unseen = unaccountedFor(g, idx);
+      const priceOf = (c) => {
+        const beaters = cardEquity(g, idx, c, unseen);
+        return beaters === 0 ? 4 : beaters === 1 ? 2 : 1;
+      };
+      const affordable = winners.filter(
+        (c) => securityAfterPlay(g, idx, c) - asIs >= OVERTAKE_MIN_GAIN * priceOf(c) - 1e-9,
+      );
+      if (!affordable.length) return shedCard(g, idx, legal, ourTrick);
+      // Cheapest overtake that pays for itself, not the strongest one available.
+      return affordable.sort((a, b) => power(a) - power(b))[0];
     }
   }
   if (winners.length) {
+    const cheapest = (cards) => [...cards].sort((a, b) => power(a) - power(b))[0];
     if (lastToPlay) {
-      // cheapest winner, but prefer pointy winner if it's ours anyway
-      return winners.sort((a, b) => power(a) - power(b))[0];
+      // Nobody left to act, so the weakest card that takes it takes it.
+      return cheapest(winners);
     }
+
+    // Cheapest *sufficient* winner: the weakest card that both beats the trick
+    // and beats everything still to act could hold. "Secure with strength"
+    // below is the right instinct only when no such card exists — when one
+    // does, anything stronger buys exactly nothing and costs a card that wins
+    // a later trick.
+    //
+    // Reported from a real hand, and the second-largest error in the play
+    // brief at 24 points: the picker took a trick with Q-clubs where Q-hearts
+    // took the identical 18, the one seat left holding no Queen at all. Having
+    // burned the boss he then led Q-hearts into a live Q-spades and lost 15
+    // more. Same shape in a second hand, Q-clubs where J-diamonds sufficed.
+    //
+    // Two things about this were easy to get wrong, and both were settled by
+    // measurement rather than argument.
+    //
+    // It belongs ONLY in the branch that reaches for strength. `sufficient` is
+    // a subset of `winners` with the weak cards dropped, so applying it to the
+    // cheap branch below *inverts* it — taking the cheapest of a set that no
+    // longer contains the cheap cards plays a stronger card than the plain
+    // cheapest did. That misplacement cost 0.045/seat/hand.
+    //
+    // And sufficiency is a question about the side, not about the card.
+    // `securityAfterPlay` counts only `opponentsYetToAct`, which excludes every
+    // seat knowsTeammate() takes for a teammate — and that exclusion, which
+    // looks like the loose end here, is exactly right: if a seat we take for a
+    // teammate overtakes our cheap winner, the trick stays with our side and
+    // nothing was wasted. Tested against the strict alternative (nothing
+    // outstanding beats this card at all, whoever holds it) at 200,000 hands
+    // per split, strict is indistinguishable from making no change at all
+    // (-0.002/seat/hand, ahead in 2 of 5) because it refuses to certify those
+    // cases and burns the boss card for nothing. This version is +0.013, ahead
+    // in 5 of 5.
     if (trickPts >= 10 || g.tricksDone >= 3) {
-      // try to secure with strength
-      return winners.sort((a, b) => power(b) - power(a))[0];
+      const sufficient = winners.filter((c) => securityAfterPlay(g, idx, c) >= 1 - 1e-9);
+      if (sufficient.length) return cheapest(sufficient);
+      // Nothing is provably safe, so strength is the best of what's left.
+      return [...winners].sort((a, b) => power(b) - power(a))[0];
     }
-    return winners.sort((a, b) => power(a) - power(b))[0];
+    return cheapest(winners);
   }
-  // can't win: dump lowest points, lowest power
-  return [...legal].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+  // Can't win it. This is where a seat whose own side owns the trick used to
+  // land after failing the safety bar with nothing able to overtake — the exact
+  // path that threw a boss Jack to keep a dead Ace. `ourTrick` carries the
+  // ownership down here now, so the same shed serves both cases with the sign
+  // flipped.
+  return shedCard(g, idx, legal, ourTrick);
 }
 
 /* ------------------------------ Game setup ------------------------------ */
