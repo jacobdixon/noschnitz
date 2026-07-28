@@ -6,6 +6,30 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.23.0] - 2026-07-28
+- A played card now arrives from its own seat and fades in (220ms) instead of
+  appearing already in place on the felt — the same idea as the existing
+  hand-deal animation, a `play-in` keyframe parameterized per-card by
+  `--play-dx`/`--play-dy` instead of a flat offset, since a trick can arrive
+  from any of the four opponents' seats or the viewer's own hand.
+- A finished trick now stands for 900ms — long enough to read the "+points"
+  banner — then all five cards sweep toward the winner's seat: fading and
+  shrinking via a `sweep-out` keyframe over 450ms. 900+450 stays comfortably
+  under both callers' hold windows (1500ms at a table, 2625ms solo), so the
+  sweep always finishes before the trick array is cleared.
+  - First cut used a JS-toggled inline `transition` rather than a keyframe.
+    Not visibly wrong in review, but harder to be sure it always fires than a
+    keyframe animation, which just plays once assigned regardless of prior
+    style state — same mechanism `play-in` already uses. Switched after a
+    report of the sweep not being visible; confirmed via `getAnimations()`
+    that the keyframe attaches and runs correctly for the entrance case, and
+    the sweep now shares that exact wiring.
+  - Both live in `Felt`, shared by solo and the table, so neither caller
+    needed a change.
+- `prefers-reduced-motion` is respected for both: the entrance and the sweep
+  fall back to a plain opacity fade with no movement, matching `deal-in`'s
+  existing behavior.
+
 ## [0.21.0] - 2026-07-28 (`abb0449`)
 - **The recap's best/worst play grading is now exact, and no longer invents
   mistakes.** Grading previously rolled the hand forward with `aiChooseCard`

@@ -43,6 +43,50 @@
           to { opacity: 1; }
         }
       }
+
+      /* A played card lands pulled in from its own seat, so a trick reads as
+         who played what in order rather than cards appearing already in
+         place. Direction is per-card (see felt.jsx's SEAT_DIR) via
+         --play-dx/--play-dy; the keyframe itself doesn't know which seat. */
+      @keyframes play-in {
+        from {
+          opacity: 0;
+          transform: translate(var(--play-dx, 0px), var(--play-dy, 0px)) scale(0.8);
+        }
+        to {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes play-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      }
+
+      /* A finished trick gathers toward the winner's seat instead of cutting
+         to nothing. Direction is per-card (see felt.jsx's SEAT_DIR, keyed by
+         the WINNER's seat so all five cards converge on one corner) via
+         --sweep-dx/--sweep-dy. */
+      @keyframes sweep-out {
+        from {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translate(var(--sweep-dx, 0px), var(--sweep-dy, 0px)) scale(0.5);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes sweep-out {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+      }
     </style>
   </head>
   <body>
