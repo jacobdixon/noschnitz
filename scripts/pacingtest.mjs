@@ -263,6 +263,44 @@ if (!hand) {
   check("turn is live once it has", after.turn === g.turn);
 }
 
+/* ------------------------ your own card, immediately ---------------------- */
+{
+  // Tapping a card must put it on the felt now, not when the server answers.
+  // The gap that mattered: the beat right after a trick sweeps is exactly when
+  // you LEAD the next one, and the stand-in was suppressed for the whole of it.
+  // Measured at 3,565ms on beta before this was fixed.
+  const g = hand.final;
+  const seq = buildPlaySequence(g);
+  const mine = { card: { rank: "A", suit: "S" }, player: 0 };
+
+  // A completed trick that has been swept: cards gone, `cleared` set.
+  const firstTrick = seq.filter((p) => p.trickIndex === 0).length;
+  const swept = frameAt(seq, firstTrick, 0);
+  check("the fixture frame really is a swept trick",
+    swept.cleared === true && swept.cards.length === 0,
+    `cleared=${swept.cleared} cards=${swept.cards.length}`);
+
+  const led = displayState(g, swept, mine, true);
+  check("a card led into a just-swept felt shows immediately",
+    led.trick.some((p) => p.card.rank === "A" && p.card.suit === "S"),
+    `trick drew ${JSON.stringify(led.trick.map((p) => p.card.rank + p.card.suit))}`);
+
+  // Mid-trick it must still show, alongside what is already down.
+  const mid = frameAt(seq, firstTrick + 2);
+  const joined = displayState(g, mid, mine, true);
+  check("a card played into a trick in progress shows immediately",
+    joined.trick.some((p) => p.card.rank === "A" && p.card.suit === "S"));
+  check("...without dropping the cards already on the felt",
+    joined.trick.length === mid.cards.length + 1);
+
+  // And it must not double up once the real card has been revealed.
+  const real = seq[0].card;
+  const dup = displayState(g, frameAt(seq, 1), { card: real, player: seq[0].player }, true);
+  const ids = dup.trick.map((p) => p.card.rank + p.card.suit);
+  check("the stand-in never doubles the real card",
+    new Set(ids).size === ids.length, ids.join(","));
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

@@ -27,9 +27,19 @@ import { cid } from "./engine.js";
 // decides which game that is. Masking `turn` while the reveal catches up also
 // stops the active-seat glow racing ahead of the cards.
 export function displayState(g, frame, optimistic, caughtUp) {
+  // Your own card goes down the instant you tap it, before the server has
+  // confirmed anything. The only reason to leave it off is that the real one is
+  // already there.
+  //
+  // It used to also be suppressed whenever the frame was `cleared` — the beat
+  // after a completed trick sweeps off the felt. But that is exactly when you
+  // LEAD the next trick, and leading is the most common way to play a card: tap
+  // it, and nothing happened until the server answered and the pacer moved on.
+  // Measured at 3,565ms on beta. The clear flag says the previous trick is
+  // gone, which is no reason to hide the first card of the next one.
   const trick = [
     ...frame.cards,
-    ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
+    ...(optimistic && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
       ? [optimistic]
       : []),
   ];
