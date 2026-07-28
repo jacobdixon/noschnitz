@@ -1,0 +1,99 @@
+# Release — keeps beta in step with production.
+#
+# Vercel already builds master into production (www.noschnitz.com) off its own
+# git integration. beta is a separate branch built flag-on, and it was being
+# fast-forwarded by hand — which is why it silently sat two commits behind
+# production. This closes that gap.
+#
+# Two deliberate choices:
+#
+# 1. It triggers on CI *completing successfully* on master, not on the push.
+#    A merge that breaks the suite therefore updates production (Vercel is not
+#    ours to gate) but does NOT carry the breakage onto beta, and the failure
+#    is visible before the group testing the beta build hits it.
+#
+# 2. That also spaces the beta build away from the production build of the same
+#    commit. Pushing beta to a SHA master had just merged, while production was
+#    still building that identical commit, has been observed to produce no beta
+#    deployment at all — Vercel appears to deduplicate. CI takes a minute or
+#    two, which is the gap. The explicit deploy hook below is the belt to that
+#    braces: it requests a build by name rather than relying on the push
+#    webhook, so beta gets built even if the push is deduplicated.
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+# Never run two releases at once, and never cancel one midway — a cancelled run
+# can leave beta moved but not built.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  beta:
+    name: fast-forward beta and build it
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      # A plain fast-forward. If beta has somehow diverged this fails rather
+      # than forcing, because a force-push here would discard a commit that
+      # exists nowhere else.
+      - name: Fast-forward beta to master
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          echo "moving beta to $SHA"
+          if ! git push origin "$SHA:refs/heads/beta"; then
+            echo "::error::beta could not be fast-forwarded to $SHA — it has diverged from master. Reconcile it by hand; this workflow will not force-push."
+            exit 1
+          fi
+
+      # The hook URL is a credential: it triggers a build for anyone holding it.
+      # It is read from the secret and never echoed. Set it under
+      # Settings -> Secrets and variables -> Actions as VERCEL_BETA_DEPLOY_HOOK.
+      - name: Request the beta build
+        env:
+          HOOK: ${{ secrets.VERCEL_BETA_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK:-}" ]; then
+            echo "::error::VERCEL_BETA_DEPLOY_HOOK is not set. beta now points at the right commit but no build was requested."
+            exit 1
+          fi
+          code="$(curl -sS -X POST -o /dev/null -w '%{http_code}' "$HOOK")"
+          echo "deploy hook responded $code"
+          case "$code" in
+            2*) echo "beta build requested" ;;
+            *)  echo "::error::deploy hook rejected the request (HTTP $code)"; exit 1 ;;
+          esac
+
+      - name: Summary
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          {
+            echo "### beta updated"
+            echo ""
+            echo "- commit \`$SHA\`"
+            echo "- production builds from master via Vercel's own git integration"
+            echo "- beta build requested via deploy hook"
+            echo ""
+            echo "Verify once Vercel finishes:"
+            echo '```bash'
+            echo 'curl -sL "https://beta.noschnitz.com/$(curl -sL https://beta.noschnitz.com/ | grep -o "/assets/index-[A-Za-z0-9_-]*\.js" | head -1)" | head -c 200'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

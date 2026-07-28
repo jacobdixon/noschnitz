@@ -20,7 +20,7 @@
    ========================================================================= */
 import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
-  isTrump, cid, freshHand, aiChooseCard, trickSecurity,
+  isTrump, cid, freshHand, aiChooseCard, trickSecurity, isUnderCard, underFace,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
 import { advanceAI } from "../src/ai-runner.js";
@@ -532,8 +532,16 @@ function playHand(t, rand, ctx) {
   check("aiLog entries name an AI seat", log.every((e) => t.seats[e.seat]?.kind === "ai"));
   check("aiLog entries carry a real card",
     log.every((e) => e.card && typeof e.card.suit === "string" && typeof e.card.rank === "string"));
+  // The picker's under card is the one play whose two records legitimately
+  // disagree: the log keeps the physical card, while the table shows the
+  // called suit's 6. Comparing them raw made this check fail on exactly the
+  // hands where an under was called — every under hand and no other, which
+  // read as a flaky test because `makeDeck` shuffles with `Math.random()`, so
+  // the deal (and therefore whether an under happens) is not seeded by
+  // anything the test controls. Measured at 20 of 583 completed all-AI hands.
+  const faceOf = (g, e) => (isUnderCard(g, e.seat, e.card) ? underFace(g) : e.card);
   check("aiLog entries are in play order",
-    log.every((e, i) => cid(e.card) === cid(allPlays(after.g)[i].card)
+    log.every((e, i) => cid(faceOf(after.g, e)) === cid(allPlays(after.g)[i].card)
       && e.seat === allPlays(after.g)[i].player));
   check("aiLog is tagged with the hand it belongs to", after.aiLogHand === after.g.handNum);
 }
