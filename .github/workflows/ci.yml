@@ -1,0 +1,54 @@
+# CI — the gate everything else hangs off.
+#
+# Until now the only thing running the tests was whoever was at the keyboard.
+# That was survivable while merges were hand-driven and is not once a merge can
+# reach www.noschnitz.com without someone watching, so this runs on every PR
+# and on master, and is the check the merge rules require.
+#
+# `npm test` is 18 harnesses and takes ~10s locally; the job is dominated by
+# `npm ci`. Nothing here needs secrets — storetest falls back to the in-memory
+# store when no Upstash credentials are present, which is what happens on CI.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A second push to the same branch makes the first run irrelevant. master is
+# excluded from cancellation because Release keys off its completed run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Lint is inside `npm test` already, but running it first means a lint
+      # error reports as a lint error instead of as a failed test run.
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      # The bundle is what actually ships, and a build that fails is invisible
+      # to every harness above — none of them touch Vite.
+      - name: Build
+        run: npm run build
