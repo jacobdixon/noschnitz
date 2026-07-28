@@ -83,14 +83,19 @@ export function useDealNarration(g, { decisionMs = DECISION_MS, buryMs = BURY_MS
   // snaps to live, because we weren't watching. Only a hand that starts while
   // we're here gets narrated.
   useEffect(() => {
-    if (!g) return;
-
+    // Note the ordering: this must initialise even when there is no game yet.
+    // Sitting in the lobby IS watching, and bailing on a null g meant the first
+    // dealt hand looked like the first state we had ever seen — so it snapped
+    // to live and the whole opening was skipped, which is the bug this file
+    // exists to fix, reintroduced one layer up.
     if (!initialised.current) {
       initialised.current = true;
-      handRef.current = g.handNum;
-      setShown(buildDecisionSequence(g).length);
+      handRef.current = g ? g.handNum : null;
+      setShown(g ? buildDecisionSequence(g).length : 0);
       return;
     }
+
+    if (!g) return;
 
     if (g.handNum !== handRef.current) {
       handRef.current = g.handNum;

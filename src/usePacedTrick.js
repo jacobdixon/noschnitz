@@ -96,16 +96,20 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
   // first trick, 700ms apart, with the whole UI gated behind `caughtUp` for
   // fifteen seconds. Indistinguishable from a freeze.
   useEffect(() => {
-    if (!g) return;
-
     if (!initialised.current) {
       initialised.current = true;
-      handRef.current = g.handNum;
+      // null when there is no hand yet — which is the lobby, and the lobby is
+      // still watching. Bailing on a null g here meant the first hand dealt
+      // while you sat at the table counted as "we weren't watching", so its
+      // cards snapped in fully played.
+      handRef.current = g ? g.handNum : null;
       // Snap to wherever the table already is. Nothing to animate: we weren't
       // watching when those cards were played.
-      setRevealed(buildPlaySequence(g).length);
+      setRevealed(g ? buildPlaySequence(g).length : 0);
       return;
     }
+
+    if (!g) return;
 
     if (g.handNum !== handRef.current) {
       handRef.current = g.handNum;
