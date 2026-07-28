@@ -6,6 +6,29 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.20.1] - 2026-07-28
+- Adds `npm run headtohead -- <git-ref> [hands]`, which runs the working tree's
+  `aiChooseCard` against any past revision's by assigning them to different
+  seats. Patch rather than minor because it adds no capability — this harness
+  gated every AI change in v0.17.0 through v0.20.0 and existed only as a
+  throwaway script, which is exactly the thing that gets re-derived from scratch
+  in six months.
+  - It exists because `npm run simulate` is the wrong instrument for "is this
+    change better": both sides get the change, so most of the effect cancels. It
+    once reported as neutral something this harness showed was worth
+    0.045/seat/hand. Here the game is zero-sum across five seats, so the new
+    seats' average score per hand *is* the effect size — nothing is differenced
+    against a separately-run population.
+  - `src/engine.js` imports nothing, so any revision of it loads standalone from
+    `git show`. That is worth not breaking: it makes comparing two versions of
+    the AI a three-line operation instead of a checkout dance.
+- `CLAUDE.md` picks up the measurement loop the last four releases established —
+  analyze proposes, head-to-head decides, read direction rather than magnitude,
+  require sign agreement then replicate, and write down what was rejected. It
+  also gains a staleness warning: its multiplayer and branch sections still claim
+  the app has no backend and that `master` is frozen at v0.7.3, both long false.
+  The AI sections are current; that half is not.
+
 ## [0.20.0] - 2026-07-28
 - The picking side leads trump whenever it holds any. The old rule gated that
   behind depth — a Queen in hand, or opponents nearly tapped out, or three

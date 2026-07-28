@@ -9,7 +9,15 @@ for what's next.
 Sheepshead (5-handed, call-an-ace variant) card game, React + Vite SPA, deployed to
 **noschnitz.com** via Vercel. Solo play against 4 AI opponents today (Gus, Bunny,
 Duane, Patty — Wisconsin-themed, 4-5 chars each). Source at
-`https://github.com/jacobdixon/noschnitz.git`, currently at **v0.7.2**.
+`https://github.com/jacobdixon/noschnitz.git`, currently at **v0.20.0**.
+
+> **Staleness warning (2026-07-28).** Everything below about the *AI, the solver
+> and how AI changes are measured* is current. The multiplayer and branch/deploy
+> sections are not: they describe a state where "the app currently has zero
+> backend" and `master` is frozen at `v0.7.3`, and both are long since false —
+> `api/`, `src/table.js` and `src/store/` exist, and `master` has taken merges
+> through v0.18.0. Trust `CHANGELOG.md` and the git log over the multiplayer
+> narrative here until someone re-writes those sections.
 
 ## Where things live
 - `src/engine.js` — pure game logic, zero React/UI. All rules, AI, and the endgame
@@ -18,8 +26,20 @@ Duane, Patty — Wisconsin-themed, 4-5 chars each). Source at
   without duplicating logic.
 - `src/Sheepshead.jsx` — the UI/React layer. Inline styles, felt/brass table theme,
   no CSS framework.
-- `scripts/simulate.mjs` (`npm run simulate`) — headless AI-vs-AI simulator, the
-  regression check used before/after every AI or data-model change. No browser needed.
+- `src/solver.js` — full-hand **double-dummy solver** and the exact grader built on
+  it. Solves every legal alternative at a decision with optimal play by all five
+  seats afterwards. It calls `engine.js` for legality, play and trick resolution,
+  so the rules are still defined exactly once. Not used during a game — it is an
+  analysis tool, and grading a hand from trick 1 takes ~11 seconds.
+- `scripts/simulate.mjs` (`npm run simulate`) — headless AI-vs-AI self-play,
+  reporting aggregate rates. Good for "what does the game look like", **weak for
+  "is this change better"** — see the measurement note below.
+- `scripts/headtohead.mjs` (`npm run headtohead -- <git-ref> [hands]`) — **the gate
+  for any AI change.** Runs the working tree's `aiChooseCard` against any past
+  revision's, assigned to different seats.
+- `scripts/analyze.mjs` (`npm run analyze -- [hands] [--from-trick N]`) — solves
+  AI-vs-AI hands double dummy and buckets the error by trick, seat role and
+  decision shape. This is what finds *candidates*; `headtohead` decides them.
 - `CHANGELOG.md` — one entry per version bump, newest first, each with the commit hash.
 - `ROADMAP.md` — the feature roadmap (Feature → Epic → User Story) for what's next.
   **Read this next.**
@@ -96,10 +116,31 @@ multiplayer build. Protecting it is the point of this setup.
   (The specific "build in a scratch copy outside the synced folder" workaround from
   the Cowork sandbox — its output folder EPERMs on file overwrite — is a sandbox
   quirk, not a real project constraint. Ignore it in a normal local environment.)
-- **AI changes are tuned empirically**, not guessed — use `npm run simulate` (reports
-  pick rate, picker win rate, alone rate, schneider rate, avg points) to compare
-  before/after when touching `aiChooseCard` / `aiBuryAndCall` / thresholds like
-  `ALONE_HANDSTRENGTH`.
+- **AI changes are tuned empirically**, not guessed. The loop that works, learned
+  the hard way over v0.17.0-v0.20.0:
+  1. **`npm run analyze` proposes, it does not decide.** The solver sees every
+     hand, so it flatters whatever suits the actual layout. Use it to find
+     *candidates*, never to justify a change.
+  2. **Read direction, not magnitude.** A high-variance play looks like a bad play
+     to a solver that already knows the layout — the defender fail-Ace lead scored
+     as the worst rule in the file and survived every attempt to change it. What
+     is trustworthy is *asymmetry*: clairvoyance mis-blames both directions about
+     equally, so a lopsided "played X, should have played Y" matrix is a real rule
+     defect. That asymmetry is what found the v0.20.0 lead fix.
+  3. **`npm run headtohead -- <ref>` decides.** Both policies play each other from
+     different seats; the game is zero-sum across five, so the new seats' average
+     score per hand *is* the effect. `simulate` gives both sides the change, which
+     cancels most of it — it once reported as neutral something worth 0.045/hand.
+  4. **Require sign agreement across all five splits, then replicate.** Real
+     effects here are one to three hundredths of a point per seat per hand. Two
+     hypotheses that looked good at 100,000 hands per split evaporated at 200,000.
+  5. **Write down what you rejected**, with its number, in `CHANGELOG.md`. Four
+     plausible ideas were measured and killed on 2026-07-28; without the record
+     they read as obvious improvements nobody had gotten to yet.
+- **Every AI change also needs a fixture** in `scripts/aiskilltest.mjs` — a
+  constructed position with an unambiguous right answer that fails against the
+  previous engine. Aggregate measurement cannot catch a specific misplay, and the
+  behaviours players actually complain about are specific.
 - Sandbox-specific network restrictions from this session (blocked `vercel.com`,
   `api.vercel.com`, `api.github.com`) are **Cowork sandbox allowlist limits, not
   real-world limits** — they most likely won't apply in Claude Code on your own
@@ -143,7 +184,29 @@ as an *additional* mode alongside the existing local solo-vs-AI mode, reusing th
 tutorial mode can slot in later the same way solo mode works today (no backend, no
 network dependency, instant to try).
 
-## Where to pick up next
+## Open on the AI side (2026-07-28)
+1. **The bump multiplier needs re-deriving.** 0.14.0 tuned it so picking sits near
+   neutral. Four play improvements later, all of which help defenders more than the
+   picker, picker EV has moved from +0.22 alone / +0.03 partnered to **-0.11 /
+   -0.06** — picking is now slightly negative. Re-sweep the `handStrength >= 10`
+   threshold alongside it. This has been deferred three times so the play changes
+   could be measured on their own; it is now the oldest open item.
+2. **`win-option` decisions are the largest remaining bucket** at ~23% error rate.
+   Concede was fixed in 0.17.0 (now the cleanest at 7.6%) and leading in 0.20.0.
+3. **`knowsTeammate()` is the ceiling.** It calls every unrevealed seat a teammate,
+   and three separate hedges now exist to work around that — the speculative-schmear
+   block, the overtake brake's `teammateIsCertain` gate, and the sufficiency test in
+   the win branch. Replacing it with a real belief (P(seat is the partner), updated
+   from the pick, the called suit and who followed) would delete the hedges rather
+   than adding a fourth.
+4. **Nothing grades picking.** `aiBuryAndCall` and the pick threshold are the
+   highest-leverage decisions in the hand and are one scalar compared against 10.
+5. **The solver is the bottleneck for going further.** ~11s/hand from trick 1 caps
+   analysis at hundreds of hands; `--from-trick 3` gets thousands but says nothing
+   about the opening. Profiling says string-keyed transposition lookups are ~30% of
+   runtime, so a numeric key is the win if trick-1 volume is wanted.
+
+## Where to pick up next (multiplayer — see the staleness warning at the top)
 1. `MP-1` (Shareable Table Links) is the first epic to build — see GitHub issues
    #1, #7-10.
 2. **Unresolved technical decision, needs scoping first**: the realtime backend for

@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.20.0",
+  "version": "0.20.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "simulate": "node scripts/simulate.mjs",
     "analyze": "node scripts/analyze.mjs",
+    "headtohead": "node scripts/headtohead.mjs",
     "leaktest": "node scripts/leaktest.mjs",
     "tabletest": "node scripts/tabletest.mjs",
     "storetest": "node scripts/storetest.mjs",
