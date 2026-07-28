@@ -7,13 +7,33 @@ export const SUITS = ["C", "S", "H", "D"];
 export const RANKS = ["7", "8", "9", "K", "10", "A", "J", "Q"];
 export const SUIT_SYM = { C: "♣", S: "♠", H: "♥", D: "♦" };
 export const SUIT_NAME = { C: "Clubs", S: "Spades", H: "Hearts", D: "Diamonds" };
-export const CARD_POINTS = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0, "8": 0, "7": 0 };
+export const CARD_POINTS = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0, "8": 0, "7": 0, "6": 0 };
+
+// The rank a card played "under" takes on. There is no 6 in a sheepshead deck,
+// which is exactly why it works: it is unambiguous, it sorts below the 7, and
+// it can never collide with a real card. The physical card keeps its own point
+// value — only its rank and suit are replaced while it is on the table.
+export const UNDER_RANK = "6";
 export const NAMES = ["You", "Gus", "Bunny", "Duane", "Patty"];
 
 export const isTrump = (c) => c.rank === "Q" || c.rank === "J" || c.suit === "D";
 export const effSuit = (c) => (isTrump(c) ? "T" : c.suit);
 export const cardPts = (c) => CARD_POINTS[c.rank];
 export const cid = (c) => c.rank + c.suit;
+
+// The picker's designated under card, as it behaves on the table: the lowest
+// card of the suit they called. `g.underCard` is the physical card they set
+// aside; this is what everyone plays against.
+export const underFace = (g) =>
+  g.calledUnder && g.calledSuit ? { rank: UNDER_RANK, suit: g.calledSuit } : null;
+
+export const isUnderCard = (g, idx, c) =>
+  Boolean(g.underCard) && idx === g.picker && cid(c) === cid(g.underCard);
+
+// What suit a card counts as in this player's hand — the called suit for the
+// under card, its own otherwise. The under card stops being whatever it
+// physically is: designate your last club and you can no longer follow clubs.
+export const effSuitFor = (g, idx, c) => (isUnderCard(g, idx, c) ? g.calledSuit : effSuit(c));
 
 export function trumpPower(c) {
   const qOrder = { C: 14, S: 13, H: 12, D: 11 };
@@ -22,7 +42,7 @@ export function trumpPower(c) {
   if (c.rank === "J") return jOrder[c.suit];
   return { A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1 }[c.rank];
 }
-export const failPower = (c) => ({ A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1 }[c.rank]);
+export const failPower = (c) => ({ A: 6, "10": 5, K: 4, "9": 3, "8": 2, "7": 1, "6": 0 }[c.rank]);
 export const power = (c) => (isTrump(c) ? 100 + trumpPower(c) : failPower(c));
 
 export const TRUMP_COUNT = 14; // Q x4, J x4, diamonds x6
@@ -114,7 +134,11 @@ export function legalPlays(g, playerIdx) {
   // that names the partner", never about an ace specifically.
   const calledRank = g.calledRank || "A";
   const calledAce = (c) => called && c.suit === called && c.rank === calledRank && !isTrump(c);
-  const inCalled = (c) => called && !isTrump(c) && c.suit === called;
+  // The picker's under card counts as the called suit, which is what forces it
+  // out when that suit is led — the picker holds no other card of it, so
+  // ordinary follow-suit does the work with no special rule.
+  const suitOf = (c) => effSuitFor(g, playerIdx, c);
+  const inCalled = (c) => called && suitOf(c) === called;
 
   let legal;
   if (g.trick.length === 0) {
@@ -126,7 +150,7 @@ export function legalPlays(g, playerIdx) {
     }
   } else {
     const led = effSuit(g.trick[0].card);
-    const follow = hand.filter((c) => effSuit(c) === led);
+    const follow = hand.filter((c) => suitOf(c) === led);
     legal = follow.length ? follow : [...hand];
     // Partner must play the called ace the first time the suit is led
     if (isPartner && !aceOut && led === called) {
@@ -180,31 +204,43 @@ export function callOptions(hand, buried = []) {
     .map((suit) => ({ kind: "ace", suit, rank: "A" }));
   if (ace.length) return ace;
 
-  // 2. Holding every fail ace there is no ace left to call, so call a ten.
-  //    The suit requirement is unchanged and satisfied by the ace itself.
+  // 2. Under. You reach here holding no callable fail card at all, and the two
+  //    reasons that can happen want opposite rules — so separate them.
+  //
+  //    Void in a suit whose ace you lack: there IS an ace to call and a partner
+  //    to find, you simply have nothing of the suit to lead it with. Under is
+  //    the fix — you designate one of your six cards to stand in for that suit.
+  //
+  //    Gated on all EIGHT cards, hand plus what you buried, which is the
+  //    difference between a rule and a loophole: you must keep a callable card
+  //    if you were dealt one. Measured against the six you kept, a picker dealt
+  //    two low hearts simply buries them both and calls clubs under instead —
+  //    and under, with a card of your choosing standing in, is the better call.
+  //    So under is unavailable if ANY ordinary ace call existed before the bury,
+  //    including in a suit that is not the one being called.
+  const eight = [...hand, ...buried];
+  const heldEight = (su, rank) => eight.some((c) => !isTrump(c) && c.suit === su && c.rank === rank);
+  const couldHaveCalled = CALLABLE_SUITS.some(
+    (su) => eight.some((c) => !isTrump(c) && c.suit === su) && !heldEight(su, "A")
+  );
+  if (!couldHaveCalled) {
+    const under = CALLABLE_SUITS
+      .filter((su) => !heldEight(su, "A"))
+      .map((suit) => ({ kind: "under", suit, rank: "A" }));
+    if (under.length) return under;
+  }
+
+  // 3. Holding every fail ace there is no ace left to call, so call a ten.
+  //    This is why under comes first and why the two never compete: under
+  //    calls a suit whose ace you do not have, and if you hold all three there
+  //    is no such suit. Reaching here means every callable suit is one of
+  //    yours, and the ten is the only partner left to look for.
   if (CALLABLE_SUITS.every((su) => holds(su, "A"))) {
     return CALLABLE_SUITS
       .filter((su) => fails[su].length > 0 && !holds(su, "10"))
       .map((suit) => ({ kind: "ten", suit, rank: "10" }));
   }
 
-  // 3. Under would go here, and is DISABLED until it is built properly.
-  //
-  // What shipped was wrong at the core: it read "calling under" as calling a
-  // suit you are void in, and then let the picker play anything when that suit
-  // was led — including trumping their own called suit, which was reported
-  // from real play immediately.
-  //
-  // Under is not being void. It is designating one of your six cards to stand
-  // in for the called suit: it plays as the lowest card of that suit, must be
-  // played when the suit is led, may be led, and sits face down until the hand
-  // is over. None of that machinery exists yet, and a rule this central is
-  // worse half-built than absent — without the designated card the picker is
-  // simply exempt from the call, which is strictly better than playing it
-  // straight and makes the call free.
-  //
-  // Hands that would qualify go alone, as they did before, until the real
-  // mechanic lands.
   return [];
 }
 
@@ -220,6 +256,23 @@ function handSeed(cards) {
     }
   }
   return (hRaw >>> 0);
+}
+
+/**
+ * Which of the six to send under.
+ *
+ * The card cannot win a trick and it leaves as soon as the called suit is led,
+ * so what you want is the card that was going to do the least anyway — and one
+ * whose points you can afford, because it still scores for whoever gathers the
+ * trick, and the trick will not be yours.
+ *
+ * Low fail before low trump: a spare 7 is nearly worthless, whereas even the
+ * smallest diamond is a trump you might have led or followed with.
+ */
+export function chooseUnderCard(hand) {
+  return [...hand]
+    .map((c) => ({ c, score: cardPts(c) * 10 + (isTrump(c) ? 8 : 0) + power(c) / 100 }))
+    .sort((a, b) => a.score - b.score)[0]?.c ?? null;
 }
 
 export function aiBuryAndCall(hand) {
@@ -294,7 +347,11 @@ export function aiBuryAndCall(hand) {
     callRank = chosen.rank;
     callKind = chosen.kind;
   }
-  return { buried, call, callRank, callKind, hand: h };
+  // An under call is not finished until a card stands in for the suit. Without
+  // it the picker is simply exempt from their own call, which is how the first
+  // version of this went wrong.
+  const underCard = callKind === "under" ? chooseUnderCard(h) : null;
+  return { buried, call, callRank, callKind, underCard, hand: h };
 }
 
 export function knowsTeammate(g, viewer, target) {
@@ -895,6 +952,8 @@ export function freshHand(dealer, scores, handNum, doubler = 1) {
     // changes how the hand plays for everyone.
     calledRank: null,
     calledUnder: false,
+    // The physical card the picker set aside to stand in for the called suit.
+    underCard: null,
     calledAcePlayed: false,
     calledSuitLed: false,
     alone: false,
@@ -948,12 +1007,21 @@ export function assignPartner(g) {
 
 export function applyPlay(g, idx, card) {
   const hands = g.hands.map((h, i) => (i === idx ? h.filter((c) => cid(c) !== cid(card)) : h));
-  const trick = [...g.trick, { player: idx, card }];
+  // Played under, the card goes down as the 6 of the called suit and its real
+  // face travels alongside as `actual`: it still scores its own points, and it
+  // is what gets revealed to the trick's winner and in the recap.
+  const under = isUnderCard(g, idx, card);
+  const played = under ? { player: idx, card: underFace(g), actual: card, under: true }
+                       : { player: idx, card };
+  const trick = [...g.trick, played];
   let { partnerRevealed, calledAcePlayed, calledSuitLed } = g;
-  if (g.calledSuit && !isTrump(card) && card.suit === g.calledSuit) {
+  // The under card counts as the called suit here too — leading it is what
+  // puts the called suit in play and drags the called ace out.
+  const asSuit = under ? g.calledSuit : (isTrump(card) ? null : card.suit);
+  if (g.calledSuit && asSuit === g.calledSuit) {
     if (trick.length === 1) calledSuitLed = true;
     if (effSuit(trick[0].card) === g.calledSuit) calledSuitLed = true;
-    if (card.rank === (g.calledRank || "A")) {
+    if (!under && card.rank === (g.calledRank || "A")) {
       calledAcePlayed = true;
       if (idx === g.partner) partnerRevealed = true;
     }
@@ -966,7 +1034,8 @@ export function applyPlay(g, idx, card) {
 
 export function resolveTrick(g) {
   const w = trickWinner(g.trick);
-  const pts = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
+  // The under card scores its own face, not the 6 it played as.
+  const pts = g.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0);
   const ptsTaken = [...g.ptsTaken];
   ptsTaken[w] += pts;
   const trickCounts = [...g.trickCounts];
@@ -1128,7 +1197,7 @@ function ddFuture(g, alpha, beta, memo, budget) {
   if (g.trick.length === 5) {
     const w = trickWinner(g.trick);
     const gain = pickerTeamOf(g).includes(w)
-      ? g.trick.reduce((s, t) => s + cardPts(t.card), 0)
+      ? g.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0)
       : 0;
     if (g.tricksDone === 5) return gain; // resolving this one ends the hand
     return gain + ddFuture(resolveTrick(g), alpha - gain, beta - gain, memo, budget);
@@ -1311,8 +1380,37 @@ export function viewFor(g, seat) {
     partner,
     alone: revealed ? g.alone : g.calledSuit === null && g.phase === "playing",
 
+    // Which card the picker set aside is theirs alone to know until the hand
+    // is over. It is on the table as the 6 of the called suit and face down to
+    // everyone else — the whole point of playing under is that nobody can see
+    // what you spent.
+    underCard: isPicker || revealed ? g.underCard : null,
+
+    // ...and the same for its face once played. Revealed to whoever WON the
+    // trick it fell in — they gathered it, so they saw it — and to everybody
+    // at the end. `under` itself stays visible: that a card was played under
+    // is public, only its identity is not.
+    trick: hideUnder(g.trick, seat, null, isPicker, revealed),
+    trickHistory: (g.trickHistory || []).map((th) => ({
+      ...th,
+      trick: hideUnder(th.trick, seat, th.winner, isPicker, revealed),
+    })),
+    lastTrick: g.lastTrick
+      ? { ...g.lastTrick, trick: hideUnder(g.lastTrick.trick, seat, g.lastTrick.winner, isPicker, revealed) }
+      : g.lastTrick,
+
     // Purely a UI scratch field for the local player's card selection; it has
     // no business crossing the wire.
     selected: undefined,
   };
+}
+
+// Strips the real face off any card played under, unless this viewer is
+// entitled to it. `winner` is null for a trick still in progress, where nobody
+// but the picker may look.
+function hideUnder(trick, seat, winner, isPicker, revealed) {
+  if (!trick?.length) return trick;
+  const maySee = revealed || isPicker || (winner !== null && winner === seat);
+  if (maySee) return trick;
+  return trick.map((t) => (t.under ? { player: t.player, card: t.card, under: true } : t));
 }

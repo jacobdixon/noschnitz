@@ -80,6 +80,10 @@ export default async function handler(req, res) {
     return fail(res, 400, "bad-request", "calledRank must be A or 10.");
   }
 
+  // The card that stands in for the called suit when going under. A lookup key
+  // like the buried cards, resolved against the server's own hand below.
+  const underWanted = typeof body.underCard === "string" ? body.underCard : null;
+
   const store = getStore();
   const out = await mutate(store, id, (table) => {
     // Acting is the strongest possible evidence of presence. Without this, a
@@ -110,6 +114,22 @@ export default async function handler(req, res) {
       return { table, denied: "bad-call", seat };
     }
 
+    // Under is only a call once a card carries it. Reject the call outright
+    // rather than storing a half-made one: a picker with `calledUnder` and no
+    // designated card is exempt from their own call, which is strictly better
+    // than playing the hand straight.
+    const goingUnder = chosen?.kind === "under";
+    let underCard = null;
+    if (goingUnder) {
+      if (!underWanted) return { table, denied: "no-under-card", seat };
+      underCard = hand.find((c) => cid(c) === underWanted);
+      // Must be one of the six kept. Naming a buried card, or a card that was
+      // never theirs, would put a card on the table that is not in play.
+      if (!underCard) return { table, denied: "bad-under-card", seat };
+    } else if (underWanted) {
+      return { table, denied: "not-going-under", seat };
+    }
+
     const now = Date.now();
     const hands = g.hands.map((h, i) => (i === seat ? hand : h));
     let ng = {
@@ -121,7 +141,10 @@ export default async function handler(req, res) {
       // Public, because it is announced at the table and it changes how the
       // hand plays for everyone: the picker can neither lead nor follow the
       // suit they called.
-      calledUnder: chosen?.kind === "under",
+      calledUnder: goingUnder,
+      // Redacted by viewFor to everyone but the picker: which card was spent is
+      // the whole point of the call.
+      underCard,
       selected: [],
       phase: "playing",
       trick: [],
@@ -153,6 +176,12 @@ export default async function handler(req, res) {
       return fail(res, 400, "illegal-call", "No suit is callable — you're going alone.");
     case "bad-call":
       return fail(res, 400, "illegal-call", "You can't call that suit.");
+    case "no-under-card":
+      return fail(res, 400, "illegal-call", "Calling under needs a card to play under.");
+    case "bad-under-card":
+      return fail(res, 400, "illegal-call", "Play a card you kept, not one you buried.");
+    case "not-going-under":
+      return fail(res, 400, "illegal-call", "That call doesn't go under.");
     default:
       break;
   }

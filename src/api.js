@@ -61,10 +61,13 @@ export const startHand = (id, playerId) =>
 export const pick = (id, playerId, action) =>
   request(`/api/tables/${encodeURIComponent(id)}/pick`, { method: "POST", body: { playerId, action } });
 
-export const bury = (id, playerId, cards, calledSuit, calledRank = "A") =>
+// `underCard` is a cid, sent only when the call goes under: the card that
+// stands in for the called suit. The server resolves it against its own copy
+// of the hand and rejects an under call that arrives without one.
+export const bury = (id, playerId, cards, calledSuit, calledRank = "A", underCard = null) =>
   request(`/api/tables/${encodeURIComponent(id)}/bury`, {
     method: "POST",
-    body: { playerId, cards, calledSuit, calledRank },
+    body: { playerId, cards, calledSuit, calledRank, ...(underCard ? { underCard } : {}) },
   });
 
 export const playCard = (id, playerId, card) =>

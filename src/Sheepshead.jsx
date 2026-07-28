@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   NAMES, cid, sortHand, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay, callOptions,
-  resolveTrick, gradeHandPlays,
+  resolveTrick, gradeHandPlays, SUIT_NAME,
 } from "./engine.js";
 
 import { felt, btnGold, btnPlain, btnGhost } from "./ui.jsx";
@@ -52,13 +52,14 @@ export default function Sheepshead({ onPlayWithFriends }) {
           }
           // AI picks: take blind, bury, call
           const eight = [...s.hands[idx], ...s.blind];
-          const { buried, call, callRank, callKind, hand } = aiBuryAndCall(eight);
+          const { buried, call, callRank, callKind, underCard, hand } = aiBuryAndCall(eight);
           const hands = s.hands.map((h, i) => (i === idx ? sortHand(hand) : h));
           let ns = {
             ...s, picker: idx, hands, buried,
             calledSuit: call,
             calledRank: call === null ? null : callRank,
             calledUnder: callKind === "under",
+            underCard: underCard ?? null,
             phase: "playing", trick: [], turn: s.leader, message: null,
           };
           ns = assignPartner(ns);
@@ -117,15 +118,30 @@ export default function Sheepshead({ onPlayWithFriends }) {
   // because the picker who holds every fail ace calls a ten instead.
   const callAce = (opt) => {
     setG((s) => {
+      // An under call is not finished at the call. The picker still has to say
+      // which of their six cards stands in for the suit, so it gets its own
+      // step — without it the picker would simply be exempt from their own call.
+      const under = Boolean(opt && opt.kind === "under");
       let ns = {
         ...s,
         calledSuit: opt ? opt.suit : null,
         calledRank: opt ? opt.rank : null,
-        calledUnder: opt ? opt.kind === "under" : false,
-        phase: "playing", trick: [], turn: s.leader, message: null,
+        calledUnder: under,
+        underCard: null,
+        phase: under ? "under" : "playing",
+        trick: [], turn: s.leader, message: null,
       };
-      ns = assignPartner(ns);
+      if (!under) ns = assignPartner(ns);
       return ns;
+    });
+  };
+
+  const designateUnder = (card) => {
+    setG((s) => {
+      if (s.phase !== "under") return s;
+      // The card stays in hand — it is not spent, it is spoken for. It leaves
+      // when the called suit is led, like any other card of that suit.
+      return assignPartner({ ...s, underCard: card, phase: "playing" });
     });
   };
 
@@ -218,6 +234,12 @@ export default function Sheepshead({ onPlayWithFriends }) {
           <CallButtons options={g.callOptions} onCall={callAce} />
         )}
 
+        {g.phase === "under" && (
+          <div style={{ fontSize: 13, color: felt.creamDim }}>
+            Tap a card — it plays as the lowest {SUIT_NAME[g.calledSuit]} and stays face down.
+          </div>
+        )}
+
         {progressLine({ g, mySeat: 0 }) && (
           <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 4 }}>
             {progressLine({ g, mySeat: 0 })}
@@ -244,6 +266,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
           isDim={(c) => g.phase === "playing" && g.turn === 0 && !legalNow.includes(cid(c))}
           onCardClick={(c) => {
             if (g.phase === "bury") return () => toggleBury(c);
+            if (g.phase === "under") return () => designateUnder(c);
             if (g.phase === "playing" && g.turn === 0 && legalNow.includes(cid(c))) return () => humanPlay(c);
             return undefined;
           }}

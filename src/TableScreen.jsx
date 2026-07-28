@@ -19,7 +19,7 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { cid, legalPlays, gradeHandPlays, callOptions } from "./engine.js";
+import { cid, legalPlays, gradeHandPlays, callOptions, SUIT_NAME } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
@@ -451,6 +451,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // It also gives the call its own screen, which is where calling a ten and
   // calling under have to fit.
   const [callStep, setCallStep] = useState(false);
+  // The under call has one more step than the others: having named the suit,
+  // the picker still has to name the card that stands in for it. Local, like
+  // the call step — it all goes to the server as one request.
+  const [underOpt, setUnderOpt] = useState(null);
   const recapCaptureRef = useRef(null);
 
   // Reset between hands. Without this, closing the recap is the only thing
@@ -598,6 +602,17 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
+    if (underOpt) {
+      // Any of the six may go under, so there is nothing to validate here —
+      // the server checks it is one the picker actually kept.
+      act(async () => {
+        await api.bury(tableId, playerId, selected, underOpt.suit, underOpt.rank, cid(card));
+        setSelected([]);
+        setCallStep(false);
+        setUnderOpt(null);
+      });
+      return;
+    }
     if (g.phase === "bury") {
       // Two to bury, then the call.
       setSelected((cur) =>
@@ -774,7 +789,9 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
           {caughtUp || !narration.done
             ? statusLine({
-                g: callStep ? { ...view, phase: "call" } : view,
+                g: underOpt
+                  ? { ...view, phase: "under", calledSuit: underOpt.suit, picker: mySeat }
+                  : callStep ? { ...view, phase: "call" } : view,
                 names: table.seats.map((x) => x.name),
                 mySeat,
                 isMyTurn,
@@ -811,17 +828,27 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         </Actions>
       )}
 
-      {g.phase === "bury" && g.picker === mySeat && callStep && (
+      {underOpt && (
+        <div style={{ fontSize: 13, color: felt.creamDim, textAlign: "center" }}>
+          Tap a card — it plays as the lowest {SUIT_NAME[underOpt.suit]} and stays face down.
+        </div>
+      )}
+
+      {g.phase === "bury" && g.picker === mySeat && callStep && !underOpt && (
         <CallButtons
           options={myCallOptions}
           disabled={busy}
-          onCall={(opt) =>
+          onCall={(opt) => {
+            if (opt && opt.kind === "under") {
+              setUnderOpt(opt);
+              return;
+            }
             act(async () => {
               await api.bury(tableId, playerId, selected, opt ? opt.suit : null, opt ? opt.rank : "A");
               setSelected([]);
               setCallStep(false);
-            })
-          }
+            });
+          }}
         />
       )}
 
