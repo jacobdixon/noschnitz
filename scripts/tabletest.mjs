@@ -13,7 +13,7 @@ import {
   createTable, joinTable, leaveTable, applyPendingJoins, startHand,
   markSeen, seatOf, humanSeats, aiSeatIndexes, uniqueName, makeTableCode,
   atHandBoundary, AI_NAMES, stepAway, coverIdleSeats, AWAY_AFTER_MS,
-  idleMs, isBootable, bootSeat, resumeSeat,
+  idleMs, isBootable, bootSeat, resumeSeat, commit,
 } from "../src/table.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { mutate } from "../src/store/mutate.js";
@@ -491,6 +491,50 @@ const asyncTests = async () => {
 };
 
 await asyncTests();
+
+/* --------------------------- the running score ---------------------------- */
+{
+  // The table kept its own copy of the scores and nothing ever wrote to it, so
+  // it sat at its initial zeros for the life of the table. startHand seeds each
+  // new hand from that copy, so every hand began from nothing: the felt showed
+  // one hand's result and then forgot it, and the scores modal showed +0 for
+  // everyone forever. Two hands is the smallest case that shows it.
+  let t = createTable(host);
+  t = startHand(t, T0);
+  check("a dealt hand starts level", t.scores.every((n) => n === 0));
+
+  // Finish the hand the way the engine does: the running total lives on
+  // g.scores, and hand-end scoring adds the hand's delta to it.
+  const settled = [2, -1, -1, -1, 1];
+  t = commit({ ...t, g: { ...t.g, phase: "handEnd", scores: [...settled] } }, T0 + 1000);
+
+  check("the table picks up the finished hand's totals",
+    JSON.stringify(t.scores) === JSON.stringify(settled),
+    `table.scores = ${JSON.stringify(t.scores)}`);
+
+  // The actual complaint: deal again and see whether the score survives.
+  t = startHand(t, T0 + 2000);
+  check("the next hand carries the running score forward",
+    JSON.stringify(t.g.scores) === JSON.stringify(settled),
+    `hand 2 opened on ${JSON.stringify(t.g.scores)}`);
+  check("...and the table's copy agrees with the engine's",
+    JSON.stringify(t.scores) === JSON.stringify(t.g.scores),
+    `${JSON.stringify(t.scores)} vs ${JSON.stringify(t.g.scores)}`);
+
+  // And it keeps accumulating rather than only remembering the last hand.
+  const after2 = [4, -2, 0, -2, 0];
+  t = commit({ ...t, g: { ...t.g, phase: "handEnd", scores: [...after2] } }, T0 + 3000);
+  t = startHand(t, T0 + 4000);
+  check("a third hand carries the accumulated total",
+    JSON.stringify(t.g.scores) === JSON.stringify(after2),
+    `hand 3 opened on ${JSON.stringify(t.g.scores)}`);
+
+  // A table with no hand dealt yet must not have its zeros clobbered by a
+  // missing g.
+  const fresh = commit(createTable(host), T0);
+  check("a table with no game keeps its zeroed scores",
+    JSON.stringify(fresh.scores) === JSON.stringify([0, 0, 0, 0, 0]));
+}
 
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {

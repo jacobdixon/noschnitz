@@ -50,12 +50,29 @@ export const SEAT_POS = {
 // A played card lands pulled in from its own player's seat, so you can see at a
 // glance who played what. Rendering the trick as a neutral row instead loses
 // that, and with it most of the readability of a hand.
+//
+// The ring is tighter than it was, because the old one put cards straight
+// through the seat labels: a played card covered the score line of both top
+// seats, and a picker's PICKER and CALLED badges with it. Measured, the old
+// arrangement hid 9,192px² of seat text at 375x812; this hides 1,930px².
+//
+// It cannot reach zero. Five 71x80 cards do not fit on a 363x500 felt without
+// touching a seat column somewhere — searched exhaustively over centre and
+// radius, and every arrangement that clears all four columns either pushes
+// cards off the felt or stacks them on each other. Getting to zero needs a
+// design change (smaller played cards, or shorter seat columns), which is a
+// trade worth making deliberately rather than smuggling in here. What is left
+// is a corner of a card over the edge of a label, not a card sitting on top of
+// the score.
+//
+// Kept symmetric on purpose: the asymmetric best the search found was 185px²
+// better and overlapped two cards by 2px, which reads worse than it measures.
 export const TRICK_POS = {
-  0: { left: "50%", top: "72%", transform: "translate(-50%,-50%)" },
-  1: { left: "22%", top: "50%", transform: "translate(-50%,-50%)" },
-  2: { left: "38%", top: "26%", transform: "translate(-50%,-50%)" },
-  3: { left: "62%", top: "26%", transform: "translate(-50%,-50%)" },
-  4: { left: "78%", top: "50%", transform: "translate(-50%,-50%)" },
+  0: { left: "50%", top: "67%", transform: "translate(-50%,-50%)" },
+  1: { left: "30%", top: "57%", transform: "translate(-50%,-50%)" },
+  2: { left: "38%", top: "40%", transform: "translate(-50%,-50%)" },
+  3: { left: "62%", top: "40%", transform: "translate(-50%,-50%)" },
+  4: { left: "70%", top: "57%", transform: "translate(-50%,-50%)" },
 };
 
 export function DealerButton() {

@@ -80,7 +80,23 @@ function aiSeat(name) {
 // burst of AI actions and must land as ONE version bump, which it gets by
 // calling this exactly once at the end rather than reimplementing the rule.
 export function commit(table, now) {
-  return { ...table, version: table.version + 1, updatedAt: now };
+  return {
+    ...table,
+    // The running total lives on the engine state — freshHand seeds g.scores
+    // and the hand-end scoring adds each hand's delta to it — while the
+    // table's own copy is what the scores modal and every client reads.
+    // Nothing kept the two in step, so table.scores stayed at its initial
+    // zeros for the life of the table, and startHand below dealt every hand
+    // seeded from those zeros. The felt showed one hand's result and then
+    // forgot it; the scores modal showed +0 for everyone, forever.
+    //
+    // Synced here rather than at each call site because this is the one place
+    // every mutation already passes through, which is the property that makes
+    // it impossible for a future path to forget.
+    scores: table.g?.scores ? [...table.g.scores] : table.scores,
+    version: table.version + 1,
+    updatedAt: now,
+  };
 }
 
 // MP-1.1 / MP-2.1. A new table is immediately playable: the host sits at seat
@@ -374,6 +390,8 @@ export function startHand(table, now) {
   const seated = applyPendingJoins(table, now);
   const handNum = seated.handNum + 1;
   const dealer = seated.handNum === 0 ? seated.dealer : (seated.dealer + 1) % SEATS;
+  // Carries the running total forward. seated.scores is the previous hand's
+  // final total because commit() syncs it from the engine state.
   const g = freshHand(dealer, seated.scores, handNum);
   return commit({ ...seated, phase: "playing", dealer, handNum, g }, now);
 }
