@@ -196,6 +196,20 @@ export function callOptions(hand, buried = []) {
     .map((suit) => ({ kind: "under", suit, rank: "A" }));
 }
 
+// A stable number from a set of cards. Used to vary a choice that has no
+// strategic basis without giving up determinism — the same hand always answers
+// the same way, different hands spread across the options.
+function handSeed(cards) {
+  let hRaw = 2166136261;
+  for (const c of cards) {
+    for (const ch of cid(c)) {
+      hRaw ^= ch.charCodeAt(0);
+      hRaw = Math.imul(hRaw, 16777619);
+    }
+  }
+  return (hRaw >>> 0);
+}
+
 export function aiBuryAndCall(hand) {
   // choose 2 to bury from 8, then a suit to call
   let h = [...hand];
@@ -242,11 +256,28 @@ export function aiBuryAndCall(hand) {
   const ALONE_HANDSTRENGTH = 17;
   const strongEnoughToGoAlone = handStrength(h) >= ALONE_HANDSTRENGTH;
   if (opts.length && !strongEnoughToGoAlone) {
-    // Shortest suit first, as before — the fewer cards you hold in the called
-    // suit the sooner your partner is forced to show. An `under` call holds
-    // none at all, which is the extreme of the same preference.
     const m = suitsHeld(h.filter((c) => !isTrump(c)));
-    const chosen = [...opts].sort((a, b) => (m[a.suit]?.length || 0) - (m[b.suit]?.length || 0))[0];
+    let chosen;
+
+    if (opts[0].kind === "under") {
+      // Under is vibes. Every option is a suit you hold nothing in, so the
+      // "shortest suit" preference that orders ordinary calls has nothing to
+      // sort by — they are all zero — and the sort is stable, so the AI called
+      // the same suit every single time. Predictable is worse than arbitrary
+      // here: a defender who learns the picker always goes under in clubs
+      // knows something they should not.
+      //
+      // Varied but NOT random: seeded by the hand, so the same cards always
+      // produce the same call. That keeps the engine deterministic, which is
+      // what lets the A/B harness null-test to exactly 0.0000 and the suites
+      // reproduce.
+      chosen = opts[handSeed(h) % opts.length];
+    } else {
+      // Ordinary calls keep the old preference: the fewer cards you hold in
+      // the called suit, the sooner your partner is forced to show.
+      chosen = [...opts].sort((a, b) => (m[a.suit]?.length || 0) - (m[b.suit]?.length || 0))[0];
+    }
+
     call = chosen.suit;
     callRank = chosen.rank;
     callKind = chosen.kind;
