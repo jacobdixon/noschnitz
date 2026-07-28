@@ -457,8 +457,27 @@ export function aiChooseCard(g, idx) {
     const trumps = legal.filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
     const fails = legal.filter((c) => !isTrump(c));
     if (onPickerTeam) {
-      // Trump-aware leading: count what's still unseen instead of using a
-      // fixed "3+ trumps or a Q" rule regardless of how the trump has fallen.
+      // The picking side leads trump whenever it holds any. The old rule gated
+      // this behind depth — a Queen, or opponents nearly tapped out, or three
+      // trumps — and fell through to a fail lead otherwise.
+      //
+      // Solving 400 hands double dummy said that gate was backwards, and said
+      // it in a way clairvoyance can't fake. Double dummy sees every hand, so
+      // it flatters whichever lead happens to suit the actual layout, and that
+      // error is symmetric — it should mis-blame trump leads and fail leads
+      // about equally. It didn't: "led fail, should have led trump" came in at
+      // 80 errors and 1146 points against 30 and 301 the other way, a 2.7x
+      // asymmetry in count. A lopsided matrix is a rule, not an artifact.
+      //
+      // Confirmed against the honest measurement rather than the solver: this
+      // is +0.013/seat/hand head to head at 200,000 hands per split, ahead in
+      // 5 of 5. Dropping the bar to two trumps rather than removing it scores
+      // +0.009, and leading the lowest trump instead of the highest +0.012, so
+      // the gain is in leading trump at all rather than in where the bar sits.
+      //
+      // Two clauses died with the gate: "top trump is a Queen" and "opponents
+      // nearly tapped out" both returned this same card, so they only ever
+      // decided whether the fail-lead fallback got reached.
       const oppTrumpLeft = unseenTrumpCount(g, g.hands[idx]);
       if (trumps.length) {
         if (oppTrumpLeft === 0) {
@@ -467,9 +486,7 @@ export function aiChooseCard(g, idx) {
           // multiple guaranteed tricks instead of burning strength early.
           return trumps[trumps.length - 1];
         }
-        if (trumps[0].rank === "Q") return trumps[0]; // top trump is always a safe, pressuring lead
-        if (oppTrumpLeft <= 2 && trumps.length >= 2) return trumps[0]; // opponents nearly tapped out — press now
-        if (trumps.length >= 3) return trumps[0]; // real depth, original conservative bar
+        return trumps[0];
       }
       if (idx === g.picker && g.calledSuit && !g.calledAcePlayed) {
         const cs = fails.filter((c) => c.suit === g.calledSuit);

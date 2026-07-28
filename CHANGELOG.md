@@ -6,6 +6,53 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.20.0] - 2026-07-28
+- The picking side leads trump whenever it holds any. The old rule gated that
+  behind depth — a Queen in hand, or opponents nearly tapped out, or three
+  trumps — and led a fail card otherwise.
+  - **Found by the solver, and specifically by an asymmetry.** Double dummy is
+    least trustworthy on the opening lead: it sees every hand, so it flatters
+    whichever lead happens to suit the actual layout. But that error is
+    *symmetric* — it should mis-blame trump leads and fail leads about equally.
+    Over 400 solved hands it didn't. "Led fail, should have led trump" came in
+    at 80 errors and 1146 points, against 30 and 301 the other way: a 2.7x
+    asymmetry in count. A lopsided matrix is a rule, not an artifact.
+  - **Confirmed against the honest measurement, not the solver.** +0.013 per
+    seat per hand head to head at 200,000 hands per split, ahead in 5 of 5.
+    Merely dropping the bar to two trumps scores +0.009 and leading the lowest
+    trump rather than the highest +0.012, so the gain is in leading trump at
+    all, not in where the bar sits. Removing the gate outright is both the best
+    of those and the simplest.
+  - Two clauses died with it. "Top trump is a Queen" and "opponents nearly
+    tapped out" both returned the same card as the depth clause, so all they
+    ever decided was whether the fail-lead fallback got reached.
+  - Re-solving 400 fresh hands afterwards agrees with the head-to-head, which is
+    the useful part: picker lead error 25% -> 21% and 1263 -> 1005 points,
+    partner 26% -> 20%. Defender leads are unchanged, which they should be —
+    nothing here touches that branch.
+- **Three things the solver flagged that turned out not to be real, recorded so
+  they don't get re-investigated.** The defender fail-Ace lead looked like the
+  worst rule in the file: an unconditional `if (aces.length) return aces[0]`,
+  scoring a 37% error rate at 5.42 points per lead against 2.05 for every other
+  defender lead. It survived every attempt to condition it.
+  - Requiring a second card in the suit behind the Ace: **-0.002/seat/hand,
+    ahead in 1 of 5**.
+  - Leading the Ace only once enough trump was gone for it to survive:
+    **-0.012, ahead in 0 of 5** — decisively worse, so leading fail Aces *early*
+    is right and the hypothesis was backwards.
+  - Not leading a bare Ace against a lone picker, the case the play brief called
+    out by name: **+0.001, ahead in 3 of 5**, i.e. nothing.
+  - The reason is a confound worth remembering when reading solver output: an
+    Ace lead puts 11 points at stake, so double dummy punishes it harder than a
+    junk lead *even when it is correct in expectation*. High-variance decisions
+    look like bad decisions to a solver that already knows the layout. Error
+    magnitude is not evidence on its own — direction is.
+  - Also tested and rejected: defenders leading trump on three or more, at
+    **-0.030/seat/hand, ahead in 0 of 5**. The conventional wisdom that
+    defenders should make the picker trump in holds up, hard.
+- The bump-multiplier recalibration first flagged in 0.17.0 remains open and
+  this pushes the same way again.
+
 ## [0.19.0] - 2026-07-28
 - A full-hand **double-dummy solver** (`src/solver.js`) and a grader built on
   it, plus `npm run analyze` to point them at as many hands as you like. No
