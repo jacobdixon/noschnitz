@@ -161,8 +161,12 @@ network dependency, instant to try).
 
 ## Open action items (not code — things only a human can do)
 
-### Make the repo private — PENDING, needs a human
-As of 2026-07-28 `jacobdixon/noschnitz` is still **public** (0 stars, 0 forks, 9 open
+### Make the repo private — DEFERRED by decision, 2026-07-28
+**Decision: staying public for now.** This was considered on 2026-07-28 and explicitly
+deferred, not left unfinished. Don't treat it as an open task; the research below is
+kept for whenever it gets revisited.
+
+At the time of the decision `jacobdixon/noschnitz` was public (0 stars, 0 forks, 9 open
 issues, default branch `master`).
 
 **An agent session cannot do this.** Anthropic's agent proxy blocks repository-settings
@@ -189,12 +193,17 @@ Consequences, checked against this project specifically:
 - **Tags and releases go private** too.
 - **Nothing gets stranded**: 0 forks means no fork detaches.
 
-### PAT rotation — still open, and going private does not fix it
+### PAT rotation — STILL OPEN, and the public decision above raises the stakes
 Item 4 above notes a PAT was used inline in shell commands and flagged for rotation.
-If the motivation for going private is that exposure, note that **private does not undo
+This is independent of the visibility question and is **the one genuinely open security
+item**. Note that visibility was never the remediation anyway: **private does not undo
 public** — anything already pushed publicly may have been cloned or indexed. Rotating the
-token is the actual remediation. A secret-scanning pass over the history to confirm
-whether it ever landed in a commit was offered and not yet run.
+token is the actual fix, and with the repo staying public, history stays continuously
+readable, so rotation matters more rather than less.
+
+A secret-scanning pass over the history — to confirm whether the token ever landed in a
+commit rather than only in shell invocations — was offered twice and has **not been run**.
+That's the first thing to do if this is picked up again.
 
 ## Doc accuracy warning (read before trusting the sections above)
 The narrative sections of this file predate the current state of the repo and have
