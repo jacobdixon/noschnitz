@@ -60,11 +60,26 @@ export function displayState(g, frame, optimistic, caughtUp) {
     for (const th of g.trickHistory.slice(0, seenTricks)) trickCounts[th.winner]++;
   }
 
+  // The partner is revealed by the called ace hitting the table, and the server
+  // knows the instant it is played. The client must not, until it has actually
+  // SHOWN that card: the server resolves several plays in one request, so the
+  // PARTNER badge would appear on a seat while the trick that exposed them was
+  // still two tricks away on screen. Same spoiler as the scores, different
+  // tell — and this one gives away the hand's most guarded secret.
+  //
+  // revealedIds is what the player has watched land, so the badge waits for it.
+  // If the ace is never played the engine never sets partnerRevealed at all,
+  // and nobody is named.
+  const calledAceId = g.calledSuit ? `A${g.calledSuit}` : null;
+  const partnerRevealed =
+    g.partnerRevealed && (!calledAceId || frame.revealedIds.has(calledAceId));
+
   return {
     ...g,
     trick,
     scores,
     trickCounts,
+    partnerRevealed,
     turn: caughtUp ? g.turn : -1,
     pickTurn: caughtUp ? g.pickTurn : -1,
   };
