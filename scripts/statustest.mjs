@@ -158,6 +158,38 @@ const line = (g, over = {}) =>
     JSON.stringify(buried));
 }
 
+/* --------------------- narrating the start of a hand ---------------------- */
+{
+  // The table replays the opening from state, so the line has to follow it.
+  const g = { phase: "playing", turn: -1, trick: [], picker: 4 };
+  const say = (over) => statusLine({ g, names: TABLE, mySeat: 0, isMyTurn: false, ...over });
+
+  check("a pass is named in the third person",
+    say({ dealing: true, narrating: { type: "pass", seat: 1 } }) === "Gus passes.");
+  check("your own pass is second person",
+    say({ dealing: true, narrating: { type: "pass", seat: 0 } }) === "You pass.");
+  check("taking the blind is named",
+    say({ dealing: true, narrating: { type: "pick", seat: 4 } }) === "Patty takes the blind.");
+  check("your own pick is second person",
+    say({ dealing: true, narrating: { type: "pick", seat: 0 } }) === "You take the blind.");
+  check("the call is spoken with the suit",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: "C" } }) ===
+      "Patty calls ♣ Clubs.");
+  check("going alone is spoken as going alone",
+    say({ dealing: true, narrating: { type: "bury", seat: 4, calledSuit: null } }) ===
+      "Patty goes alone.");
+
+  // THE gap: state has arrived, no beat shown yet. Falling through to the play
+  // branch announced "Someone's play…" over a table where nobody had decided.
+  const gap = say({ dealing: true });
+  check("the moment before the first beat says it's dealing", gap === "Dealing…", gap);
+  check("...and never claims it is someone's play", !/play/i.test(gap), gap);
+
+  // Once the opening is done the line goes back to the game.
+  check("after the opening it reads normally",
+    say({ dealing: false, isMyTurn: true }) === "Your play.");
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

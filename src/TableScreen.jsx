@@ -781,6 +781,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
                 selected: selected.length,
                 options: myCallOptions,
                 narrating: narration.done ? null : narration.shown[narration.shown.length - 1],
+                dealing: !narration.done,
               })
             : "\u00a0"}
         </div>

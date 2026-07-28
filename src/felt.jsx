@@ -138,7 +138,7 @@ export function RoleBadges({ g, seat }) {
   return null;
 }
 
-function SeatAvatar({ g, seat, names, extra, decision }) {
+function SeatAvatar({ g, seat, names, extra, decision, narrating }) {
   const active =
     (g.phase === "playing" && g.turn === seat) ||
     (g.phase === "picking" && g.pickTurn === seat);
@@ -177,10 +177,13 @@ function SeatAvatar({ g, seat, names, extra, decision }) {
           {" · "}{g.trickCounts[seat]} {g.trickCounts[seat] === 1 ? "trick" : "tricks"}
         </span>
       </div>
-      {/* While the opening is being narrated the decision replaces the role
-          badges: showing PICKER before you have watched them pick gives away
-          the beat this is trying to create. */}
-      {decision ? <DecisionBadge decision={decision} /> : <RoleBadges g={g} seat={seat} />}
+      {/* While the opening is being narrated, role badges are suppressed on
+          EVERY seat — not just ones that have acted. Leaving them up meant
+          PICKER sat on the picker's seat through all the passing, so you knew
+          who was about to take it before anyone had declined. */}
+      {narrating
+        ? <DecisionBadge decision={decision} />
+        : <RoleBadges g={g} seat={seat} />}
       {/* Somewhere for a table to hang presence, idle counters and the like
           without this file having to know what any of that means. */}
       {extra}
@@ -230,6 +233,7 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }
               // The picker gets two beats — picks, then buries — so the
               // LATEST one wins, or the badge would freeze on "Picks it up".
               decision={decisions?.filter((d) => d.seat === seat).pop()}
+              narrating={Boolean(decisions)}
             />
           </div>
         );

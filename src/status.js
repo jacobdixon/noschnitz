@@ -45,14 +45,20 @@ export function callPrompt(options) {
  * @param {object[]} options      call options, when it is your call
  * @param {object}   narrating    the opening beat being shown right now, if the
  *                                table is still replaying the start of a hand
+ * @param {boolean}  dealing      the opening is still to come, or in progress
  */
-export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options, narrating }) {
+export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options, narrating, dealing }) {
   if (!g) return "";
   const name = (seat) => who(names, mySeat, seat);
 
   // While the opening is being replayed the line follows it, beat by beat.
   // Without this the table sat blank through the whole thing — the felt was
   // telling a story and the caption was empty.
+  //
+  // `dealing` covers the moment before the first beat: the state has arrived
+  // but nothing has been shown yet, and falling through to the play branch
+  // announced "Someone's play…" over a table where nobody had decided anything.
+  if (dealing && !narrating) return "Dealing…";
   if (narrating) {
     const seat = name(narrating.seat);
     if (narrating.type === "pass") return `${seat} ${seat === "You" ? "pass" : "passes"}.`;
