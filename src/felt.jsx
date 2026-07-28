@@ -95,10 +95,6 @@ const SEAT_DIR = {
 const TRICK_STAND_MS = 900;
 const SWEEP_MS = 450;
 
-const reducedMotion = () =>
-  typeof matchMedia === "function" &&
-  matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 export function DealerButton() {
   return (
     <span
@@ -297,13 +293,17 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }
         // seat — all five cards converge on one corner, like a hand
         // gathering the trick, rather than flying back to where they came
         // from individually.
+        const winnerDir = SEAT_DIR[rotate(trickWinner(g.trick), mySeat)];
+        // Same mechanism as the entrance (a CSS keyframe, not a JS-toggled
+        // transition): a transition triggered by swapping inline styles
+        // depends on the browser seeing a genuine before/after style change,
+        // which is one more thing that can go quietly wrong. A keyframe
+        // animation just plays once assigned, same as play-in already does.
         const innerStyle = sweeping
           ? {
-              transform: reducedMotion()
-                ? "none"
-                : `translate(${SEAT_DIR[rotate(trickWinner(g.trick), mySeat)].x}px, ${SEAT_DIR[rotate(trickWinner(g.trick), mySeat)].y}px) scale(0.5)`,
-              opacity: 0,
-              transition: `transform ${SWEEP_MS}ms ease-in, opacity ${SWEEP_MS}ms ease-in`,
+              "--sweep-dx": `${winnerDir.x}px`,
+              "--sweep-dy": `${winnerDir.y}px`,
+              animation: `sweep-out ${SWEEP_MS}ms ease-in both`,
             }
           : {
               "--play-dx": `${dir.x}px`,

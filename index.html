@@ -65,6 +65,28 @@
           to { opacity: 1; }
         }
       }
+
+      /* A finished trick gathers toward the winner's seat instead of cutting
+         to nothing. Direction is per-card (see felt.jsx's SEAT_DIR, keyed by
+         the WINNER's seat so all five cards converge on one corner) via
+         --sweep-dx/--sweep-dy. */
+      @keyframes sweep-out {
+        from {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translate(var(--sweep-dx, 0px), var(--sweep-dy, 0px)) scale(0.5);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes sweep-out {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+      }
     </style>
   </head>
   <body>
