@@ -43,10 +43,26 @@ export function callPrompt(options) {
  * @param {boolean}  isMyTurn     already accounts for the paced reveal
  * @param {number}   selected     cards picked for the bury so far
  * @param {object[]} options      call options, when it is your call
+ * @param {object}   narrating    the opening beat being shown right now, if the
+ *                                table is still replaying the start of a hand
  */
-export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options }) {
+export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options, narrating }) {
   if (!g) return "";
   const name = (seat) => who(names, mySeat, seat);
+
+  // While the opening is being replayed the line follows it, beat by beat.
+  // Without this the table sat blank through the whole thing — the felt was
+  // telling a story and the caption was empty.
+  if (narrating) {
+    const seat = name(narrating.seat);
+    if (narrating.type === "pass") return `${seat} ${seat === "You" ? "pass" : "passes"}.`;
+    if (narrating.type === "pick") return `${seat} ${seat === "You" ? "take" : "takes"} the blind.`;
+    if (narrating.type === "bury") {
+      return narrating.calledSuit
+        ? `${seat} ${seat === "You" ? "call" : "calls"} ${SUIT_SYM[narrating.calledSuit]} ${SUIT_NAME[narrating.calledSuit]}.`
+        : `${seat} ${seat === "You" ? "go" : "goes"} alone.`;
+    }
+  }
 
   if (g.phase === "handEnd") {
     if (!g.result) return "Hand over.";

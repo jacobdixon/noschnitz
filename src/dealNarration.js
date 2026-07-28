@@ -1,0 +1,122 @@
+/* ============================================================================
+   Watching the hand start.
+
+   Solo shows you the table waking up: one player at a time decides, the picker
+   takes the blind, buries, calls — each with a beat. It gets that for free,
+   because it drives its own AI on timers.
+
+   A table gets none of it. The server resolves every AI seat inside the single
+   request that deals the hand, so the first state a browser sees already has
+   the picking finished, the blind buried, a suit called, and often two or three
+   cards played. The hand is painted mid-flight, and the part that makes the
+   game feel like a game has already happened.
+
+   Nothing is missing from the state, though — it can be reconstructed exactly:
+
+     picking order  starts left of the dealer and goes round
+     who passed     the first `passes` seats in that order
+     who picked     `picker`, immediately after them
+     the bury       once the phase has moved past it
+
+   So this replays the opening from the state itself, one beat at a time, with
+   no extra field on the wire and no second request. It runs only when a hand
+   is NEW to this client: joining a table mid-hand still snaps to live, because
+   replaying decisions you weren't there for is a fifteen-second freeze, not
+   atmosphere.
+   ========================================================================= */
+import { useState, useEffect, useRef } from "react";
+
+export const SEATS = 5;
+
+// How long each beat holds. A decision is quick — it is one word. Taking the
+// blind and burying is the biggest moment before play starts, so it gets
+// longer; it is also when the called suit appears, which people read.
+export const DECISION_MS = 850;
+export const BURY_MS = 1300;
+
+/**
+ * The opening of the hand, as beats, derived entirely from the game state.
+ *
+ * @returns {{type: "pass"|"pick"|"bury", seat: number, calledSuit?: string}[]}
+ */
+export function buildDecisionSequence(g) {
+  if (!g || g.dealer === undefined || g.dealer === null) return [];
+
+  const out = [];
+  const first = (g.dealer + 1) % SEATS;
+  const passes = g.passes ?? 0;
+
+  // Everyone who passed, in the order they were asked.
+  for (let i = 0; i < passes; i++) {
+    out.push({ type: "pass", seat: (first + i) % SEATS });
+  }
+
+  // A hand where all five passed has no picker and no bury — it is a throw-in,
+  // and the passes are the whole story.
+  if (g.picker === null || g.picker === undefined) return out;
+
+  out.push({ type: "pick", seat: g.picker });
+
+  // The bury and the call are one beat: at a real table they are one motion,
+  // and the suit is what everyone is waiting to hear. Only once it has actually
+  // happened — while the picker is still choosing, there is nothing to show.
+  if (g.phase === "playing" || g.phase === "handEnd") {
+    out.push({ type: "bury", seat: g.picker, calledSuit: g.calledSuit ?? null });
+  }
+
+  return out;
+}
+
+/**
+ * Walks the opening beats for a hand this client hasn't seen before.
+ *
+ * Returns { shown, done } — `shown` is the beats revealed so far, for drawing,
+ * and `done` says the table may start dealing cards.
+ */
+export function useDealNarration(g, { decisionMs = DECISION_MS, buryMs = BURY_MS } = {}) {
+  const sequence = buildDecisionSequence(g);
+  const [shown, setShown] = useState(0);
+  const handRef = useRef(null);
+  const initialised = useRef(false);
+
+  // Same rule the card pacer learned the hard way: the FIRST state we ever see
+  // snaps to live, because we weren't watching. Only a hand that starts while
+  // we're here gets narrated.
+  useEffect(() => {
+    if (!g) return;
+
+    if (!initialised.current) {
+      initialised.current = true;
+      handRef.current = g.handNum;
+      setShown(buildDecisionSequence(g).length);
+      return;
+    }
+
+    if (g.handNum !== handRef.current) {
+      handRef.current = g.handNum;
+      setShown(0);
+    }
+  }, [g]);
+
+  // Never run backwards, and never sit past the end: a redeal can shorten the
+  // sequence under us.
+  useEffect(() => {
+    if (shown > sequence.length) setShown(sequence.length);
+  }, [sequence.length, shown]);
+
+  useEffect(() => {
+    if (shown >= sequence.length) return;
+    const next = sequence[shown];
+    const t = setTimeout(
+      () => setShown((n) => Math.min(n + 1, sequence.length)),
+      next?.type === "bury" ? buryMs : decisionMs
+    );
+    return () => clearTimeout(t);
+  }, [shown, sequence.length, sequence, decisionMs, buryMs]);
+
+  return {
+    shown: sequence.slice(0, shown),
+    done: shown >= sequence.length,
+    pending: sequence.length - shown,
+  };
+}

@@ -79,7 +79,7 @@ export function frameAt(sequence, revealed, clearedTrick = -1) {
   };
 }
 
-export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS } = {}) {
+export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS, paused = false } = {}) {
   const sequence = buildPlaySequence(g);
   const [revealed, setRevealed] = useState(0);
   const [clearedTrick, setClearedTrick] = useState(-1);
@@ -122,6 +122,10 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
 
   useEffect(() => {
     if (revealed >= sequence.length) return;
+    // Held while the opening of the hand is still being shown — the picking,
+    // the bury, the call. Dealing cards over the top of that is the whole
+    // problem: the table arrives already in progress.
+    if (paused) return;
 
     // Linger on a completed trick before the next one starts, matching the
     // beat the solo game gets for free from its own timing loop.
@@ -135,7 +139,7 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
       justCompletedTrick ? trickHoldMs : cardMs
     );
     return () => clearTimeout(t);
-  }, [revealed, sequence.length, cardMs, trickHoldMs]);
+  }, [revealed, sequence.length, cardMs, trickHoldMs, paused]);
 
   // Sweep a finished trick once its beat is up. Only needed when the cursor has
   // nothing left to advance into — otherwise the next card arriving replaces

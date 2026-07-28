@@ -114,6 +114,17 @@ function CalledChip({ suit }) {
   );
 }
 
+// What a seat just did, while the opening of the hand plays out. Distinct from
+// RoleBadges because it is temporary — it is the moment being narrated, not a
+// standing fact about the hand — and it disappears once the cards start.
+function DecisionBadge({ decision }) {
+  if (!decision) return null;
+  if (decision.type === "pass") return <Badge>Pass</Badge>;
+  if (decision.type === "pick") return <Badge gold>Picks it up</Badge>;
+  if (decision.type === "bury") return <Badge gold>Buries</Badge>;
+  return null;
+}
+
 export function RoleBadges({ g, seat }) {
   if (g.picker === seat) {
     return (
@@ -127,7 +138,7 @@ export function RoleBadges({ g, seat }) {
   return null;
 }
 
-function SeatAvatar({ g, seat, names, extra }) {
+function SeatAvatar({ g, seat, names, extra, decision }) {
   const active =
     (g.phase === "playing" && g.turn === seat) ||
     (g.phase === "picking" && g.pickTurn === seat);
@@ -166,7 +177,10 @@ function SeatAvatar({ g, seat, names, extra }) {
           {" · "}{g.trickCounts[seat]} {g.trickCounts[seat] === 1 ? "trick" : "tricks"}
         </span>
       </div>
-      <RoleBadges g={g} seat={seat} />
+      {/* While the opening is being narrated the decision replaces the role
+          badges: showing PICKER before you have watched them pick gives away
+          the beat this is trying to create. */}
+      {decision ? <DecisionBadge decision={decision} /> : <RoleBadges g={g} seat={seat} />}
       {/* Somewhere for a table to hang presence, idle counters and the like
           without this file having to know what any of that means. */}
       {extra}
@@ -184,7 +198,14 @@ function SeatAvatar({ g, seat, names, extra }) {
  * @param {Function} seatExtra  optional (seat) => node, rendered under a seat
  * @param {Function} onSeatClick optional (seat) => void
  */
-export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick }) {
+/**
+ * @param {object[]} decisions  optional; the opening beats revealed so far, so
+ *                              a table can show the hand starting rather than
+ *                              painting it already underway. Solo passes none —
+ *                              it drives its own AI on timers and has always
+ *                              shown this naturally.
+ */
+export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }) {
   return (
     <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
       {names.map((_, seat) => {
@@ -201,7 +222,15 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick }) {
               WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
             }}
           >
-            <SeatAvatar g={g} seat={seat} names={names} extra={seatExtra?.(seat)} />
+            <SeatAvatar
+              g={g}
+              seat={seat}
+              names={names}
+              extra={seatExtra?.(seat)}
+              // The picker gets two beats — picks, then buries — so the
+              // LATEST one wins, or the badge would freeze on "Picks it up".
+              decision={decisions?.filter((d) => d.seat === seat).pop()}
+            />
           </div>
         );
       })}

@@ -21,9 +21,10 @@
     "fantest": "node scripts/fantest.mjs",
     "scoringtest": "node scripts/scoringtest.mjs",
     "flagtest": "node scripts/flagtest.mjs",
-    "test": "npm run lint && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest && npm run statustest",
+    "test": "npm run lint && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest && npm run statustest && npm run narrationtest",
     "lint": "eslint src api scripts",
-    "statustest": "node scripts/statustest.mjs"
+    "statustest": "node scripts/statustest.mjs",
+    "narrationtest": "node scripts/narrationtest.mjs"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",

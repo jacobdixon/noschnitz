@@ -271,7 +271,14 @@ if (!hand) {
   // Measured at 3,565ms on beta before this was fixed.
   const g = hand.final;
   const seq = buildPlaySequence(g);
-  const mine = { card: { rank: "A", suit: "S" }, player: 0 };
+  // A card that is provably NOT in this hand's sequence. Hardcoding A♠ made
+  // this flaky: the fixture is a random deal, so sometimes the ace was already
+  // in the very trick being checked, the stand-in was correctly deduped, and
+  // the count assertion failed for the right reason.
+  const inPlay = new Set(seq.map((p) => p.card.rank + p.card.suit));
+  const spare = ["AS", "AH", "AC", "KS", "KH", "KC", "10S", "10H"].find((id) => !inPlay.has(id));
+  const mine = { card: { rank: spare.slice(0, -1), suit: spare.slice(-1) }, player: 0 };
+  check("found a card outside this deal to stand in with", Boolean(spare));
 
   // A completed trick that has been swept: cards gone, `cleared` set.
   const firstTrick = seq.filter((p) => p.trickIndex === 0).length;
@@ -282,14 +289,14 @@ if (!hand) {
 
   const led = displayState(g, swept, mine, true);
   check("a card led into a just-swept felt shows immediately",
-    led.trick.some((p) => p.card.rank === "A" && p.card.suit === "S"),
+    led.trick.some((p) => p.card.rank + p.card.suit === spare),
     `trick drew ${JSON.stringify(led.trick.map((p) => p.card.rank + p.card.suit))}`);
 
   // Mid-trick it must still show, alongside what is already down.
   const mid = frameAt(seq, firstTrick + 2);
   const joined = displayState(g, mid, mine, true);
   check("a card played into a trick in progress shows immediately",
-    joined.trick.some((p) => p.card.rank === "A" && p.card.suit === "S"));
+    joined.trick.some((p) => p.card.rank + p.card.suit === spare));
   check("...without dropping the cards already on the felt",
     joined.trick.length === mid.cards.length + 1);
 
