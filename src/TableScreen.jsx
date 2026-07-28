@@ -647,15 +647,21 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           </button>
         }
         status={
-          // Kept mounted and merely faded, so a dropped connection can never
-          // reflow the header — a header that changes height mid-hand shifts
-          // the felt, and the cards, under it.
-          <span style={{
-            flexShrink: 0, fontSize: 11, color: felt.creamDim, whiteSpace: "nowrap",
-            opacity: connected ? 0 : 1, transition: "opacity .3s",
-          }}>
-            reconnecting…
-          </span>
+          // A dot, not the word. Kept mounted and merely faded so a dropped
+          // connection can never reflow the header — but "reconnecting…" is
+          // 77px, and with the title now spelling out the game's name that was
+          // enough to ellipsise it to "Sheepshead — No ...". The dot costs ten
+          // pixels and says the same thing to anyone who notices it; the word
+          // survives as the tooltip and the accessible name.
+          <span
+            title={connected ? "Connected" : "Reconnecting…"}
+            aria-label={connected ? "Connected" : "Reconnecting"}
+            role="status"
+            style={{
+              flexShrink: 0, width: 8, height: 8, borderRadius: "50%",
+              background: felt.red, opacity: connected ? 0 : 1, transition: "opacity .3s",
+            }}
+          />
         }
         menuItems={[
           { label: "Invite others", onSelect: () => setModal("invite") },
