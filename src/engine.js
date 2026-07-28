@@ -743,6 +743,36 @@ export function freshHand(dealer, scores, handNum, doubler = 1) {
   };
 }
 
+/**
+ * What the picker may call, as DATA rather than a bare list of suits.
+ *
+ * The rule itself is old: you may call the ace of a fail suit you hold at least
+ * one card of and do not hold the ace of (buried counts as held — burying the
+ * ace you were going to call is not a loophole). It existed in three places —
+ * the solo screen, the table screen, and nowhere authoritative — which is the
+ * shape every drift in this project has taken.
+ *
+ * Each option is an object, not a suit string, because the next rules to land
+ * are calling a TEN (when the picker holds every callable ace) and calling
+ * UNDER. Those are different calls of the same suit, so a suit alone cannot
+ * describe them, and a UI that renders a list of suits has to be rewritten to
+ * show them. A UI that renders a list of options does not.
+ *
+ * @returns {{kind: "ace", suit: string}[]}
+ */
+export function callOptions(hand, buried = []) {
+  const fails = { C: [], S: [], H: [] };
+  hand.filter((c) => !isTrump(c)).forEach((c) => fails[c.suit]?.push(c));
+
+  const holdsTheAce = (su) =>
+    fails[su].some((c) => c.rank === "A") ||
+    buried.some((c) => c.suit === su && c.rank === "A" && !isTrump(c));
+
+  return ["C", "S", "H"]
+    .filter((su) => fails[su].length > 0 && !holdsTheAce(su))
+    .map((suit) => ({ kind: "ace", suit }));
+}
+
 export function assignPartner(g) {
   if (!g.calledSuit) return { ...g, partner: null, alone: true };
   let partner = null;

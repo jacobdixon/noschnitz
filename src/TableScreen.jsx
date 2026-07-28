@@ -19,12 +19,14 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { SUIT_SYM, SUIT_NAME, cid, legalPlays, gradeHandPlays } from "./engine.js";
+import { cid, legalPlays, gradeHandPlays, callOptions } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
 import { displayState } from "./displayState.js";
 import { logStream, readStreamLog, formatStreamLog, clearStreamLog } from "./streamLog.js";
+import { statusLine, progressLine } from "./status.js";
+import { CallButtons } from "./decisions.jsx";
 import { Felt, HandFan, HandLabel } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
 import { TrumpModal, ScoresModal, LastTrickModal, HandEndModal, RecapModal } from "./modals.jsx";
@@ -433,12 +435,19 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite" | "diagnostics"
   const [seatModal, setSeatModal] = useState(null);
   const [showRecap, setShowRecap] = useState(false);
+  // Solo confirms the bury and THEN calls; this screen showed the call buttons
+  // the moment the second card was picked. The server still takes both in one
+  // request — it documents why, and it is right: half a decision stored is a
+  // table nobody can rescue — so this is a local step, not a second round trip.
+  // It also gives the call its own screen, which is where calling a ten and
+  // calling under have to fit.
+  const [callStep, setCallStep] = useState(false);
   const recapCaptureRef = useRef(null);
 
   // Reset between hands. Without this, closing the recap is the only thing
   // that clears it, so a player who left it open would land straight in the
   // recap at the END of the next hand instead of on the summary.
-  useEffect(() => { setShowRecap(false); }, [table?.g?.handNum]);
+  useEffect(() => { setShowRecap(false); setCallStep(false); }, [table?.g?.handNum]);
   const serverNow = useServerNow(table);
   // Only meaningful once every card is down, and it walks the whole hand,
   // so it is not worth computing on each of the ~30 renders before that.
@@ -568,6 +577,15 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // once so the two cannot disagree — and so your own score is held back by
   // the same rule as everyone else's.
   const view = displayState(g, frame, optimistic, caughtUp);
+  // Recomputed here only to draw buttons — api/tables/[id]/bury.js recomputes
+  // it server-side and is the authority, so a tampered client gets a 400.
+  const myCallOptions =
+    g.phase === "bury" && g.picker === mySeat && selected.length === 2
+      ? callOptions(
+          (g.hands[mySeat] || []).filter((c) => !selected.some((x) => cid(x) === cid(c))),
+          selected
+        )
+      : [];
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
@@ -744,7 +762,16 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
             felt. Held blank until the reveal catches up, so it can't announce
             a turn before the cards that caused it have landed. */}
         <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
-          {caughtUp ? statusLine(g, table, mySeat, isMyTurn) : "\u00a0"}
+          {caughtUp
+            ? statusLine({
+                g: callStep ? { ...view, phase: "call" } : view,
+                names: table.seats.map((x) => x.name),
+                mySeat,
+                isMyTurn,
+                selected: selected.length,
+                options: myCallOptions,
+              })
+            : "\u00a0"}
         </div>
       {g.phase === "picking" && g.pickTurn === mySeat && (
         <Actions>
@@ -757,19 +784,43 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         </Actions>
       )}
 
-      {g.phase === "bury" && g.picker === mySeat && (
-        <BuryBar
-          g={g}
-          mySeat={mySeat}
-          selected={selected}
-          busy={busy}
-          onConfirm={(calledSuit) =>
+      {/* Two steps, the way solo does it: confirm the bury, then choose the
+          call. One request either way — the server takes both together and
+          says why. */}
+      {g.phase === "bury" && g.picker === mySeat && !callStep && (
+        <Actions>
+          <button
+            style={{ ...btnGold, opacity: selected.length === 2 ? 1 : 0.45 }}
+            disabled={selected.length !== 2 || busy}
+            onClick={() => setCallStep(true)}
+          >
+            Bury {selected.length}/2
+          </button>
+        </Actions>
+      )}
+
+      {g.phase === "bury" && g.picker === mySeat && callStep && (
+        <CallButtons
+          options={myCallOptions}
+          disabled={busy}
+          onCall={(opt) =>
             act(async () => {
-              await api.bury(tableId, playerId, selected, calledSuit);
+              await api.bury(tableId, playerId, selected, opt ? opt.suit : null);
               setSelected([]);
+              setCallStep(false);
             })
           }
         />
+      )}
+
+      {/* Where you are in the hand and how you're doing — solo has always had
+          this and the table never did, so six tricks went by with no sense of
+          progress. Reads from the drawn state, so it cannot count a trick the
+          player has not been shown. */}
+      {progressLine({ g: view, mySeat }) && caughtUp && (
+        <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 4, textAlign: "center" }}>
+          {progressLine({ g: view, mySeat })}
+        </div>
       )}
 
       {/* The deal button used to live here, and now lives on the hand-end
@@ -806,7 +857,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
 
       {/* Your hand. HandFan sizes itself from the viewport now, so the fan
           arithmetic that used to live here is gone with it. */}
-      <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px 12px" }}>
+      {/* calc() for the home indicator, which solo has always accounted for and
+          this screen did not — on a notched phone the bottom row of cards sat
+          under it. */}
+      <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px calc(12px + env(safe-area-inset-bottom))" }}>
         <HandFan
           cards={myHand}
           isSelected={(c) => selected.some((x) => cid(x) === cid(c))}
@@ -905,20 +959,6 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   );
 }
 
-function statusLine(g, table, mySeat, isMyTurn) {
-  if (g.phase === "handEnd") {
-    return g.result ? `${g.result.pickerWins ? "Pickers win" : "Defenders win"}${g.result.label ? ` — ${g.result.label}` : ""}` : "Hand over.";
-  }
-  if (g.phase === "picking") {
-    return g.pickTurn === mySeat ? "Pick or pass?" : `${table.seats[g.pickTurn].name} is deciding…`;
-  }
-  if (g.phase === "bury") {
-    return g.picker === mySeat ? "Bury two, then call an ace." : `${table.seats[g.picker].name} is burying…`;
-  }
-  if (isMyTurn) return "Your play.";
-  return `${table.seats[g.turn]?.name || "Someone"}'s play…`;
-}
-
 // Solo's button row carries no padding of its own — the block around it
 // already supplies 7px/12px and reserves 84px. The 10px/12px this used to add
 // pushed the content past that floor, so the block grew to 103px and the felt,
@@ -944,49 +984,5 @@ function Centered({ children }) {
   );
 }
 
-// Bury two, then choose which ace to call. The callable set is recomputed here
-// purely to render buttons — api/tables/[id]/bury.js recomputes it server-side
-// and is the actual authority, so a tampered client just gets a 400.
-function BuryBar({ g, mySeat, selected, busy, onConfirm }) {
-  const hand = g.hands[mySeat] || [];
-  const remaining = hand.filter((c) => !selected.some((s) => cid(s) === cid(c)));
-  const ready = selected.length === 2;
-
-  const opts = ready ? callable(remaining, selected) : [];
-
-  return (
-    <div style={{ padding: "10px 12px", textAlign: "center" }}>
-      {!ready ? (
-        <div style={{ color: felt.creamDim, fontSize: 14 }}>
-          Select {2 - selected.length} more card{selected.length === 1 ? "" : "s"} to bury.
-        </div>
-      ) : opts.length === 0 ? (
-        <button style={btnGold} disabled={busy} onClick={() => onConfirm(null)}>
-          Go alone
-        </button>
-      ) : (
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-          {opts.map((su) => (
-            <button key={su} style={btnGold} disabled={busy} onClick={() => onConfirm(su)}>
-              Call {SUIT_SYM[su]} {SUIT_NAME[su]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Mirrors api/tables/[id]/bury.js — a fail suit you hold, whose ace you neither
 // hold nor just buried.
-function callable(hand, buried) {
-  const isTrumpCard = (c) => c.rank === "Q" || c.rank === "J" || c.suit === "D";
-  const fails = { C: [], S: [], H: [] };
-  hand.filter((c) => !isTrumpCard(c)).forEach((c) => fails[c.suit]?.push(c));
-  return ["C", "S", "H"].filter(
-    (su) =>
-      fails[su].length > 0 &&
-      !fails[su].some((c) => c.rank === "A") &&
-      !buried.some((c) => c.suit === su && c.rank === "A" && !isTrumpCard(c))
-  );
-}

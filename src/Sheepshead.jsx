@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  SUIT_SYM, SUIT_NAME, NAMES, isTrump, cid, sortHand, trickWinner, handStrength,
-  aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay,
+  NAMES, cid, sortHand, handStrength,
+  aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay, callOptions,
   resolveTrick, gradeHandPlays,
 } from "./engine.js";
 
@@ -11,6 +11,8 @@ import { TableHeader } from "./header.jsx";
 import { HandEndModal, RecapModal, ScoresModal, LastTrickModal, TrumpModal } from "./modals.jsx";
 import { HOUSE_RULES } from "./rules.js";
 import { shareRecap } from "./shareRecap.js";
+import { statusLine, progressLine } from "./status.js";
+import { CallButtons } from "./decisions.jsx";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -98,15 +100,10 @@ export default function Sheepshead({ onPlayWithFriends }) {
       if (s.selected.length !== 2) return s;
       const hand = s.hands[0].filter((c) => !s.selected.some((x) => cid(x) === cid(c)));
       const hands = s.hands.map((h, i) => (i === 0 ? hand : h));
-      const failsBy = { C: [], S: [], H: [] };
-      hand.filter((c) => !isTrump(c)).forEach((c) => failsBy[c.suit].push(c));
-      const opts = ["C", "S", "H"].filter(
-        (su) =>
-          failsBy[su].length > 0 &&
-          !failsBy[su].some((c) => c.rank === "A") &&
-          !s.selected.some((c) => c.suit === su && c.rank === "A")
-      );
-      return { ...s, hands, buried: s.selected, selected: [], phase: "call", callOptions: opts, message: opts.length ? "Call an ace — your partner holds it." : "No callable suit. You're going alone." };
+      // The rule lives in the engine now — it was written out here and again
+      // on the table screen, which is two places for one rule.
+      const opts = callOptions(hand, s.selected);
+      return { ...s, hands, buried: s.selected, selected: [], phase: "call", callOptions: opts };
     });
   };
 
@@ -140,9 +137,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
     () => (g.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
     [g.phase, g.handNum]
   );
-  // Seat 0 is "You", so anything that reads back a seat name needs the
-  // second person or it comes out as "You takes the trick".
-  const takesTheTrick = (i) => (i === 0 ? "You take the trick" : `${NAMES[i]} takes the trick`);
 
   // A lone picker is one person, so "Pickers win" is wrong on exactly the hands
   // where the win is most impressive.
@@ -151,19 +145,6 @@ export default function Sheepshead({ onPlayWithFriends }) {
   // Poker-style dealer button. Seats 1-4 wear it beside their avatar; seat 0
   // has no avatar on the table, so it sits in the YOUR HAND row instead.
 
-  const statusLine = () => {
-    if (g.phase === "picking") {
-      if (g.passes === 5) return "Everyone passed — redealing…";
-      return g.pickTurn === 0 ? "Blind's yours if you want it." : `${NAMES[g.pickTurn]} is thinking…`;
-    }
-    if (g.phase === "bury") return `Bury two cards (${g.selected.length}/2)`;
-    if (g.phase === "call") return g.message;
-    if (g.phase === "playing") {
-      if (g.trick.length === 5) return takesTheTrick(trickWinner(g.trick));
-      return g.turn === 0 ? "Your play." : `${NAMES[g.turn]}'s play…`;
-    }
-    return "";
-  };
 
   return (
     <div style={{
@@ -202,7 +183,9 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
       {/* Status + actions */}
       <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
-        <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>{statusLine()}</div>
+        <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
+          {statusLine({ g, names: NAMES, mySeat: 0, isMyTurn: g.turn === 0, selected: g.selected.length, options: g.callOptions })}
+        </div>
 
         {g.phase === "picking" && g.pickTurn === 0 && g.passes < 5 && (
           <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -218,21 +201,12 @@ export default function Sheepshead({ onPlayWithFriends }) {
         )}
 
         {g.phase === "call" && (
-          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            {(g.callOptions || []).map((su) => (
-              <button key={su} style={btnGold} onClick={() => callAce(su)}>
-                Call <span style={{ color: su === "H" ? "#7A1E14" : "#1c1a14" }}>{SUIT_SYM[su]}</span> {SUIT_NAME[su]}
-              </button>
-            ))}
-            {(!g.callOptions || g.callOptions.length === 0) && (
-              <button style={btnGold} onClick={() => callAce(null)}>Go alone</button>
-            )}
-          </div>
+          <CallButtons options={g.callOptions} onCall={(opt) => callAce(opt ? opt.suit : null)} />
         )}
 
-        {g.tricksDone > 0 && g.phase === "playing" && (
+        {progressLine({ g, mySeat: 0 }) && (
           <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 4 }}>
-            Trick {g.tricksDone + 1} of 6 · You've taken {g.ptsTaken[0]} pts
+            {progressLine({ g, mySeat: 0 })}
           </div>
         )}
       </div>
