@@ -647,6 +647,41 @@ const trick2 = [
     !isTrump(pick), `played ${cid(pick)}`);
 }
 
+// Cheapest sufficient winner. A defender owns a 25-point trick with A-diamonds
+// and the picker can take it with Q-clubs or Q-hearts. Both higher Queens and
+// every Jack are already on the table, so nothing left to act can beat Q-hearts
+// — it takes the identical 25, and Q-clubs stays in hand for a later trick.
+// "Secure with strength" spent the boss here; reported as a 24-point error,
+// where after burning it the picker led Q-hearts into a live Q-spades.
+{
+  const g = position({
+    hands: [
+      [C("Q", "C"), C("Q", "H"), C("9", "D"), C("8", "D")],
+      [C("K", "C"), C("9", "C"), C("8", "C"), C("K", "H")],
+      [C("K", "S"), C("9", "S"), C("8", "S")],
+      [C("A", "H"), C("10", "H"), C("9", "H")],
+      [C("8", "H"), C("7", "H"), C("7", "D")],
+    ],
+    trick: [
+      { player: 2, card: C("A", "D") },
+      { player: 3, card: C("10", "D") },
+      { player: 4, card: C("K", "D") },
+    ],
+    picker: 0, partner: 3, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 2, leader: 2,
+    played: [C("Q", "S"), C("Q", "D"), C("J", "C"), C("J", "S"), C("J", "H"), C("J", "D"),
+             C("A", "C"), C("10", "C"), C("A", "S"), C("10", "S")],
+  });
+  check("this is a fat trick, so the old rule reached for strength",
+    g.trick.reduce((s, t) => s + (t.card.rank === "A" ? 11 : t.card.rank === "10" ? 10 : t.card.rank === "K" ? 4 : 0), 0) >= 10);
+  check("Q-hearts is provably sufficient — nothing left to act beats it",
+    securityAfterPlay(g, 0, C("Q", "H")) >= 1 - 1e-9,
+    `security=${securityAfterPlay(g, 0, C("Q", "H")).toFixed(3)}`);
+  const pick = aiChooseCard(g, 0);
+  check("wins with the cheapest sufficient card, not the boss trump",
+    cid(pick) === "QH", `played ${cid(pick)}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

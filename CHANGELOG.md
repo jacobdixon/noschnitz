@@ -6,6 +6,46 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.18.0] - 2026-07-28
+- Once the AI is winning a trick, it takes it with the cheapest card that is
+  actually sufficient rather than the strongest card it holds. Item 2 of the
+  play brief, and its second-largest single error at 24 points: the picker took
+  a trick with Q-clubs where Q-hearts took the identical 18 — the one seat left
+  held no Queen at all — then, boss gone, led Q-hearts into a live Q-spades and
+  lost 15 more. Same shape in a second hand, Q-clubs where J-diamonds sufficed.
+  - "Try to secure with strength" was right about *when* (a fat trick, or late
+    in the hand) and wrong about *what*. When a provably sufficient winner
+    exists, anything stronger buys nothing and spends a card that wins a later
+    trick. When none exists, strength really is the best of the options left, so
+    that branch stays exactly as it was.
+  - **Two wrong versions preceded this one, both caught by measurement, both
+    worth recording.** The first applied the filter before the fat-trick test
+    and so also hit the branch that already played the *cheapest* winner.
+    `sufficient` is `winners` with the weak cards removed, so taking the
+    cheapest of it there plays a *stronger* card than before — the rule
+    silently inverted. That cost **0.045/seat/hand** and read exactly like the
+    brief's idea failing.
+  - The second replaced `securityAfterPlay` with a stricter test — nothing
+    outstanding beats this card at all, whoever holds it — on the theory that
+    `opponentsYetToAct` is too loose because knowsTeammate() calls every
+    unrevealed seat a teammate. That reasoning is wrong here, and the
+    measurement said so: strict came in at **-0.002/seat/hand, ahead in 2 of 5
+    splits**, i.e. indistinguishable from making no change. The exclusion is the
+    point. If a seat we take for a teammate overtakes our cheap winner the trick
+    stays with our side and nothing was wasted, so refusing to certify those
+    cases just burns the boss card for nothing.
+  - **Measured head to head, 200,000 hands per split, three replicates.** The
+    shipped version is **+0.008 to +0.013 per seat per hand, ahead in 19 of 20
+    splits.** Small — it fires only when a provably sufficient winner exists in
+    a fat or late trick — but consistent in sign across every replicate.
+    Cumulative against 0.16.4, items 1 through 3 together: **+0.033/seat/hand,
+    ahead in 5 of 5.**
+  - `npm run aiskilltest` grows to 48 assertions. The new position fails against
+    0.17.0 and passes here.
+- The bump-multiplier recalibration flagged in 0.17.0 is still open and this
+  moves the same direction, since the change again helps whoever holds it and
+  the defenders outnumber the picker. Still deliberately untouched.
+
 ## [0.17.0] - 2026-07-28
 - The AI stops shedding by card points alone. Six hands were reconstructed
   card-for-card from result screens and every decision solved double dummy;

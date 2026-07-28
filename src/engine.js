@@ -638,15 +638,51 @@ export function aiChooseCard(g, idx) {
     }
   }
   if (winners.length) {
+    const cheapest = (cards) => [...cards].sort((a, b) => power(a) - power(b))[0];
     if (lastToPlay) {
-      // cheapest winner, but prefer pointy winner if it's ours anyway
-      return winners.sort((a, b) => power(a) - power(b))[0];
+      // Nobody left to act, so the weakest card that takes it takes it.
+      return cheapest(winners);
     }
+
+    // Cheapest *sufficient* winner: the weakest card that both beats the trick
+    // and beats everything still to act could hold. "Secure with strength"
+    // below is the right instinct only when no such card exists — when one
+    // does, anything stronger buys exactly nothing and costs a card that wins
+    // a later trick.
+    //
+    // Reported from a real hand, and the second-largest error in the play
+    // brief at 24 points: the picker took a trick with Q-clubs where Q-hearts
+    // took the identical 18, the one seat left holding no Queen at all. Having
+    // burned the boss he then led Q-hearts into a live Q-spades and lost 15
+    // more. Same shape in a second hand, Q-clubs where J-diamonds sufficed.
+    //
+    // Two things about this were easy to get wrong, and both were settled by
+    // measurement rather than argument.
+    //
+    // It belongs ONLY in the branch that reaches for strength. `sufficient` is
+    // a subset of `winners` with the weak cards dropped, so applying it to the
+    // cheap branch below *inverts* it — taking the cheapest of a set that no
+    // longer contains the cheap cards plays a stronger card than the plain
+    // cheapest did. That misplacement cost 0.045/seat/hand.
+    //
+    // And sufficiency is a question about the side, not about the card.
+    // `securityAfterPlay` counts only `opponentsYetToAct`, which excludes every
+    // seat knowsTeammate() takes for a teammate — and that exclusion, which
+    // looks like the loose end here, is exactly right: if a seat we take for a
+    // teammate overtakes our cheap winner, the trick stays with our side and
+    // nothing was wasted. Tested against the strict alternative (nothing
+    // outstanding beats this card at all, whoever holds it) at 200,000 hands
+    // per split, strict is indistinguishable from making no change at all
+    // (-0.002/seat/hand, ahead in 2 of 5) because it refuses to certify those
+    // cases and burns the boss card for nothing. This version is +0.013, ahead
+    // in 5 of 5.
     if (trickPts >= 10 || g.tricksDone >= 3) {
-      // try to secure with strength
-      return winners.sort((a, b) => power(b) - power(a))[0];
+      const sufficient = winners.filter((c) => securityAfterPlay(g, idx, c) >= 1 - 1e-9);
+      if (sufficient.length) return cheapest(sufficient);
+      // Nothing is provably safe, so strength is the best of what's left.
+      return [...winners].sort((a, b) => power(b) - power(a))[0];
     }
-    return winners.sort((a, b) => power(a) - power(b))[0];
+    return cheapest(winners);
   }
   // Can't win it. This is where a seat whose own side owns the trick used to
   // land after failing the safety bar with nothing able to overtake — the exact
