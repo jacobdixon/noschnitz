@@ -41,7 +41,7 @@ corresponds to the entries below.
     Cumulative against 0.16.4, items 1 through 3 together: **+0.033/seat/hand,
     ahead in 5 of 5.**
   - `npm run aiskilltest` grows to 48 assertions. The new position fails against
-    0.17.0 and passes here.
+    0.17.0 and passes here. (`baa9270`)
 - The bump-multiplier recalibration flagged in 0.17.0 is still open and this
   moves the same direction, since the change again helps whoever holds it and
   the defenders outnumber the picker. Still deliberately untouched.
