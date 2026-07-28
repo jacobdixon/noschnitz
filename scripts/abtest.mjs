@@ -59,9 +59,15 @@ function playHand(start, optsFor) {
     const wants = handStrength(g.hands[idx]) >= 10 || (g.passes === 4 && handStrength(g.hands[idx]) >= 8);
     if (!wants) { g = { ...g, passes: g.passes + 1, pickTurn: (idx + 1) % 5 }; continue; }
     const eight = [...g.hands[idx], ...g.blind];
-    const { buried, call, hand } = aiBuryAndCall(eight);
+    // The whole call, not just the suit. Dropping callKind here modelled a
+    // picker who called under and then played as if they had not — a different
+    // game from the one being measured.
+    const { buried, call, callRank, callKind, underCard, hand } = aiBuryAndCall(eight);
     g = assignPartner({
       ...g, picker: idx, buried, calledSuit: call,
+      calledRank: call === null ? null : callRank,
+      calledUnder: callKind === "under",
+      underCard: underCard ?? null,
       hands: g.hands.map((h, i) => (i === idx ? hand : h)),
       phase: "playing", trick: [], turn: g.leader,
     });

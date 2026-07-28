@@ -161,7 +161,19 @@ export function LastTrickModal({ lastTrick, names, mySeat = 0, onClose }) {
                   }}>
                     {label}
                   </div>
-                  <div style={{ minHeight: 46 }}>{played && <Card card={played.card} small />}</div>
+                  {/* Under: whoever gathered the trick saw the card, so the
+                      server sends them its real face and it shows here. To
+                      everyone else `actual` simply is not in the state — the
+                      card stays a back until the recap, where the hand is over
+                      and everybody sees it labelled. */}
+                  <div style={{ minHeight: 46 }}>
+                    {played && <Card card={played.actual ?? played.card} small faceDown={played.under && !played.actual} />}
+                  </div>
+                  {played?.under && (
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: felt.brass, textTransform: "uppercase" }}>
+                      Under
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -172,7 +184,11 @@ export function LastTrickModal({ lastTrick, names, mySeat = 0, onClose }) {
           </div>
           <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 6, textAlign: "center" }}>
             {nameOf(names, mySeat, lastTrick.winner)} took{" "}
-            {lastTrick.trick.reduce((s, t) => s + cardPts(t.card), 0)} pts
+            {lastTrick.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0)}
+            {/* A hidden under card is worth something we are not showing you,
+                so the honest total is "at least this". Printing the bare number
+                would either be wrong or give the card away. */}
+            {lastTrick.trick.some((t) => t.under && !t.actual) ? "+" : ""} pts
           </div>
         </>
       ) : (
@@ -339,7 +355,10 @@ export function RecapModal({
                   {(g.trickHistory || []).map((th, t) => {
                     const played = th.trick.find((x) => x.player === p);
                     if (!played) return <td key={t} />;
-                    const { card } = played;
+                    // The recap is after the hand, so `actual` is present for
+                    // everyone: the under card is shown as what it really was,
+                    // marked so the row still reads as the 6 it played as.
+                    const card = played.actual ?? played.card;
                     const isLeader = th.trick[0].player === p;
                     const isWinner = th.winner === p;
                     const isBest = best && best.trick === t && best.player === p;
@@ -356,6 +375,11 @@ export function RecapModal({
                           borderBottom: isLeader ? `2px solid ${felt.brass}` : "2px solid transparent",
                         }}>
                           {card.rank}{SUIT_SYM[card.suit]}
+                          {played.under && (
+                            <span style={{ color: felt.brass, fontWeight: 800, fontSize: 9, marginLeft: 2, letterSpacing: 0.3 }}>
+                              U
+                            </span>
+                          )}
                           {isBest && <span style={{ color: "#4FAE64", fontWeight: 900, marginLeft: 2 }}>!</span>}
                           {isWorst && <span style={{ color: felt.red, fontWeight: 900, marginLeft: 2 }}>?</span>}
                         </span>
@@ -370,6 +394,9 @@ export function RecapModal({
 
         <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
           <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
+          {(g.trickHistory || []).some((th) => th.trick.some((x) => x.under)) && (
+            <> · <span style={{ color: felt.brass, fontWeight: 800 }}>U</span> = played under</>
+          )}
           {(best || worst) && (
             <>
               <br />

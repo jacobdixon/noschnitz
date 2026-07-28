@@ -18,7 +18,7 @@
 
    Usage: node scripts/calltest.mjs
    ========================================================================= */
-import { callOptions, assignPartner, legalPlays, applyPlay, cid, isTrump } from "../src/engine.js";
+import { callOptions, assignPartner, legalPlays, applyPlay, cid, isTrump, trickWinner, cardPts } from "../src/engine.js";
 
 let passed = 0;
 const failures = [];
@@ -45,19 +45,26 @@ const show = (o) => o.map((x) => `${x.kind}:${x.rank}${x.suit}`).join(" ");
 
 /* ----------------------------------- under -------------------------------- */
 {
-  // DISABLED pending the real mechanic. Under is not "call a suit you are void
-  // in" — it is designating a card to stand in for that suit — and the version
-  // that shipped let the picker trump their own called suit, which is strictly
-  // better than playing it straight. These assert it stays off rather than
-  // silently coming back in the broken shape.
+  // Void in spades and hearts, holding the club ace: there is no fail card to
+  // call with, so the two suits you are void in become under calls.
   const voidHand = callOptions(H(["AC", "9C", "QC", "QS", "JD", "AD"]));
-  check("under is not offered while unbuilt", voidHand.length === 0, show(voidHand));
+  check("void suits become under calls", voidHand.length === 2, show(voidHand));
+  check("...and only the suits you are actually void in",
+    voidHand.every((x) => x.kind === "under") &&
+    voidHand.map((x) => x.suit).sort().join("") === "HS", show(voidHand));
 
   const trumpOnly = callOptions(H(["QC", "QS", "QH", "QD", "JC", "JS"]));
-  check("a hand of pure trump goes alone for now", trumpOnly.length === 0, show(trumpOnly));
+  check("pure trump can call any of the three under", trumpOnly.length === 3, show(trumpOnly));
 
-  check("no option anywhere is marked under",
-    [voidHand, trumpOnly].every((o) => !o.some((x) => x.kind === "under")));
+  // The loophole, and the reason eligibility counts all eight cards: measured
+  // against the six you kept, burying your last club manufactures a club-under.
+  const dumped = callOptions(H(["AC", "9C", "QC", "QS", "JD", "AD"]), H(["7S", "8S"]));
+  check("burying your last spade does not manufacture an under",
+    !dumped.some((x) => x.suit === "S"), show(dumped));
+
+  // A suit whose ace is in your own hand is never callable, under included.
+  check("you cannot call under in a suit you hold the ace of",
+    !voidHand.some((x) => x.suit === "C"), show(voidHand));
 }
 
 /* ------------------------------------ ten --------------------------------- */
@@ -78,10 +85,10 @@ const show = (o) => o.map((x) => `${x.kind}:${x.rank}${x.suit}`).join(" ");
   const o = callOptions(H(["AC", "AS", "AH", "10C", "10S", "10H"]));
   check("all aces and all tens leaves you alone", o.length === 0, show(o));
 
-  // Pure trump has no fail card to keep, so it is exactly the shape that will
-  // call under once that is built. For now it goes alone.
-  const trumpOnly = callOptions(H(["QC", "QS", "QH", "QD", "JC", "JS"]));
-  check("a hand of pure trump goes alone for now", trumpOnly.length === 0, show(trumpOnly));
+  // Every ace and every ten, so nothing names a partner and under has no suit
+  // left to call either — this is the only real "alone".
+  const noUnder = callOptions(H(["AC", "AS", "AH", "10C", "10S", "10H"]));
+  check("holding every ace leaves no suit to call under", noUnder.length === 0, show(noUnder));
 }
 
 /* ----------------------- the called card names the partner ---------------- */
@@ -134,18 +141,41 @@ const show = (o) => o.map((x) => `${x.kind}:${x.rank}${x.suit}`).join(" ");
 
 /* ------------------------- under: the picker is void ---------------------- */
 {
-  // Called hearts under; picker holds no hearts, so when hearts are led the
-  // picker simply cannot follow and nothing forces them to.
+  // Called hearts under, designating Q♣ — the top trump in the deck. Holding no
+  // hearts is exactly why the card was designated; it now IS the picker's
+  // hearts, and hearts led drags it out.
+  //
+  // This is the bug that reached real play, inverted: the shipped version let
+  // the picker trump their own called suit, which is strictly better than
+  // playing the hand straight and made the call free.
   const g = {
     picker: 0, partner: 3, calledSuit: "H", calledRank: "A", calledUnder: true,
+    underCard: C("QC"),
     partnerRevealed: false, calledAcePlayed: false, calledSuitLed: false, tricksDone: 0,
     trick: [{ player: 1, card: C("9H") }],
     hands: [H(["QC", "JD", "KS"]), H(["8H"]), H(["7C"]), H(["AH"]), H(["9C"])],
   };
   const legal = legalPlays(g, 0);
-  check("a picker who called under can play anything when the suit is led",
-    legal.length === 3, legal.map(cid).join(" "));
-  check("...including trump", legal.some(isTrump));
+  check("hearts led forces the under card out", legal.length === 1, legal.map(cid).join(" "));
+  check("...and it is the designated card", cid(legal[0]) === "QC", legal.map(cid).join(" "));
+
+  const after = applyPlay(g, 0, C("QC"));
+  const entry = after.trick.find((t) => t.under);
+  check("it lands as the 6 of the called suit",
+    entry.card.rank === "6" && entry.card.suit === "H", JSON.stringify(entry.card));
+  check("the real card travels alongside it", cid(entry.actual) === "QC");
+  check("the highest trump in the deck cannot win the trick",
+    trickWinner(after.trick) === 1, `winner ${trickWinner(after.trick)}`);
+  check("but it still scores its own three points",
+    after.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0) === 3);
+
+  // Playing the under card is not playing the called ace: no partner reveal.
+  check("playing under does not reveal a partner", after.partnerRevealed === false);
+
+  // Once it is gone the picker is void for real and may trump freely.
+  const gone = { ...g, underCard: C("QC"), hands: g.hands.map((h, i) => (i === 0 ? H(["JD", "KS"]) : h)) };
+  check("with the under card spent, the picker may trump hearts",
+    legalPlays(gone, 0).length === 2, legalPlays(gone, 0).map(cid).join(" "));
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
@@ -154,4 +184,4 @@ if (failures.length) {
   failures.forEach((f) => console.error(`  ${f}`));
   process.exit(1);
 }
-console.log("PASS — ace and ten name a partner correctly; under stays off until built.");
+console.log("PASS — ace, ten and under name a partner correctly; the under card plays as a 6.");

@@ -207,8 +207,12 @@ function advanceChecked(t, now, ctx) {
     note("logLen", `${ctx}: ${newPlays.length} plays, log tail ${tail.length}`);
   }
   for (let i = 0; i < tail.length && i < newPlays.length; i++) {
-    if (tail[i].seat !== newPlays[i].player || cid(tail[i].card) !== cid(newPlays[i].card)) {
-      note("logMatch", `${ctx}: log ${tail[i].seat}/${cid(tail[i].card)} vs play ${newPlays[i].player}/${cid(newPlays[i].card)}`);
+    // A card played under sits on the trick as the 6 of the called suit, with
+    // the card actually chosen alongside it. The log records what the AI
+    // decided to play, so compare against that — not against the stand-in.
+    const laid = newPlays[i].actual ?? newPlays[i].card;
+    if (tail[i].seat !== newPlays[i].player || cid(tail[i].card) !== cid(laid)) {
+      note("logMatch", `${ctx}: log ${tail[i].seat}/${cid(tail[i].card)} vs play ${newPlays[i].player}/${cid(laid)}`);
     }
   }
   for (let i = 1; i < log.length; i++) {

@@ -249,7 +249,11 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }
 
       {g.trick.map((t) => (
         <div key={cid(t.card)} style={{ position: "absolute", ...TRICK_POS[rotate(t.player, mySeat)], zIndex: 2 }}>
-          <Card card={t.card} small />
+          {/* A card played under goes down face down, for everyone — including
+              the picker, who knows perfectly well what it is. That it was
+              played under is public; which card it was is not, until the trick
+              is gathered. */}
+          <Card card={t.card} small faceDown={t.under} />
         </div>
       ))}
 

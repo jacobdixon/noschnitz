@@ -95,6 +95,14 @@ export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, optio
       : `${name(g.picker)} is burying…`;
   }
 
+  // The picker has called under and now has to name the card that stands in
+  // for the suit. Everyone else is watching them think.
+  if (g.phase === "under") {
+    return g.picker === mySeat
+      ? `Choose the card to play under — it stands in for ${SUIT_NAME[g.calledSuit]}.`
+      : `${name(g.picker)} is going under…`;
+  }
+
   if (g.phase === "call") {
     return g.picker === mySeat ? callPrompt(options) : `${name(g.picker)} is calling…`;
   }
