@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.19.0] - 2026-07-28
+## [0.19.0] - 2026-07-28 (`3bcb4a3`)
 - **The AI now always takes a trick with the cheapest card that wins it.** The
   "secure with strength" rule — reach for the strongest winner when the trick is
   fat (10+ points) or late (trick 4+) — is deleted outright rather than refined.
