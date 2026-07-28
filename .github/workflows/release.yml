@@ -81,6 +81,69 @@ jobs:
             *)  echo "::error::deploy hook rejected the request (HTTP $code)"; exit 1 ;;
           esac
 
+      # Production is deployed by Vercel's own git integration, which is outside
+      # this workflow and can silently not run: both master merges on
+      # 2026-07-28 were rejected with "Deployment rate limited — retry in 24
+      # hours" and there is no automatic retry, so www.noschnitz.com sat on
+      # v0.23.0 while master was on v0.24.0. Worse, the commit status went green
+      # anyway — that success was the *beta* build, which Vercel attributes to
+      # the same commit because beta points at it. A green check on master
+      # therefore does not mean production shipped.
+      #
+      # So verify by content, the only thing that can't lie: does the bundle
+      # production is actually serving contain this commit's version string?
+      # Fire the production hook only if it does not, which keeps the normal
+      # case at one deployment rather than two — the Hobby plan allows 100 a
+      # day and each merge already costs one for beta.
+      - name: Make sure production actually deployed
+        env:
+          HOOK: ${{ secrets.VERCEL_PROD_DEPLOY_HOOK }}
+        run: |
+          set -uo pipefail
+          want="$(node -p "require('./package.json').version")"
+          echo "master is v$want — checking what www.noschnitz.com serves"
+
+          serving_want() {
+            local html asset
+            html="$(curl -sL --max-time 20 https://www.noschnitz.com/ || true)"
+            asset="$(printf '%s' "$html" | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)"
+            [ -n "$asset" ] || return 1
+            curl -sL --max-time 20 "https://www.noschnitz.com$asset" | grep -q "$want"
+          }
+
+          for i in 1 2 3 4 5 6; do
+            if serving_want; then
+              echo "production is serving v$want"
+              exit 0
+            fi
+            echo "  attempt $i: not yet"
+            sleep 20
+          done
+
+          echo "production is still stale after two minutes — Vercel's git integration did not build this commit"
+          if [ -z "${HOOK:-}" ]; then
+            echo "::error::production is NOT serving v$want and VERCEL_PROD_DEPLOY_HOOK is not set, so this workflow cannot fix it. Add the secret, or redeploy master from the Vercel dashboard."
+            exit 1
+          fi
+
+          code="$(curl -sS -X POST -o /dev/null -w '%{http_code}' "$HOOK")"
+          echo "production deploy hook responded $code"
+          case "$code" in
+            2*) ;;
+            *)  echo "::error::production deploy hook rejected the request (HTTP $code)"; exit 1 ;;
+          esac
+
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 20
+            if serving_want; then
+              echo "production is serving v$want"
+              exit 0
+            fi
+            echo "  post-hook attempt $i: not yet"
+          done
+          echo "::error::production still is not serving v$want after the deploy hook. Check the Vercel dashboard."
+          exit 1
+
       - name: Summary
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
@@ -89,7 +152,7 @@ jobs:
             echo "### beta updated"
             echo ""
             echo "- commit \`$SHA\`"
-            echo "- production builds from master via Vercel's own git integration"
+            echo "- production verified by bundle content, not by the commit status"
             echo "- beta build requested via deploy hook"
             echo ""
             echo "Verify once Vercel finishes:"
