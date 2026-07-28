@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.18.0",
+  "version": "0.21.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,8 @@
     "e2etest": "node scripts/e2etest.mjs",
     "pacingtest": "node scripts/pacingtest.mjs",
     "aiskilltest": "node scripts/aiskilltest.mjs",
+    "abtest": "node scripts/abtest.mjs",
+    "gradetest": "node scripts/gradetest.mjs",
     "fantest": "node scripts/fantest.mjs",
     "scoringtest": "node scripts/scoringtest.mjs",
     "flagtest": "node scripts/flagtest.mjs",

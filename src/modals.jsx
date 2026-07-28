@@ -370,9 +370,24 @@ export function RecapModal({
 
         <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
           <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
-          <br />
-          <span style={{ color: "#4FAE64", fontWeight: 900 }}>!</span> best play ·{" "}
-          <span style={{ color: felt.red, fontWeight: 900 }}>?</span> worst play
+          {(best || worst) && (
+            <>
+              <br />
+              {best && (
+                <>
+                  <span style={{ color: "#4FAE64", fontWeight: 900 }}>!</span> best play
+                </>
+              )}
+              {best && worst && " · "}
+              {worst && (
+                <>
+                  <span style={{ color: felt.red, fontWeight: 900 }}>?</span> worst play
+                </>
+              )}
+              <br />
+              <span style={{ opacity: 0.75 }}>graded from trick 3 on</span>
+            </>
+          )}
         </div>
       </div>
 
