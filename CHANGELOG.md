@@ -27,7 +27,7 @@ corresponds to the entries below.
   require sign agreement then replicate, and write down what was rejected. It
   also gains a staleness warning: its multiplayer and branch sections still claim
   the app has no backend and that `master` is frozen at v0.7.3, both long false.
-  The AI sections are current; that half is not.
+  The AI sections are current; that half is not. (`d7986be`)
 
 ## [0.20.0] - 2026-07-28
 - The picking side leads trump whenever it holds any. The old rule gated that
