@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.21.0] - 2026-07-28
+## [0.21.0] - 2026-07-28 (`abb0449`)
 - **The recap's best/worst play grading is now exact, and no longer invents
   mistakes.** Grading previously rolled the hand forward with `aiChooseCard`
   driving all five seats and compared the totals, which measures the wrong
