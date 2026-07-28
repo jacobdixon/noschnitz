@@ -691,6 +691,35 @@ export function aiChooseCard(g, idx, opts = {}) {
       const affordable = winners.filter(
         (c) => securityAfterPlay(g, idx, c) - asIs >= overtakeGate * priceOf(c) - 1e-9,
       );
+
+      // FORCING. The gate above asks only "does this make the trick mine?" —
+      // and when the trick is already certainly gone the answer is no, so a
+      // trump that would make the winner PAY for it never gets played.
+      //
+      // Reported from a real hand: the trick was 100% lost, a defender held
+      // J-spades, and the picker took it with 9-diamonds — her weakest trump.
+      // Trumping in would have forced a Queen out of her and left the 9 to be
+      // beaten later. Double-dummy that is worth 8 points, and it is the
+      // conventional play.
+      //
+      // MEASURED AND NOT SHIPPED, default off. The concept is real and the
+      // gap it names is real — the gate above asks only whether the trick
+      // becomes ours, never what it costs them. But as a general rule it does
+      // not pay: +0.0006/seat/hand ahead in 3 of 3 seeds at 5,000 hands, which
+      // decayed to +0.0001 ahead in 3 of 5 at 9,000 x 5. It changes the play in
+      // 0.31% of decisions and 4.1% of hands, so the average is diluted about
+      // twenty-five fold — and inside those hands the trump spent forcing is
+      // roughly worth the trick it would have won later.
+      //
+      // Left switchable because the hand that prompted it is genuinely misplayed
+      // and a sharper trigger might pay where this blunt one does not.
+      if (!affordable.length && opts.forceWhenLost && asIs <= 1e-9 && winners.length) {
+        const cheapest = [...winners].sort((a, b) => power(a) - power(b))[0];
+        // Only when it actually costs them something: forcing with a card the
+        // winner can beat with what they already played is just a donation.
+        if (securityAfterPlay(g, idx, cheapest) > asIs) return cheapest;
+      }
+
       if (!affordable.length) return shedCard(g, idx, legal, ourTrick, opts);
       // Cheapest overtake that pays for itself, not the strongest one available.
       return affordable.sort((a, b) => power(a) - power(b))[0];
