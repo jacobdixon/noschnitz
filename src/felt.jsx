@@ -306,9 +306,39 @@ function useRowWidth(ref) {
   return w;
 }
 
-export function HandFan({ cards, isSelected, isDim, onCardClick }) {
+// How the deal reads. Long enough to see each card land, short enough that a
+// player who just wants to play isn't waiting on choreography — six cards is
+// 6*90 + 260, a little under 0.8s.
+const DEAL_STAGGER_MS = 90;
+const DEAL_FLIGHT_MS = 260;
+
+export function HandFan({ cards, isSelected, isDim, onCardClick, dealKey }) {
   const rowRef = useRef(null);
   const rowWidth = useRowWidth(rowRef);
+
+  // Animate on a NEW HAND, never on a card leaving during play. Keyed on the
+  // hand rather than on the cards, because the cards change every trick and
+  // re-dealing the fan each time you played would be absurd. Solo and a table
+  // both pass their hand number.
+  const [dealing, setDealing] = useState(false);
+  // Starts undefined rather than at the current key so the FIRST hand deals in
+  // too. Seeding it with dealKey meant the very first thing you saw on opening
+  // the game was a hand already fanned out, which is the same flaw as the one
+  // this fixes — just at the other end.
+  const dealtKey = useRef(undefined);
+  useEffect(() => {
+    if (dealKey === undefined || dealKey === dealtKey.current) return;
+    dealtKey.current = dealKey;
+    setDealing(true);
+    const t = setTimeout(
+      () => setDealing(false),
+      DEAL_STAGGER_MS * Math.max(cards.length, 1) + DEAL_FLIGHT_MS
+    );
+    return () => clearTimeout(t);
+    // Deliberately keyed on dealKey alone. cards.length is read for the
+    // timeout only — adding it would restart the deal every time you played a
+    // card, which is exactly the effect this is meant to avoid.
+  }, [dealKey]);
 
   // Derived, not guessed. This used to be a flat 14px with a 0.9 scale above
   // six cards, which is what made solo's fan overflow — 7px at six cards and
@@ -336,7 +366,22 @@ export function HandFan({ cards, isSelected, isDim, onCardClick }) {
       {cards.map((c, i) => {
         const onClick = onCardClick?.(c);
         return (
-          <div key={cid(c)} style={{ marginLeft: i === 0 ? 0 : -overlap, zIndex: i }}>
+          <div
+            key={cid(c)}
+            style={{
+              marginLeft: i === 0 ? 0 : -overlap,
+              zIndex: i,
+              // Alternating tilt so the cards don't arrive in lockstep; the
+              // variable is read by the keyframes.
+              "--deal-tilt": `${i % 2 ? 5 : -5}deg`,
+              ...(dealing
+                ? {
+                    animation: `deal-in ${DEAL_FLIGHT_MS}ms ease-out both`,
+                    animationDelay: `${i * DEAL_STAGGER_MS}ms`,
+                  }
+                : null),
+            }}
+          >
             <Card
               card={c}
               selected={isSelected?.(c)}

@@ -224,6 +224,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
             with cards in front of you. It also settles the smaller 8px shift
             between the burying fan (8 cards at 0.9 scale) and normal play. */}
         <HandFan
+          dealKey={g.handNum}
           cards={g.hands[0]}
           isSelected={(c) => g.selected.some((x) => cid(x) === cid(c))}
           isDim={(c) => g.phase === "playing" && g.turn === 0 && !legalNow.includes(cid(c))}
