@@ -393,5 +393,14 @@ export function startHand(table, now) {
   // Carries the running total forward. seated.scores is the previous hand's
   // final total because commit() syncs it from the engine state.
   const g = freshHand(dealer, seated.scores, handNum);
-  return commit({ ...seated, phase: "playing", dealer, handNum, g }, now);
+  // Drop the previous hand's AI log with the hand it belonged to. `aiLogHand`
+  // already stops anyone READING a stale log, but the entries themselves rode
+  // along in the table until some AI seat next acted — so the first frame of a
+  // new hand shipped every client a list of cards played in the last one, and
+  // anything that reached for the log before checking the hand number saw them.
+  // The log is per-hand; it should not outlive its hand.
+  return commit(
+    { ...seated, phase: "playing", dealer, handNum, g, aiLog: [], aiLogHand: handNum },
+    now
+  );
 }

@@ -85,13 +85,10 @@ export function useTableStream(tableId, playerId) {
 
     logStream("subscribe", { table: tableId });
 
-    // The strongest suspect, and invisible from inside the connection: a
-    // backgrounded tab has its timers throttled and its connections dropped by
-    // the OS, and the stall was noticed after a table sat idle a while.
-    const onVisibility = () => logStream("visibility", { state: document.visibilityState });
-    document.addEventListener("visibilitychange", onVisibility);
-
     let watchdog = null;
+    // Set while the tab is away, so returning can tell a real resume from the
+    // stray visibilitychange a browser fires without ever having hidden us.
+    let wasHidden = false;
 
     const closeSource = () => {
       clearTimeout(watchdog);
@@ -110,6 +107,39 @@ export function useTableStream(tableId, playerId) {
       clearTimeout(retryTimer);
       retryTimer = setTimeout(open, delay);
     };
+
+    // Coming back to the app IS the signal. This was the strongest suspect all
+    // along and the handler only logged it: a backgrounded tab has its timers
+    // throttled and its connection dropped by the OS, so nothing inside the
+    // connection can notice. The flight recorder caught one that opened, never
+    // delivered a frame, and sat there for THREE AND A HALF HOURS — recovering
+    // only when the tab returned and the browser eventually errored the socket.
+    //
+    // Waiting on that error is the bug. The watchdog cannot cover it either,
+    // because the watchdog is a timer and timers are exactly what a backgrounded
+    // tab does not get. So the reconnect is driven from the one event that is
+    // guaranteed to arrive at the right moment.
+    //
+    // Reopening a connection that turns out to be healthy costs almost nothing:
+    // the server already hangs up every 50 seconds by design, so reconnecting is
+    // the normal case rather than the error case, and `since` means the resync
+    // is lossless. Cheap and certain beats clever and conditional — this runs on
+    // five phones in a room, every one of which is going to sleep in a pocket.
+    const onVisibility = () => {
+      logStream("visibility", { state: document.visibilityState });
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") {
+        wasHidden = true;
+        return;
+      }
+      if (!wasHidden) return;
+      wasHidden = false;
+      logStream("resume", { since: versionRef.current });
+      // Not a failure, so it does not earn a backoff.
+      backoffRef.current = BACKOFF_START_MS;
+      scheduleReopen(0);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     // Restarted on every sign of life. If it ever fires, the connection went
     // quiet in a way EventSource will not report, so it is torn down and

@@ -78,20 +78,39 @@ function assertNoLeak(label, body, truth, viewerSeat, viewerPlayerId, allPlayerI
   const g = truth.g;
 
   if (g) {
+    const revealed = g.phase === "handEnd";
+    const isPicker = viewerSeat === g.picker;
     const entitled = new Set();
-    (g.hands[viewerSeat] || []).forEach((c) => entitled.add(cid(c)));
-    (g.played || []).forEach((c) => entitled.add(cid(c)));
-    (g.trick || []).forEach((p) => entitled.add(cid(p.card)));
-    (g.lastTrick?.trick || []).forEach((p) => entitled.add(cid(p.card)));
-    (g.trickHistory || []).forEach((h) => (h.trick || []).forEach((p) => entitled.add(cid(p.card))));
-    if (viewerSeat === g.picker) {
-      (g.blind || []).forEach((c) => entitled.add(cid(c)));
-      (g.buried || []).forEach((c) => entitled.add(cid(c)));
+    const add = (c) => c && entitled.add(cid(c));
+
+    (g.hands[viewerSeat] || []).forEach(add);
+    (g.played || []).forEach(add);
+    (g.trick || []).forEach((p) => add(p.card));
+    (g.lastTrick?.trick || []).forEach((p) => add(p.card));
+    (g.trickHistory || []).forEach((h) => (h.trick || []).forEach((p) => add(p.card)));
+    if (isPicker || revealed) {
+      (g.blind || []).forEach(add);
+      (g.buried || []).forEach(add);
+      // The card set aside to play under. The picker chose it; nobody else may
+      // know it until the hand is over.
+      add(g.underCard);
     }
-    if (g.phase === "handEnd") {
-      g.hands.forEach((h) => (h || []).forEach((c) => entitled.add(cid(c))));
-      (g.blind || []).forEach((c) => entitled.add(cid(c)));
-      (g.buried || []).forEach((c) => entitled.add(cid(c)));
+    if (revealed) g.hands.forEach((h) => (h || []).forEach(add));
+
+    // A card played under sits on the trick as the 6 of the called suit with
+    // its real face alongside as `actual`. That face is legitimately visible to
+    // exactly three parties: the picker, whoever WON the trick it fell in (they
+    // gathered it), and everyone once the hand ends. So it cannot simply be
+    // added to the entitled set — it has to be entitled per viewer, per trick,
+    // or this check would wave through the very leak the rule exists to stop.
+    const maySeeUnder = (winner) =>
+      revealed || isPicker || (winner !== null && winner === viewerSeat);
+    if (maySeeUnder(null)) (g.trick || []).forEach((p) => add(p.actual));
+    (g.trickHistory || []).forEach((h) => {
+      if (maySeeUnder(h.winner)) (h.trick || []).forEach((p) => add(p.actual));
+    });
+    if (g.lastTrick && maySeeUnder(g.lastTrick.winner)) {
+      (g.lastTrick.trick || []).forEach((p) => add(p.actual));
     }
     for (const { id, path } of collectCards(body)) {
       if (!entitled.has(id)) {
@@ -110,6 +129,32 @@ function assertNoLeak(label, body, truth, viewerSeat, viewerPlayerId, allPlayerI
     }
   }
   passed++;
+}
+
+
+// The bury+call payload for a seat, in one place.
+//
+// It was written out twice — in driveHand and again in the rejection-check
+// setup — and when under landed only one copy learned about it. The other kept
+// sending an under call with no card to carry it, the server rightly refused
+// with `no-under-call`, and the suite failed intermittently in a place that
+// had nothing to do with what it was testing. One copy, so there is one thing
+// to keep correct.
+function buryBody(g, seat, playerId) {
+  const buried = g.hands[seat].slice(0, 2);
+  const kept = g.hands[seat].slice(2);
+  const opt = callableSuits(kept, buried)[0] ?? null;
+  const body = {
+    playerId,
+    cards: buried,
+    // The call is a (suit, rank) pair — an ace normally, a ten when the picker
+    // holds all three fail aces.
+    calledSuit: opt?.suit ?? null,
+    calledRank: opt?.rank ?? "A",
+  };
+  // ...and under is not a call at all until one of the six carries it.
+  if (opt?.kind === "under") body.underCard = cid(kept[kept.length - 1]);
+  return body;
 }
 
 /* ------------------------------- The flow -------------------------------- */
@@ -205,17 +250,8 @@ async function driveHand({ label = "hand", maxSteps = 160 } = {}) {
         method: "POST", query: { id: tableId }, body: { playerId: pid, action: "pick" },
       });
     } else if (g.phase === "bury" || g.phase === "call") {
-      const opts = callableSuits(g.hands[seat].slice(2), g.hands[seat].slice(0, 2));
       res = await call(buryRoute, {
-        method: "POST", query: { id: tableId },
-        body: {
-          playerId: pid,
-          cards: g.hands[seat].slice(0, 2),
-          // The call is a (suit, rank) pair now — an ace normally, a ten when
-          // the picker holds all three fail aces.
-          calledSuit: opts[0]?.suit ?? null,
-          calledRank: opts[0]?.rank ?? "A",
-        },
+        method: "POST", query: { id: tableId }, body: buryBody(g, seat, pid),
       });
     } else {
       const legal = legalPlays(g, seat);
@@ -255,15 +291,8 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
         method: "POST", query: { id: tableId }, body: { playerId: who.playerId, action: "pick" },
       });
     } else {
-      const opts = callableSuits(g.hands[seat].slice(2), g.hands[seat].slice(0, 2));
       await call(buryRoute, {
-        method: "POST", query: { id: tableId },
-        body: {
-          playerId: who.playerId,
-          cards: g.hands[seat].slice(0, 2),
-          calledSuit: opts[0]?.suit ?? null,
-          calledRank: opts[0]?.rank ?? "A",
-        },
+        method: "POST", query: { id: tableId }, body: buryBody(g, seat, who.playerId),
       });
     }
   }
