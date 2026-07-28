@@ -23,6 +23,8 @@ import { SUIT_SYM, SUIT_NAME, cid, legalPlays, gradeHandPlays } from "./engine.j
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick } from "./usePacedTrick.js";
+import { displayState } from "./displayState.js";
+import { logStream, readStreamLog, formatStreamLog, clearStreamLog } from "./streamLog.js";
 import { Felt, HandFan } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
 import { TrumpModal, ScoresModal, LastTrickModal, HandEndModal, RecapModal } from "./modals.jsx";
@@ -94,27 +96,6 @@ function formatIdle(ms) {
 
 // Absolute seat -> screen position, with the viewer always at the bottom.
 
-// What the felt should draw right now, which is deliberately not what the
-// server most recently said.
-//
-// Two differences, both about time. The trick shown is the paced frame rather
-// than g.trick — the server resolves every AI seat inside one request, so its
-// trick jumps by four cards at once and has usually been cleared again before
-// the client sees it. And the card you just played is on the table before the
-// server has confirmed it.
-//
-// Synthesising a state keeps Felt ignorant of both: it renders a game, and this
-// decides which game that is. Masking `turn` while the reveal catches up also
-// stops the active-seat glow racing ahead of the cards.
-function displayState(g, frame, optimistic, caughtUp) {
-  const trick = [
-    ...frame.cards,
-    ...(optimistic && !frame.cleared && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
-      ? [optimistic]
-      : []),
-  ];
-  return { ...g, trick, turn: caughtUp ? g.turn : -1, pickTurn: caughtUp ? g.pickTurn : -1 };
-}
 
 /* ------------------------- Sharing the table link -------------------------- */
 
@@ -213,6 +194,54 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
 
 // #34 — the table had no way to check what beats what. Derived from the engine,
 // so it can't drift from the rules it documents.
+// Reads back the flight recorder (src/streamLog.js). Deliberately reachable
+// from the menu rather than the console: the stall shows up on phones, where
+// opening devtools is not realistic, and a diagnostic nobody can retrieve is
+// the same as no diagnostic.
+function DiagnosticsModal({ onClose }) {
+  const [copied, setCopied] = useState(false);
+  const text = formatStreamLog();
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // Clipboard needs a secure context and permission. Selecting the text is
+      // the fallback that always works.
+      setCopied(false);
+    }
+  };
+
+  return (
+    <Modal maxWidth={480} onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 4 }}>
+        Connection log
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 10 }}>
+        What the live connection has been doing. If the table ever stops
+        updating, copy this and send it over — it survives a reload.
+      </div>
+      <textarea
+        readOnly
+        value={text}
+        onFocus={(e) => e.target.select()}
+        style={{
+          width: "100%", height: 220, fontFamily: "ui-monospace, Menlo, monospace",
+          fontSize: 11, lineHeight: 1.5, padding: 8, borderRadius: 8,
+          border: `1px solid ${felt.brassDim}`, background: "#00000040", color: felt.cream,
+          whiteSpace: "pre", overflow: "auto", marginBottom: 12,
+        }}
+      />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button style={btnGold} onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+        <button style={btnPlain} onClick={() => { clearStreamLog(); onClose(); }}>Clear</button>
+        <button style={btnPlain} onClick={onClose}>Close</button>
+      </div>
+    </Modal>
+  );
+}
+
 // The half of the old scores modal that is genuinely a table's — renaming
 // yourself and stepping away. It lived inline in that modal and read `isMe`,
 // `s`, `onAway` and `onBack` straight out of thin air: they were written for
@@ -386,7 +415,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // this is only a stand-in until the real card comes back down the stream,
   // and an illegal play is rejected and the stand-in withdrawn.
   const [optimistic, setOptimistic] = useState(null);
-  const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite"
+  const [modal, setModal] = useState(null); // "trump" | "scores" | "lastTrick" | "invite" | "diagnostics"
   const [seatModal, setSeatModal] = useState(null);
   const [showRecap, setShowRecap] = useState(false);
   const recapCaptureRef = useRef(null);
@@ -413,7 +442,11 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
     let stopped = false;
     const ping = () => {
       if (stopped) return;
-      api.getState(tableId, playerId).catch(() => {});
+      // Logged because this is the other half of staying at the table: the
+      // stream is how you SEE the game, this is how the server knows you are
+      // still here. A run of failures here is what precedes the AI quietly
+      // taking your seat, and it is invisible in the UI until it has.
+      api.getState(tableId, playerId).catch((e) => logStream("ping-failed", { err: e?.code || "?" }));
     };
     ping();
     const t = setInterval(ping, PRESENCE_PING_MS);
@@ -593,6 +626,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           { label: "Invite others", onSelect: () => setModal("invite") },
           { label: "Trump order", onSelect: () => setModal("trump") },
           { label: "Scores", onSelect: () => setModal("scores") },
+          { label: `Connection log (${readStreamLog().length})`, onSelect: () => setModal("diagnostics") },
         ]}
       />
 
@@ -697,14 +731,19 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         />
       )}
 
-      {/* Held back until the final trick has finished playing out — otherwise
-          the deal button appears while the last card is still landing. */}
-      {g.phase === "handEnd" && caughtUp && table.youAreHost && (
-        <Actions>
-          <button style={btnGold} disabled={busy} onClick={() => act(() => api.startHand(tableId, playerId))}>
-            Deal next hand
-          </button>
-        </Actions>
+      {/* The deal button used to live here, and now lives on the hand-end
+          summary that covers this area anyway — two of them rendered at once,
+          the second one visible through the modal. The summary is the better
+          home: it is what you are reading when you decide to move on.
+
+          A non-host still needs to know why nothing is happening, which the
+          summary does not say — it simply has no button for them. */}
+      {/* Not <Centered> — that is the full-screen fixed overlay used for
+          loading and error states, and it would blank the table behind it. */}
+      {g.phase === "handEnd" && caughtUp && !table.youAreHost && (
+        <div style={{ textAlign: "center", color: felt.creamDim, fontStyle: "italic" }}>
+          Waiting for the host to deal.
+        </div>
       )}
 
       </div>
@@ -773,6 +812,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
       )}
 
       {modal === "trump" && <TrumpModal onClose={() => setModal(null)} />}
+      {modal === "diagnostics" && <DiagnosticsModal onClose={() => setModal(null)} />}
       {modal === "scores" && (
         <ScoresModal
           names={table.seats.map((x) => x.name)}
