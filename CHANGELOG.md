@@ -6,6 +6,56 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.19.0] - 2026-07-28
+- A full-hand **double-dummy solver** (`src/solver.js`) and a grader built on
+  it, plus `npm run analyze` to point them at as many hands as you like. No
+  gameplay change — nothing in this release runs during a game.
+  - **Why.** The grader in `engine.js` values a candidate card by rolling the
+    hand forward with `aiChooseCard` for every remaining decision. That measures
+    the AI against *itself*, so a systematic bias is invisible to it: the
+    rollout commits the same error in every branch and the comparison cancels it
+    out. That is why six hands reconstructed by hand and solved found defects
+    200,000 simulated hands had not — the human was the solver. This removes the
+    human from that loop.
+  - `engine.js` already solved the last two tricks exactly. This solves all six:
+    alpha-beta over the whole hand, a transposition table, and collapsing of
+    equivalent moves. Values are picker-team card points, matching both
+    `endgameValue` and the brief.
+  - **Equivalence collapsing is where the search is actually won**, and it needs
+    a rule most trick-taking solvers don't: two cards are interchangeable only
+    if nothing another seat could play falls between them AND they are worth the
+    same points. Rank alone would merge A-diamonds with 10-diamonds — adjacent
+    in the trump order, worth 11 and 10 — and silently change the value of the
+    hand.
+  - **The rules are not reimplemented.** Legality, play and trick resolution all
+    go through `engine.js`, so there is one definition of the game and the
+    solver cannot drift from what is actually played.
+  - `npm run solvertest` (folded into `npm test`) anchors it on three things
+    that were already true rather than on itself: it must agree with the
+    engine's separate and much simpler endgame minimax on real two-trick
+    positions; collapsing equivalent moves must not change any value, only the
+    node count; and a value must not depend on what a shared transposition table
+    searched before it. A solver that is subtly wrong is worse than none, since
+    every number it prints looks authoritative.
+  - **Cost.** ~11s to grade a whole hand from trick 1; 300 hands graded from
+    trick 3 in 13.6s. Almost all of it is the opening — a trick-1 decision
+    searches the entire hand, a trick-3 decision a small fraction — so
+    `--from-trick N` is the difference between hundreds of hands and thousands.
+  - **First run, 300 hands, and it validates two things at once.** Trick 5
+    returns *zero* error across every hand, which is the existing endgame solver
+    being independently confirmed as optimal. And the concede branch that 0.17.0
+    rebuilt is now the cleanest bucket in the table at a 7.6% error rate,
+    against 23.5% for leading and 23.2% for decisions where taking the trick was
+    an option. The brief's "nearly every large error is a concede" is no longer
+    true, which is what shipping it was supposed to do.
+  - Read the output with the caveats the brief carried: double dummy gives every
+    seat perfect knowledge and perfect coordination, which flatters the four
+    defenders, and it is ex post. It ranks where the points are; it does not say
+    the AI should have known.
+  - The live recap still uses the rollout grader in `engine.js`. Eleven seconds
+    is not a thing to do at hand end, and the exact grader is an analysis tool
+    first.
+
 ## [0.18.0] - 2026-07-28
 - Once the AI is winning a trick, it takes it with the cheapest card that is
   actually sufficient rather than the strongest card it holds. Item 2 of the

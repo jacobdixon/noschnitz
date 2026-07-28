@@ -1,13 +1,14 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.18.0",
+  "version": "0.19.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "simulate": "node scripts/simulate.mjs",
+    "analyze": "node scripts/analyze.mjs",
     "leaktest": "node scripts/leaktest.mjs",
     "tabletest": "node scripts/tabletest.mjs",
     "storetest": "node scripts/storetest.mjs",
@@ -19,7 +20,8 @@
     "fantest": "node scripts/fantest.mjs",
     "scoringtest": "node scripts/scoringtest.mjs",
     "flagtest": "node scripts/flagtest.mjs",
-    "test": "npm run lint && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest",
+    "solvertest": "node scripts/solvertest.mjs",
+    "test": "npm run lint && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest && npm run solvertest",
     "lint": "eslint src api scripts"
   },
   "dependencies": {
