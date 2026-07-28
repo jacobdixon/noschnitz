@@ -26,7 +26,7 @@ import { cid } from "./engine.js";
 // Synthesising a state keeps Felt ignorant of both: it renders a game, and this
 // decides which game that is. Masking `turn` while the reveal catches up also
 // stops the active-seat glow racing ahead of the cards.
-export function displayState(g, frame, optimistic, caughtUp) {
+export function displayState(g, frame, optimistic, caughtUp, narrating = false) {
   // Your own card goes down the instant you tap it, before the server has
   // confirmed anything. The only reason to leave it off is that the real one is
   // already there.
@@ -37,7 +37,16 @@ export function displayState(g, frame, optimistic, caughtUp) {
   // it, and nothing happened until the server answered and the pacer moved on.
   // Measured at 3,565ms on beta. The clear flag says the previous trick is
   // gone, which is no reason to hide the first card of the next one.
-  const trick = [
+  // Nothing can be on the table while the hand is still being dealt. The
+  // pacers are each rewound on a new hand, but they are two cursors moving
+  // independently and one of them arriving late showed three cards under a
+  // felt that was still narrating the pick — a table mid-trick and mid-deal at
+  // the same time.
+  //
+  // Rather than chase which cursor was late, this states the rule: until the
+  // bury has been shown, the trick is empty. It cannot be wrong, because a
+  // card genuinely played before the bury is not a state the game has.
+  const trick = narrating ? [] : [
     ...frame.cards,
     ...(optimistic && !frame.cards.some((p) => cid(p.card) === cid(optimistic.card))
       ? [optimistic]

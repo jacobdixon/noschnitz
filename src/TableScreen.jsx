@@ -585,7 +585,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // One masked view, shared by the felt and the line above your cards. Built
   // once so the two cannot disagree — and so your own score is held back by
   // the same rule as everyone else's.
-  const view = displayState(g, frame, optimistic, caughtUp);
+  const view = displayState(g, frame, optimistic, caughtUp, !narration.done);
   // Recomputed here only to draw buttons — api/tables/[id]/bury.js recomputes
   // it server-side and is the authority, so a tampered client gets a 400.
   const myCallOptions =

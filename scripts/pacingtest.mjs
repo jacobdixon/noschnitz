@@ -316,6 +316,35 @@ if (!hand) {
     new Set(ids).size === ids.length, ids.join(","));
 }
 
+/* ------------------ nothing on the table while still dealing -------------- */
+{
+  // Reported from real play: the picking and the bury were being narrated
+  // while three cards already sat on the felt — a table mid-deal and mid-trick
+  // at once. Two cursors are rewound on a new hand and one of them arriving
+  // late is enough to do it, so the rule is stated outright rather than left
+  // to their timing.
+  const g = hand.final;
+  const seq = buildPlaySequence(g);
+  const midTrick = frameAt(seq, 3);
+  check("the fixture frame really has cards on it", midTrick.cards.length === 3,
+    `got ${midTrick.cards.length}`);
+
+  const dealing = displayState(g, midTrick, null, false, true);
+  check("the felt is empty while the opening is still being narrated",
+    dealing.trick.length === 0,
+    `drew ${JSON.stringify(dealing.trick.map((p) => p.card.rank + p.card.suit))}`);
+
+  // Your own card is no exception — it cannot be played before the bury.
+  const withStandIn = displayState(g, midTrick, { card: (g.buried || [])[0], player: 0 }, false, true);
+  check("...including your own stand-in", withStandIn.trick.length === 0);
+
+  // And once the opening is done the cards come back exactly as before.
+  const playing = displayState(g, midTrick, null, true, false);
+  check("the felt fills again once the deal is over",
+    playing.trick.length === midTrick.cards.length,
+    `${playing.trick.length} vs ${midTrick.cards.length}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");
