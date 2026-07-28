@@ -29,6 +29,16 @@ export const felt = {
   red: "#B3392F",
   black: "#28241E",
   chip: "#1B4D3B",
+  // Same darkness/saturation as `chip`, just red instead of green — a human
+  // seat's avatar fill, so a bot vs. a person reads as a subtle hue
+  // difference rather than a loud one. `red` itself is tuned for pips on a
+  // cream card face and would read as an alarm here.
+  chipHuman: "#5C2A22",
+  // Clubs in the hand recap, where trump (gold) already claims every Queen,
+  // Jack, and diamond — this only ever shows on a fail-suit club. Picked for
+  // contrast against `bgDeep`, at roughly the same weight as `red`/`brass` so
+  // the three don't read as one being an afterthought.
+  blue: "#4A90D9",
   // Score colours are their own pair rather than reusing `red`/`brass`: `red`
   // is tuned for card pips on a cream card face and goes muddy on dark felt.
   scoreUp: "#5BBE72",

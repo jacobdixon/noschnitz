@@ -6,6 +6,28 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.25.0] - 2026-07-28
+- **Solo's opponent roster now rotates.** Picked once per session from an
+  8-name pool instead of the same fixed four every game, so an AI blunder
+  doesn't get pinned on the same name forever. Beyond the original Gus/Bunny/
+  Patty: Bernie (Brewer, the mascot), Miller, Fonzie (Happy Days, set in
+  Milwaukee), and Kopp's/Leon's, the city's two rival frozen-custard spots.
+  Multiplayer is untouched — `table.js`'s `AI_NAMES` stays fixed per seat
+  position, since a seat's name should only change when its occupant does.
+- **A human's seat now tints differently from the house AI's**, a subtle red
+  vs. the usual green avatar fill. Solo never actually shows it — the viewer's
+  own seat renders as the hand below, not an avatar, in solo or at a table —
+  but at a table, another real player's seat now reads apart from an AI-filled
+  one at a glance.
+- **The hand recap now colors by trump, not just red/black.** Every Queen,
+  Jack, and diamond — trump, regardless of suit — reads gold, the same fact
+  that actually decided the hand. Fail cards keep their own color: hearts red,
+  clubs a new blue, spades white. Diamonds never show their own fail color
+  since they're always trump. Scoped to the recap grid only; the rules-
+  reference trump list elsewhere still uses red/cream, where every card shown
+  is already trump and gold would flatten the one distinction that display is
+  for.
+
 ## [0.24.0] - 2026-07-28
 - The exact endgame solver no longer breaks ties by sort order. From trick 5
   on, `aiChooseCard` hands the decision to `solveEndgameCard`, which solves

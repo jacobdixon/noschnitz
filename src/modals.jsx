@@ -33,6 +33,14 @@ import { SEAT_POS, rotate } from "./felt.jsx";
 const TRUMP_ORDER = makeDeck().filter(isTrump).sort((a, b) => trumpPower(b) - trumpPower(a));
 
 const isRed = (c) => c.suit === "H" || c.suit === "D";
+
+// Recap-only card colour: trump (every Queen, every Jack, every diamond)
+// reads as one gold group regardless of suit, since that's the fact that
+// actually decided the hand. Suit colour is reserved for fail cards, where it
+// still tells clubs from spades at a glance — hearts is the only suit that's
+// never trump, so it needs no isTrump check to stay red.
+const recapCardColor = (c) =>
+  isTrump(c) ? felt.brass : c.suit === "H" ? felt.red : c.suit === "C" ? felt.blue : felt.cream;
 const signed = (n) => `${n >= 0 ? "+" : ""}${n}`;
 
 // "You" wherever it's your own seat. Solo has always called seat 0 "You" via
@@ -312,7 +320,7 @@ export function RecapModal({
               Buried
             </span>
             {g.buried.map((c) => (
-              <span key={cid(c)} style={{ color: isRed(c) ? felt.red : felt.cream, fontWeight: 700 }}>
+              <span key={cid(c)} style={{ color: recapCardColor(c), fontWeight: 700 }}>
                 {c.rank}{SUIT_SYM[c.suit]}
               </span>
             ))}
@@ -367,7 +375,7 @@ export function RecapModal({
                       <td key={t} style={{ textAlign: "center", padding: "6px 4px" }}>
                         <span style={{
                           display: "inline-block",
-                          color: isRed(card) ? felt.red : felt.cream,
+                          color: recapCardColor(card),
                           fontWeight: isWinner ? 800 : 500,
                           background: isWinner ? "#00000040" : "transparent",
                           borderRadius: 4,
