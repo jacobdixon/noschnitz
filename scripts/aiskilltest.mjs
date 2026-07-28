@@ -18,6 +18,7 @@
    ========================================================================= */
 import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
+  cardEquity, applyPlay, solveHandValue,
   SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
 } from "../src/engine.js";
 
@@ -31,11 +32,12 @@ const check = (label, cond, detail = "") => {
 const C = (rank, suit) => ({ rank, suit });
 
 // A playing-phase position with only the fields aiChooseCard and legalPlays
-// read. tricksDone stays <= 3 so the exact endgame solver doesn't take over.
+// read. Most cases keep tricksDone <= 3 so the exact endgame solver doesn't
+// take over; the endgame tie-break case at the bottom deliberately does not.
 function position({
   hands, trick = [], picker, partner = null, partnerRevealed = false,
   calledSuit = null, calledAcePlayed = true, tricksDone = 0, leader = 0,
-  played = [],
+  played = [], turn = 0,
 }) {
   return {
     phase: "playing",
@@ -56,7 +58,7 @@ function position({
     played,
     trick,
     leader,
-    turn: 0,
+    turn,
     tricksDone,
     trickCounts: [0, 0, 0, 0, 0],
     ptsTaken: [0, 0, 0, 0, 0],
@@ -680,6 +682,80 @@ const trick2 = [
   const pick = aiChooseCard(g, 0);
   check("wins with the cheapest sufficient card, not the boss trump",
     cid(pick) === "QH", `played ${cid(pick)}`);
+}
+
+/* ------------- The endgame solver's tie-break (reported 2026-07-28) -------- */
+// Hand 7, v0.22.0. Trick 5, so `tricksDone === 4` and aiChooseCard hands the
+// decision to the exact double-dummy solver instead of anything above.
+//
+// You (0, the partner) led the called A-spades, Gus (1, picker) followed
+// 9-spades, Bunny (2) cut with A-diamonds. Both members of the picking team
+// have now played and the only seat left to act is Patty (4), a defender — so
+// the trick is already the defense's no matter what Duane (3) does. Duane
+// holds Q-hearts (boss of everything he cannot place) and 9-hearts.
+//
+// Double-dummy the two cards are worth exactly the same: the hand finishes
+// 70-50 either way, because in THIS layout Bunny's last card happens to be
+// 10-diamonds and covers the 9-hearts lead. The solver saw the tie and took
+// `legal[0]` — sorted order, trump first — and burned the Queen.
+//
+// Enumerating the 144 deals of the seven cards Duane cannot place says the two
+// are nothing alike: 9-hearts wins the hand in 144 of 144, Q-hearts in 59.
+// Keeping the Queen guarantees the last trick; spending it forces Duane to
+// lead a bare fail card into a picker who still holds trump.
+{
+  const g = position({
+    hands: [
+      [C("7", "C")],                 // You (0) — already played the called ace
+      [C("K", "D")],                 // Gus (1, picker)
+      [C("10", "D")],                // Bunny (2)
+      [C("Q", "H"), C("9", "H")],    // Duane (3) — to play
+      [C("K", "S"), C("8", "S")],    // Patty (4)
+    ],
+    trick: [
+      { player: 0, card: C("A", "S") },
+      { player: 1, card: C("9", "S") },
+      { player: 2, card: C("A", "D") },
+    ],
+    picker: 1, partner: 0, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 4, leader: 0, turn: 3,
+    played: [
+      C("Q", "D"), C("Q", "S"), C("9", "D"), C("Q", "C"), C("J", "D"),
+      C("10", "H"), C("8", "H"), C("7", "D"), C("K", "H"), C("7", "H"),
+      C("J", "S"), C("J", "C"), C("J", "H"), C("10", "S"), C("8", "D"),
+      C("9", "C"), C("K", "C"), C("7", "S"), C("10", "C"), C("8", "C"),
+    ],
+  });
+
+  const legal = legalPlays(g, 3);
+  check("Duane is void in spades, so both hearts are legal",
+    legal.length === 2 && legal.every((c) => "QH 9H".includes(cid(c))),
+    `legal=${legal.map(cid).join(",")}`);
+
+  // Why 9-hearts is right, in the terms the heuristics already reason in.
+  check("the trick is already secure — no opponent is left to act",
+    trickSecurity(g, 3) >= 1 - 1e-9, `security=${trickSecurity(g, 3)}`);
+  check("Q-hearts is boss of everything Duane cannot place",
+    cardEquity(g, 3, C("Q", "H")) === 0, `equity=${cardEquity(g, 3, C("Q", "H"))}`);
+  check("9-hearts is not — it wins nothing later",
+    cardEquity(g, 3, C("9", "H")) > 0);
+
+  // NEGATIVE CONTROL. This case is only meaningful if the solver genuinely
+  // cannot separate the two cards: if one were double-dummy better, the
+  // tie-break would never run and asserting on it would prove nothing. So
+  // pin the tie itself, and pin that the old rule — first optimal card in
+  // legal order — is the wrong one. Break the tie-break and these stay green
+  // while the assertion below goes red, which is the point.
+  const ddValue = (card) => solveHandValue(applyPlay(g, 3, card), new Map(), { n: 0 });
+  check("the double-dummy values really are tied, so the tie-break decides",
+    ddValue(C("Q", "H")) === ddValue(C("9", "H")),
+    `QH=${ddValue(C("Q", "H"))} 9H=${ddValue(C("9", "H"))}`);
+  check("and legal order puts the Queen first, which is what the old rule took",
+    cid(legal[0]) === "QH", `legal[0]=${cid(legal[0])}`);
+
+  const pick = aiChooseCard(g, 3);
+  check("keeps the boss trump rather than schmearing it onto a trick already won",
+    cid(pick) === "9H", `played ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
