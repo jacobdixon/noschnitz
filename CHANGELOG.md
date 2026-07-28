@@ -6,6 +6,47 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.21.0] - 2026-07-28
+- **The recap's best/worst play grading is now exact, and no longer invents
+  mistakes.** Grading previously rolled the hand forward with `aiChooseCard`
+  driving all five seats and compared the totals, which measures the wrong
+  thing: the continuation is only as good as the AI, so any weakness in the
+  AI's later play was charged to whoever happened to be moving.
+  - **Reported from a real hand** (v0.18.0, hand 1): a defender's J-diamonds was
+    flagged as the worst play of the hand, costing 14 points against ducking. It
+    cost nothing. With every hand face up, all four of that seat's legal cards —
+    and every card at every one of the defenders' eleven decisions in the hand —
+    end 120-0. The 14 points were the AI misplaying the *picker's* side after
+    the duck. (The picker did have two live decisions in that hand, worth 24 and
+    17 points, and got both right, so the hand was cold for the defence
+    specifically rather than for everybody.)
+  - Grading now solves the position double-dummy. Two properties matter more
+    than the precision: a play can never be flagged as a mistake unless a better
+    one genuinely existed, and when every legal card leads to the same result
+    the hand is reported as having no best or worst play instead of an arbitrary
+    one. About 8% of hands now come back with no grade at all, which is the
+    correct answer for them.
+  - **Grading is limited to trick 3 onward**, and this is a real limitation
+    rather than a tuning knob. Exact solve cost falls off a cliff with the
+    number of cards still out: measured over 38 AI-played hands, grading from
+    trick 1 costs a median of 4.2s and a p90 of 14.4s (exceeding any sane node
+    budget on ~10% of hands), from trick 2 a median of 345ms and p90 1.2s, and
+    from trick 3 a median of 34ms and p90 88ms. Both call sites run inside a
+    render, so seconds are not available. A blunder in the first two tricks is
+    not graded; grading the whole hand needs the search off the main thread.
+    Measured end to end, the recap now grades in a median of 24ms, p90 97ms.
+  - The recap legend no longer advertises markers that aren't present: it shows
+    only the ones actually used, and states that grading starts at trick 3.
+  - Adds `npm run gradetest`. Its main assertion is that the solver agrees
+    *exactly* with a plain unpruned, unmemoised minimax over ~1,400 positions,
+    including through a transposition table shared across the whole run. The
+    solver uses alpha-beta with a shared table, and the classic way to get that
+    wrong is to file a bound returned from a narrowed window as an exact value —
+    a bug that does not crash and returns plausible numbers, so a reference
+    implementation is the only way to catch it. The table stores bound flags for
+    exactly this reason.
+  - `rolloutValue` is gone; the grader was its only caller.
+
 ## [0.20.0] - 2026-07-28 (`eafab0b`)
 - **The picker's side now leads trump whenever it holds any**, instead of only
   with three or more. Worth **+0.019/seat/hand, ahead in 5 of 5 seeds**

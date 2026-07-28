@@ -856,36 +856,155 @@ export function scoreHand(g) {
 }
 
 /* ------------------------- Post-hand play grading ------------------------ */
-// Rolls a game state forward to hand-end using the built-in AI (aiChooseCard)
-// for every remaining decision, on both sides. Deterministic (aiChooseCard
-// has no randomness), so this is a cheap single-path counterfactual rather
-// than a real search: "if everyone played the built-in AI's way from here,
-// how many points would the picker's team end up with?" Because aiChooseCard
-// itself calls the exact minimax solver once the last two tricks are
-// reached, that precision folds into the rollout automatically — one
-// consistent yardstick across the whole hand instead of switching formulas
-// partway through, which is what keeps early- and late-trick grades on the
-// same scale.
-export function rolloutValue(g) {
-  let cur = g;
-  while (cur.tricksDone < 6) {
-    if (cur.trick.length === 5) { cur = resolveTrick(cur); continue; }
-    const idx = cur.turn;
-    const card = aiChooseCard(cur, idx);
-    cur = applyPlay(cur, idx, card);
+// Grading used to roll the hand forward with aiChooseCard driving all five
+// seats and compare the resulting totals. That measures the wrong thing. The
+// rollout's continuation is only as good as the AI, so any weakness in the
+// AI's later play is charged to whoever happened to be moving now — the grade
+// answers "what would our AI do with this" when the player is asking "was that
+// a mistake".
+//
+// Reported from a real hand (v0.18.0, hand 1): a defender's J-diamonds was
+// flagged as the worst play of the hand, costing 14 points against the
+// alternative of ducking. It cost nothing — with every hand face up, all four
+// of that seat's legal cards end 120-0, as does every card at every one of the
+// defenders' eleven decisions in the hand. The 14 points were the AI misplaying
+// the *picker's* side after the duck, and the grader billed them to the
+// defender. (The picker's side did have two live decisions in that hand, worth
+// 24 and 17 points, and got both right — so the hand was cold for the defense
+// specifically, not for everybody.)
+//
+// So grade against exact play instead: solve the position double-dummy. Two
+// properties matter more than the precision itself. A play can never be
+// flagged as a mistake unless a better one genuinely existed, and when every
+// legal card leads to the same result the swing is zero, so a locked hand is
+// reported as having no best or worst play rather than an arbitrary one.
+//
+// The honest caveat is that this judges with all hands visible, so it can mark
+// a play that was right given what the player could actually see. That is the
+// standard trade for post-mortem analysis and it is the safer direction: it
+// never invents a mistake where no better card existed.
+// Grading only looks at decisions from this trick on (0-indexed, so trick 3).
+// The cost of an exact solve is set by how many cards are still out, and it
+// falls off a cliff: measured over 38 AI-played hands, grading every decision
+// from trick 1 costs a median of 4.2s and a p90 of 14.4s (and blows any sane
+// node budget on ~10% of hands), from trick 2 a median of 345ms and p90 1.2s,
+// and from trick 3 a median of 34ms and p90 88ms. Both call sites run this
+// synchronously inside a render, so seconds are not available.
+//
+// This is a real limitation and not a tuning knob to nudge: a genuine blunder
+// in the first two tricks is not graded at all. It is the right trade against
+// the alternative, which was reporting mistakes that did not happen. Grading
+// the whole hand needs the search off the main thread, not a bigger budget.
+const GRADE_FROM_TRICK = 2;
+
+// Backstop only. At trick 3+ the observed worst case was 161ms, nowhere near
+// this, so tripping it means something is wrong rather than merely slow.
+const DD_NODE_BUDGET = 500_000;
+
+// Every card gets a bit, so a hand is a 32-bit mask and two orderings of the
+// same holding collide for free. Built as a nested lookup rather than keyed by
+// `cid` because the key function runs at every node of the search, and building
+// a string per card there was most of the solve time — masks took a full-hand
+// solve from 771ms to well under a tenth of that.
+const CARD_BIT = (() => {
+  const t = {};
+  ALL_CARDS.forEach((c, i) => { (t[c.suit] ??= {})[c.rank] = i; });
+  return t;
+})();
+const handMask = (h) => { let m = 0; for (const c of h) m |= 1 << CARD_BIT[c.suit][c.rank]; return m; };
+
+// Position key for the transposition table. The called-ace flags are included
+// because `legalPlays` reads them — two states with identical cards but a
+// different ace status have different legal moves. `tricksDone` is implied by
+// the card counts and `leader` by `turn` on an empty trick, so neither is here.
+function ddKey(g) {
+  const h = g.hands;
+  let k = `${handMask(h[0])},${handMask(h[1])},${handMask(h[2])},${handMask(h[3])},${handMask(h[4])}|`;
+  for (const t of g.trick) k += `${t.player}.${CARD_BIT[t.card.suit][t.card.rank]},`;
+  return k + g.turn + (g.calledAcePlayed ? "1" : "0") + (g.calledSuitLed ? "1" : "0");
+}
+
+// Picker-team points won from here to the end of the hand, both sides perfect.
+//
+// The transposition table stores a bound flag rather than a bare value. A node
+// searched inside a narrowed alpha-beta window may return a bound instead of
+// the true minimax value, and filing those as exact silently corrupts every
+// later lookup that hits them — the sort of bug that produces plausible grades
+// rather than obviously broken ones.
+function ddFuture(g, alpha, beta, memo, budget) {
+  if (g.trick.length === 5) {
+    const w = trickWinner(g.trick);
+    const gain = pickerTeamOf(g).includes(w)
+      ? g.trick.reduce((s, t) => s + cardPts(t.card), 0)
+      : 0;
+    if (g.tricksDone === 5) return gain; // resolving this one ends the hand
+    return gain + ddFuture(resolveTrick(g), alpha - gain, beta - gain, memo, budget);
   }
-  return pickerTeamOf(cur).reduce((s, p) => s + cur.ptsTaken[p], 0);
+  if (++budget.n > DD_NODE_BUDGET) throw new RangeError("dd budget");
+
+  const alpha0 = alpha, beta0 = beta;
+  const key = ddKey(g);
+  const hit = memo.get(key);
+  if (hit) {
+    if (hit.flag === 0) return hit.v;
+    if (hit.flag < 0) { if (hit.v <= alpha) return hit.v; beta = Math.min(beta, hit.v); }
+    else { if (hit.v >= beta) return hit.v; alpha = Math.max(alpha, hit.v); }
+    if (alpha >= beta) return hit.v;
+  }
+
+  const idx = g.turn;
+  const maximising = pickerTeamOf(g).includes(idx);
+  let best = maximising ? -Infinity : Infinity;
+  // Strongest first. Whether a card takes the trick is what moves the value
+  // most, so this finds the cutoff early far more often than deal order does.
+  const moves = legalPlays(g, idx).sort((a, b) => power(b) - power(a));
+  for (const card of moves) {
+    const v = ddFuture(applyPlay(g, idx, card), alpha, beta, memo, budget);
+    if (maximising) {
+      if (v > best) best = v;
+      if (best > alpha) alpha = best;
+    } else {
+      if (v < best) best = v;
+      if (best < beta) beta = best;
+    }
+    if (alpha >= beta) break;
+  }
+  memo.set(key, { v: best, flag: best <= alpha0 ? -1 : best >= beta0 ? 1 : 0 });
+  return best;
+}
+
+// Exact picker-team total for a position, on the same scale the old rollout
+// used (points already banked plus points still to be won), so callers compare
+// sibling moves directly. `memo` is shared across a whole grading pass: the
+// positions reachable from one decision overlap heavily with those reachable
+// from the next, and sharing the table is most of what makes grading a full
+// hand affordable.
+export function solveHandValue(g, memo = new Map(), budget = { n: 0 }) {
+  const banked = pickerTeamOf(g).reduce((s, p) => s + g.ptsTaken[p], 0);
+  if (g.tricksDone >= 6) return banked;
+  return banked + ddFuture(g, -Infinity, Infinity, memo, budget);
 }
 
 // Replays a finished hand from trickHistory and grades every real decision
 // (skipping forced plays with only one legal card) by comparing the actual
-// card's rollout value against the best and worst legal alternative, from
-// the mover's own team's perspective. Returns the single biggest mistake
-// ("worst") and the single most impactful correct call ("best" — must have
-// cost 0 relative to the best option AND have actually mattered, i.e. the
-// legal alternatives weren't all equivalent).
+// card's exact double-dummy value against the best and worst legal
+// alternative, from the mover's own team's perspective. Returns the single
+// biggest mistake ("worst") and the single most impactful correct call
+// ("best" — must have cost 0 relative to the best option AND have actually
+// mattered, i.e. the legal alternatives weren't all equivalent).
+//
+// On a hand where no decision could have changed anything, every cost and
+// every swing is zero and both come back null. That is the intended answer,
+// not a failure to find one: labelling a best and a worst play on a hand that
+// was decided at the deal is worse than labelling neither.
 export function gradeHandPlays(g) {
   if (!g.trickHistory || g.trickHistory.length < 6) return { best: null, worst: null };
+
+  // Shared across every decision in the hand — see solveHandValue. The budget
+  // is shared too, so a pathological hand gives up rather than freezing the
+  // recap: both call sites run this synchronously inside a render.
+  const memo = new Map();
+  const budget = { n: 0 };
 
   const startingHands = [[], [], [], [], []];
   for (const th of g.trickHistory) for (const play of th.trick) startingHands[play.player].push(play.card);
@@ -909,13 +1028,14 @@ export function gradeHandPlays(g) {
   };
 
   const decisions = [];
+  try {
   g.trickHistory.forEach((th, trickIdx) => {
     for (const play of th.trick) {
       const idx = play.player;
       const legal = legalPlays(sim, idx);
-      if (legal.length > 1) {
+      if (trickIdx >= GRADE_FROM_TRICK && legal.length > 1) {
         const isPickerSide = pickerTeamOf(sim).includes(idx);
-        const vals = legal.map((card) => ({ card, val: rolloutValue(applyPlay(sim, idx, card)) }));
+        const vals = legal.map((card) => ({ card, val: solveHandValue(applyPlay(sim, idx, card), memo, budget) }));
         const allVals = vals.map((v) => v.val);
         const bestVal = isPickerSide ? Math.max(...allVals) : Math.min(...allVals);
         const worstVal = isPickerSide ? Math.min(...allVals) : Math.max(...allVals);
@@ -928,6 +1048,12 @@ export function gradeHandPlays(g) {
     }
     sim = resolveTrick(sim);
   });
+  } catch (e) {
+    // Only the node budget aborts a grade. Anything else is a real bug and
+    // should surface rather than be swallowed into a silent "no mistakes".
+    if (!(e instanceof RangeError && e.message === "dd budget")) throw e;
+    return { best: null, worst: null };
+  }
 
   let worst = null;
   let best = null;
