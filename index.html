@@ -14,6 +14,35 @@
         overscroll-behavior: none;
       }
       #root { height: 100%; }
+
+      /* Dealing. A new hand used to arrive with the cards already fanned out in
+         front of you, which reads as a screen redrawing rather than a hand
+         being dealt. Each card now slides up from the middle of the table and
+         settles, one after another.
+
+         Kept in CSS rather than driven from React: it runs on the compositor,
+         so a phone mid-deal is not also re-rendering six times. The stagger is
+         an inline animation-delay per card — see HandFan. */
+      @keyframes deal-in {
+        from {
+          opacity: 0;
+          /* Up toward the felt and slightly small, so it reads as coming from
+             the table rather than sliding in from off-screen. */
+          transform: translateY(-190px) scale(0.82) rotate(var(--deal-tilt, -4deg));
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1) rotate(0deg);
+        }
+      }
+
+      /* Anyone who has asked not to be moved gets the hand without the flight. */
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes deal-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      }
     </style>
   </head>
   <body>

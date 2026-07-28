@@ -862,6 +862,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           under it. */}
       <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px calc(12px + env(safe-area-inset-bottom))" }}>
         <HandFan
+          dealKey={g.handNum}
           cards={myHand}
           isSelected={(c) => selected.some((x) => cid(x) === cid(c))}
           isDim={(c) => g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
