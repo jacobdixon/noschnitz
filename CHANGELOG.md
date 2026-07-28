@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.20.0] - 2026-07-28
+## [0.20.0] - 2026-07-28 (`eafab0b`)
 - **The picker's side now leads trump whenever it holds any**, instead of only
   with three or more. Worth **+0.019/seat/hand, ahead in 5 of 5 seeds**
   (20,000 hands per split, z 8.5-11.9), measured with `npm run abtest`.
