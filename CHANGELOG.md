@@ -29,7 +29,7 @@ corresponds to the entries below.
   - Re-solving 400 fresh hands afterwards agrees with the head-to-head, which is
     the useful part: picker lead error 25% -> 21% and 1263 -> 1005 points,
     partner 26% -> 20%. Defender leads are unchanged, which they should be —
-    nothing here touches that branch.
+    nothing here touches that branch. (`04dfa65`)
 - **Three things the solver flagged that turned out not to be real, recorded so
   they don't get re-investigated.** The defender fail-Ace lead looked like the
   worst rule in the file: an unconditional `if (aces.length) return aces[0]`,
