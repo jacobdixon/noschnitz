@@ -16,6 +16,7 @@
    Usage: node scripts/pacingtest.mjs
    ========================================================================= */
 import { buildPlaySequence, frameAt } from "../src/usePacedTrick.js";
+import { displayState } from "../src/displayState.js";
 import { freshHand, assignPartner, applyPlay, resolveTrick, aiChooseCard, aiBuryAndCall, handStrength, cid } from "../src/engine.js";
 
 let passed = 0;
@@ -180,10 +181,55 @@ if (!hand) {
     frameAt(seq, 999).trickIndex === 5 && frameAt(seq, 999).cards.length === 5);
 }
 
+/* ------------------------- no spoilers before the cards -------------------- */
+{
+  // The complaint this exists for: "don't show score changes on the felt
+  // before the recap — it ruins the ending." The server resolves a whole hand
+  // in one request, so its scores and trick counts are final while the client
+  // is still dealing out the last trick a card at a time. The felt must show
+  // what the player has SEEN, not what the server knows.
+  const g = hand.final;
+  const seq = buildPlaySequence(g);
+
+  // Mid-reveal of the final trick: four of the last trick's five cards shown.
+  const midLast = frameAt(seq, seq.length - 1);
+  const during = displayState(g, midLast, null, false);
+
+  check("scores are rewound while the last trick is still landing",
+    during.scores.every((n, i) => n === g.scores[i] - g.result.handDelta[i]),
+    `got ${JSON.stringify(during.scores)} against final ${JSON.stringify(g.scores)}`);
+
+  check("...and that actually differs from the final score",
+    g.result.handDelta.some((d) => d !== 0),
+    "fixture scored a flat hand, so this proves nothing");
+
+  check("trick counts only count tricks that finished on screen",
+    during.trickCounts.reduce((a, b) => a + b, 0) === midLast.trickIndex,
+    `counted ${during.trickCounts.reduce((a, b) => a + b, 0)} with ${midLast.trickIndex} tricks seen`);
+
+  // The moment the reveal catches up, the truth is allowed through — the
+  // summary appears on the same condition, so they move together.
+  const after = displayState(g, frameAt(seq, seq.length), null, true);
+  check("scores are the real ones once the reveal catches up",
+    after.scores.every((n, i) => n === g.scores[i]));
+  check("trick counts are the real ones once the reveal catches up",
+    after.trickCounts.every((n, i) => n === g.trickCounts[i]));
+
+  // Mid-hand, before any hand-end result exists, nothing should be invented.
+  const early = frameAt(seq, 7);
+  const mid = displayState({ ...g, phase: "playing", result: null }, early, null, false);
+  check("mid-hand scores pass through untouched",
+    mid.scores.every((n, i) => n === g.scores[i]));
+
+  // The active-seat glow must not run ahead of the cards either.
+  check("turn is masked until the reveal catches up", during.turn === -1 && during.pickTurn === -1);
+  check("turn is live once it has", after.turn === g.turn);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");
   failures.forEach((f) => console.error(`  ${f}`));
   process.exit(1);
 }
-console.log("PASS — plays sequence in order and reveal one trick at a time.");
+console.log("PASS — plays sequence in order, reveals one trick at a time, and spoils nothing early.");

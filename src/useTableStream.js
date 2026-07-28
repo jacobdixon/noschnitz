@@ -30,6 +30,7 @@
    seat and other players' ids are stripped. See api/_lib/redact.js.
    ========================================================================= */
 import { useState, useEffect, useRef } from "react";
+import { logStream } from "./streamLog.js";
 
 // First retry is fast because the common failure is a blip, not an outage.
 export const BACKOFF_START_MS = 500;
@@ -61,6 +62,17 @@ export function useTableStream(tableId, playerId) {
     let source = null;
     let retryTimer = null;
     let cancelled = false;
+    // Numbers the connections, so the log shows which one an event belongs to
+    // and a reopen that never produced a frame is obvious at a glance.
+    let seq = 0;
+
+    logStream("subscribe", { table: tableId });
+
+    // The strongest suspect, and invisible from inside the connection: a
+    // backgrounded tab has its timers throttled and its connections dropped by
+    // the OS, and the stall was noticed after a table sat idle a while.
+    const onVisibility = () => logStream("visibility", { state: document.visibilityState });
+    document.addEventListener("visibilitychange", onVisibility);
 
     const closeSource = () => {
       if (!source) return;
@@ -88,6 +100,8 @@ export function useTableStream(tableId, playerId) {
 
       const es = new EventSource(`/api/tables/${encodeURIComponent(tableId)}/events?${params}`);
       source = es;
+      const n = ++seq;
+      logStream("open", { conn: n, since: versionRef.current });
 
       es.addEventListener("state", (ev) => {
         if (cancelled || source !== es) return;
@@ -103,6 +117,7 @@ export function useTableStream(tableId, playerId) {
         if (!payload || typeof payload.version !== "number") return;
         if (payload.version <= versionRef.current) return;
 
+        logStream("state", { conn: n, version: payload.version });
         versionRef.current = payload.version;
         // A frame arrived, so whatever went wrong before is over. Resetting
         // here rather than on `open` means a server that accepts connections
@@ -142,8 +157,11 @@ export function useTableStream(tableId, playerId) {
         });
       });
 
-      es.addEventListener("reconnect", () => {
+      es.addEventListener("reconnect", (ev) => {
         if (cancelled || source !== es) return;
+        let reason = "?";
+        try { reason = JSON.parse(ev.data)?.reason ?? "?"; } catch { /* keep "?" */ }
+        logStream("handoff", { conn: n, reason });
         scheduleReopen(0);
       });
 
@@ -151,6 +169,7 @@ export function useTableStream(tableId, playerId) {
       // forever, so this is where the loop stops.
       es.addEventListener("gone", () => {
         if (cancelled || source !== es) return;
+        logStream("gone", { conn: n });
         cancelled = true;
         closeSource();
         clearTimeout(retryTimer);
@@ -160,6 +179,7 @@ export function useTableStream(tableId, playerId) {
 
       es.onopen = () => {
         if (cancelled || source !== es) return;
+        logStream("opened", { conn: n });
         setConnected(true);
         setError(null);
       };
@@ -172,6 +192,11 @@ export function useTableStream(tableId, playerId) {
         setConnected(false);
         setError("disconnected");
         const delay = backoffRef.current;
+        // readyState distinguishes the two failures that look identical from
+        // here: 2 (CLOSED) is a connection that will never come back on its
+        // own, 0 (CONNECTING) is one the browser is already retrying — and
+        // reopening on top of that is how you end up with two streams.
+        logStream("error", { conn: n, backoffMs: delay, readyState: es.readyState });
         backoffRef.current = Math.min(delay * BACKOFF_FACTOR, BACKOFF_MAX_MS);
         scheduleReopen(delay);
       };
@@ -180,8 +205,10 @@ export function useTableStream(tableId, playerId) {
     open();
 
     return () => {
+      logStream("unsubscribe", { table: tableId });
       cancelled = true;
       clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
       closeSource();
       setConnected(false);
     };
