@@ -817,7 +817,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           disabled={busy}
           onCall={(opt) =>
             act(async () => {
-              await api.bury(tableId, playerId, selected, opt ? opt.suit : null);
+              await api.bury(tableId, playerId, selected, opt ? opt.suit : null, opt ? opt.rank : "A");
               setSelected([]);
               setCallStep(false);
             })

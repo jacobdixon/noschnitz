@@ -208,7 +208,14 @@ async function driveHand({ label = "hand", maxSteps = 160 } = {}) {
       const opts = callableSuits(g.hands[seat].slice(2), g.hands[seat].slice(0, 2));
       res = await call(buryRoute, {
         method: "POST", query: { id: tableId },
-        body: { playerId: pid, cards: g.hands[seat].slice(0, 2), calledSuit: opts[0] ?? null },
+        body: {
+          playerId: pid,
+          cards: g.hands[seat].slice(0, 2),
+          // The call is a (suit, rank) pair now — an ace normally, a ten when
+          // the picker holds all three fail aces.
+          calledSuit: opts[0]?.suit ?? null,
+          calledRank: opts[0]?.rank ?? "A",
+        },
       });
     } else {
       const legal = legalPlays(g, seat);
@@ -251,7 +258,12 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
       const opts = callableSuits(g.hands[seat].slice(2), g.hands[seat].slice(0, 2));
       await call(buryRoute, {
         method: "POST", query: { id: tableId },
-        body: { playerId: who.playerId, cards: g.hands[seat].slice(0, 2), calledSuit: opts[0] ?? null },
+        body: {
+          playerId: who.playerId,
+          cards: g.hands[seat].slice(0, 2),
+          calledSuit: opts[0]?.suit ?? null,
+          calledRank: opts[0]?.rank ?? "A",
+        },
       });
     }
   }

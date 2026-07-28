@@ -109,7 +109,11 @@ export function legalPlays(g, playerIdx) {
   const aceOut = g.calledAcePlayed;
   const lastTrick = g.tricksDone === 5;
 
-  const calledAce = (c) => called && c.suit === called && c.rank === "A" && !isTrump(c);
+  // The called CARD, which is the ace on an ordinary call and the ten when the
+  // picker held all three aces. Everything downstream reasons about "the card
+  // that names the partner", never about an ace specifically.
+  const calledRank = g.calledRank || "A";
+  const calledAce = (c) => called && c.suit === called && c.rank === calledRank && !isTrump(c);
   const inCalled = (c) => called && !isTrump(c) && c.suit === called;
 
   let legal;
@@ -158,6 +162,40 @@ export function handStrength(hand) {
   return t.length * 2 + q * 2 + j;
 }
 
+export const CALLABLE_SUITS = ["C", "S", "H"];
+
+export function callOptions(hand, buried = []) {
+  const fails = { C: [], S: [], H: [] };
+  hand.filter((c) => !isTrump(c)).forEach((c) => fails[c.suit]?.push(c));
+
+  // Buried counts as held. Burying the card you were about to call would mean
+  // no partner exists while the defenders believe one does.
+  const holds = (su, rank) =>
+    fails[su].some((c) => c.rank === rank) ||
+    buried.some((c) => c.suit === su && c.rank === rank && !isTrump(c));
+
+  // 1. The ordinary call: a fail suit you hold a card in, whose ace you lack.
+  const ace = CALLABLE_SUITS
+    .filter((su) => fails[su].length > 0 && !holds(su, "A"))
+    .map((suit) => ({ kind: "ace", suit, rank: "A" }));
+  if (ace.length) return ace;
+
+  // 2. Holding every fail ace there is no ace left to call, so call a ten.
+  //    The suit requirement is unchanged and satisfied by the ace itself.
+  if (CALLABLE_SUITS.every((su) => holds(su, "A"))) {
+    return CALLABLE_SUITS
+      .filter((su) => fails[su].length > 0 && !holds(su, "10"))
+      .map((suit) => ({ kind: "ten", suit, rank: "10" }));
+  }
+
+  // 3. Otherwise the aces you lack are all in suits you are void in — so call
+  //    one of those anyway, "under". You can never lead or follow it, which is
+  //    the whole cost: your partner is on their own in that suit all hand.
+  return CALLABLE_SUITS
+    .filter((su) => fails[su].length === 0 && !holds(su, "A"))
+    .map((suit) => ({ kind: "under", suit, rank: "A" }));
+}
+
 export function aiBuryAndCall(hand) {
   // choose 2 to bury from 8, then a suit to call
   let h = [...hand];
@@ -167,15 +205,11 @@ export function aiBuryAndCall(hand) {
     arr.forEach((c) => m[c.suit].push(c));
     return m;
   };
-  const callable = (arr, buriedSoFar = []) => {
-    const m = suitsHeld(arr.filter((c) => !isTrump(c)));
-    return ["C", "S", "H"].filter(
-      (s) =>
-        m[s].length > 0 &&
-        !m[s].some((c) => c.rank === "A") &&
-        !buriedSoFar.some((c) => c.suit === s && c.rank === "A")
-    );
-  };
+  // The shared rule, not a private copy of it. This was a fourth transcription
+  // of "which suits may be called", and it only knew about aces — so the AI
+  // would have gone alone on every hand where the rules now allow calling
+  // under or calling a ten.
+  const callable = (arr, buriedSoFar = []) => callOptions(arr, buriedSoFar);
 
   const buried = [];
   for (let k = 0; k < 2; k++) {
@@ -198,6 +232,8 @@ export function aiBuryAndCall(hand) {
   }
   const opts = callable(h, buried);
   let call = null;
+  let callRank = null;
+  let callKind = null;
   // Go it alone on hand for the 4x multiplier instead of calling a partner:
   // reserved for hands well above the pick threshold (10) — this is the same
   // handStrength() used to decide whether to pick at all, just held to a much
@@ -206,11 +242,16 @@ export function aiBuryAndCall(hand) {
   const ALONE_HANDSTRENGTH = 17;
   const strongEnoughToGoAlone = handStrength(h) >= ALONE_HANDSTRENGTH;
   if (opts.length && !strongEnoughToGoAlone) {
+    // Shortest suit first, as before — the fewer cards you hold in the called
+    // suit the sooner your partner is forced to show. An `under` call holds
+    // none at all, which is the extreme of the same preference.
     const m = suitsHeld(h.filter((c) => !isTrump(c)));
-    opts.sort((a, b) => m[a].length - m[b].length);
-    call = opts[0];
+    const chosen = [...opts].sort((a, b) => (m[a.suit]?.length || 0) - (m[b.suit]?.length || 0))[0];
+    call = chosen.suit;
+    callRank = chosen.rank;
+    callKind = chosen.kind;
   }
-  return { buried, call, hand: h };
+  return { buried, call, callRank, callKind, hand: h };
 }
 
 export function knowsTeammate(g, viewer, target) {
@@ -805,6 +846,12 @@ export function freshHand(dealer, scores, handNum, doubler = 1) {
     partner: null,
     partnerRevealed: false,
     calledSuit: null,
+    // The rank that names the partner: "A" normally, "10" when the picker held
+    // every fail ace. `calledUnder` records that the picker is void in the
+    // called suit, which is public — it is announced at the table, and it
+    // changes how the hand plays for everyone.
+    calledRank: null,
+    calledUnder: false,
     calledAcePlayed: false,
     calledSuitLed: false,
     alone: false,
@@ -844,25 +891,14 @@ export function freshHand(dealer, scores, handNum, doubler = 1) {
  *
  * @returns {{kind: "ace", suit: string}[]}
  */
-export function callOptions(hand, buried = []) {
-  const fails = { C: [], S: [], H: [] };
-  hand.filter((c) => !isTrump(c)).forEach((c) => fails[c.suit]?.push(c));
-
-  const holdsTheAce = (su) =>
-    fails[su].some((c) => c.rank === "A") ||
-    buried.some((c) => c.suit === su && c.rank === "A" && !isTrump(c));
-
-  return ["C", "S", "H"]
-    .filter((su) => fails[su].length > 0 && !holdsTheAce(su))
-    .map((suit) => ({ kind: "ace", suit }));
-}
 
 export function assignPartner(g) {
   if (!g.calledSuit) return { ...g, partner: null, alone: true };
   let partner = null;
   for (let p = 0; p < 5; p++) {
     if (p === g.picker) continue;
-    if (g.hands[p].some((c) => c.suit === g.calledSuit && c.rank === "A" && !isTrump(c))) partner = p;
+    const rank = g.calledRank || "A";
+    if (g.hands[p].some((c) => c.suit === g.calledSuit && c.rank === rank && !isTrump(c))) partner = p;
   }
   return { ...g, partner, alone: partner === null };
 }
@@ -874,7 +910,7 @@ export function applyPlay(g, idx, card) {
   if (g.calledSuit && !isTrump(card) && card.suit === g.calledSuit) {
     if (trick.length === 1) calledSuitLed = true;
     if (effSuit(trick[0].card) === g.calledSuit) calledSuitLed = true;
-    if (card.rank === "A") {
+    if (card.rank === (g.calledRank || "A")) {
       calledAcePlayed = true;
       if (idx === g.partner) partnerRevealed = true;
     }

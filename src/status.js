@@ -64,9 +64,11 @@ export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, optio
     if (narrating.type === "pass") return `${seat} ${seat === "You" ? "pass" : "passes"}.`;
     if (narrating.type === "pick") return `${seat} ${seat === "You" ? "take" : "takes"} the blind.`;
     if (narrating.type === "bury") {
-      return narrating.calledSuit
-        ? `${seat} ${seat === "You" ? "call" : "calls"} ${SUIT_SYM[narrating.calledSuit]} ${SUIT_NAME[narrating.calledSuit]}.`
-        : `${seat} ${seat === "You" ? "go" : "goes"} alone.`;
+      if (!narrating.calledSuit) return `${seat} ${seat === "You" ? "go" : "goes"} alone.`;
+      const what = `${SUIT_SYM[narrating.calledSuit]} ${SUIT_NAME[narrating.calledSuit]}`;
+      const rank = narrating.calledRank && narrating.calledRank !== "A" ? ` ${narrating.calledRank}` : "";
+      const under = narrating.calledUnder ? ", under" : "";
+      return `${seat} ${seat === "You" ? "call" : "calls"} ${what}${rank}${under}.`;
     }
   }
 
