@@ -6,7 +6,7 @@ import {
 } from "./engine.js";
 
 import { felt, btnGold, btnPlain, btnGhost } from "./ui.jsx";
-import { Felt, HandFan, RoleBadges, DealerButton } from "./felt.jsx";
+import { Felt, HandFan, HandLabel } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
 import { HandEndModal, RecapModal, ScoresModal, LastTrickModal, TrumpModal } from "./modals.jsx";
 import { HOUSE_RULES } from "./rules.js";
@@ -239,16 +239,9 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
       {/* Your hand */}
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".06em" }}>YOUR HAND</div>
-          {g.dealer === 0 && <DealerButton />}
-          <RoleBadges g={g} seat={0} />
-          {/* "Friends" used to live here — beside Last Trick rather than in the
-              header, because the header couldn't fit a third button. The menu
-              solves that properly, so it has moved there and this row is back
-              to carrying one thing. */}
+        <HandLabel g={g} seat={0} name={NAMES[0]}>
           <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
-        </div>
+        </HandLabel>
         {/* The fan holds its height even when empty. The table above is
             `flex: 1 1 auto`, so when the last card of the hand is played this
             row used to collapse and hand the table 91px — every seat and every

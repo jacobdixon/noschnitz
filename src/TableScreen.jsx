@@ -22,10 +22,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { SUIT_SYM, SUIT_NAME, cid, legalPlays, gradeHandPlays } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
-import { usePacedTrick } from "./usePacedTrick.js";
+import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
 import { displayState } from "./displayState.js";
 import { logStream, readStreamLog, formatStreamLog, clearStreamLog } from "./streamLog.js";
-import { Felt, HandFan } from "./felt.jsx";
+import { Felt, HandFan, HandLabel } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
 import { TrumpModal, ScoresModal, LastTrickModal, HandEndModal, RecapModal } from "./modals.jsx";
 import { shareRecap } from "./shareRecap.js";
@@ -404,6 +404,21 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // what to render.
   const frame = usePacedTrick(table?.g);
   const caughtUp = frame.caughtUp;
+
+  // The summary used to appear the instant the last card was revealed, which
+  // covered that card with a modal before anyone had read it — the hand ended
+  // on a card you never saw. Wait out the same beat a completed trick gets
+  // anywhere else (CARD_MS to take it in, TRICK_HOLD_MS to sit on the finished
+  // trick), so the last trick resolves on screen and THEN the result arrives.
+  const [summaryReady, setSummaryReady] = useState(false);
+  useEffect(() => {
+    if (table?.g?.phase !== "handEnd" || !caughtUp) {
+      setSummaryReady(false);
+      return;
+    }
+    const t = setTimeout(() => setSummaryReady(true), CARD_MS + TRICK_HOLD_MS);
+    return () => clearTimeout(t);
+  }, [table?.g?.phase, table?.g?.handNum, caughtUp]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [selected, setSelected] = useState([]);
@@ -549,6 +564,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // appear before theirs.
   const iAmAway = table.seats[mySeat]?.kind === "away";
   const isMyTurn = g.phase === "playing" && g.turn === mySeat && caughtUp && !iAmAway;
+  // One masked view, shared by the felt and the line above your cards. Built
+  // once so the two cannot disagree — and so your own score is held back by
+  // the same rule as everyone else's.
+  const view = displayState(g, frame, optimistic, caughtUp);
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
@@ -608,9 +627,25 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           only thing left, and the Scores modal already opens on "After hand
           N". */}
       <TableHeader
-        title={table.id}
         rules={table.rules || HOUSE_RULES}
         doubler={g.doubler || 1}
+        extra={
+          // The table code loses the title slot to the game's own name, but it
+          // still has to be readable somewhere — it is what you read out when
+          // someone's link won't paste. Tapping it opens the invite, which is
+          // what you wanted if you were looking for it.
+          <button
+            onClick={() => setModal("invite")}
+            title="Invite others"
+            style={{
+              marginLeft: "auto", flexShrink: 0, background: "transparent", border: "none",
+              padding: 0, cursor: "pointer", fontFamily: "Georgia, serif", fontWeight: 700,
+              fontSize: 11, letterSpacing: ".06em", color: felt.brassDim,
+            }}
+          >
+            {table.id}
+          </button>
+        }
         status={
           // Kept mounted and merely faded, so a dropped connection can never
           // reflow the header — a header that changes height mid-hand shifts
@@ -637,7 +672,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           counts per seat, the dealer button, the trick-winner banner — it
           previously just didn't have. */}
       <Felt
-        g={displayState(g, frame, optimistic, caughtUp)}
+        g={view}
         names={table.seats.map((s) => s.name)}
         mySeat={mySeat}
         onSeatClick={(seat) => setSeatModal(seat)}
@@ -753,18 +788,14 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
       {/* Fixed height for the same reason as the action block: the Last Trick
           button only exists once a trick has finished, and without a floor the
           felt above shrank by 11px the first time it appeared (measured). */}
-      <div style={{
-        flexShrink: 0, display: "flex", alignItems: "center", gap: 8,
-        padding: "0 10px 4px", minHeight: 30,
-      }}>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", color: felt.creamDim }}>
-          YOUR HAND
-        </div>
-        {g.lastTrick && (
-          <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
-            Last Trick
-          </button>
-        )}
+      <div style={{ flexShrink: 0, padding: "0 10px 4px" }}>
+        <HandLabel g={view} seat={mySeat} name={table.seats[mySeat]?.name}>
+          {g.lastTrick && (
+            <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
+              Last Trick
+            </button>
+          )}
+        </HandLabel>
       </div>
 
       {/* Your hand. HandFan sizes itself from the viewport now, so the fan
@@ -786,7 +817,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           Held back until the paced reveal catches up, for the same reason the
           deal button is: otherwise the summary covers the felt while the last
           card of the last trick is still landing. */}
-      {g.phase === "handEnd" && g.result && caughtUp && !showRecap && (
+      {g.phase === "handEnd" && g.result && summaryReady && !showRecap && (
         <HandEndModal
           g={g}
           names={table.seats.map((x) => x.name)}
@@ -797,7 +828,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         />
       )}
 
-      {g.phase === "handEnd" && g.result && caughtUp && showRecap && (
+      {g.phase === "handEnd" && g.result && summaryReady && showRecap && (
         <RecapModal
           g={g}
           names={table.seats.map((x) => x.name)}

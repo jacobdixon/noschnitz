@@ -235,6 +235,44 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick }) {
 // table in 6px and no rails, so a single constant could not describe both. On
 // a 375px phone the real width is 343, not the 363 the viewport implied, and
 // the fan overhung its row by 7px on each side.
+/**
+ * The line above your own cards.
+ *
+ * It said "YOUR HAND", which is the one thing on that row nobody needs telling
+ * — they are your cards, at the bottom of your screen. The space is better
+ * spent on what you otherwise cannot see: your name as everyone else at the
+ * table reads it, and where you stand in the match.
+ *
+ * It also carries the dealer button and your role badges, because seat 0 has
+ * no avatar on the felt and this is the only place they can go. The table
+ * never rendered them at all, so a picker at a table had no indication they
+ * were the picker, and no reminder of the suit they had called.
+ *
+ * @param {object} g      the state being DRAWN (masked, not the server's raw
+ *                        one) — otherwise this line spoils the hand that the
+ *                        felt is carefully not spoiling
+ * @param {number} seat   the viewer's seat
+ * @param {string} name   display name; falls back to "You" before one is set
+ */
+export function HandLabel({ g, seat = 0, name, children }) {
+  const label = (name || "").trim() || "You";
+  const score = g.scores?.[seat];
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 30 }}>
+      <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".04em" }}>{label}</div>
+      {typeof score === "number" && (
+        <span style={{ fontSize: 14, fontWeight: 800, color: scoreColor(score) }}>
+          {score >= 0 ? "+" : ""}{score}
+        </span>
+      )}
+      {g.dealer === seat && <DealerButton />}
+      <RoleBadges g={g} seat={seat} />
+      {children}
+    </div>
+  );
+}
+
 function useRowWidth(ref) {
   const [w, setW] = useState(0);
   useEffect(() => {
