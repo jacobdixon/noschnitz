@@ -31,8 +31,12 @@ export const SEATS = 5;
 // How long each beat holds. A decision is quick — it is one word. Taking the
 // blind and burying is the biggest moment before play starts, so it gets
 // longer; it is also when the called suit appears, which people read.
-export const DECISION_MS = 850;
-export const BURY_MS = 1300;
+//
+// Trimmed from 850/1300 after playing it: four passes plus the bury ran to
+// about 4.5s before a single card, which is a long time to watch a table you
+// cannot act on. At these it is nearer 3.6s and still reads one beat at a time.
+export const DECISION_MS = 650;
+export const BURY_MS = 1000;
 
 /**
  * The opening of the hand, as beats, derived entirely from the game state.
