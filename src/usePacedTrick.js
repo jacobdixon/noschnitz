@@ -54,8 +54,15 @@ export function buildPlaySequence(g) {
 // somebody was being asked to lead the following trick.
 export function frameAt(sequence, revealed, clearedTrick = -1) {
   const shown = sequence.slice(0, revealed);
+  // Every card the player has actually watched land, this hand — not just the
+  // trick on screen. Anything deciding what a player is allowed to know yet
+  // reads this, so it belongs on the frame rather than only on the hook's
+  // return: a caller holding a frame must be able to answer "has this been
+  // seen?" without the hook, or the check silently passes.
+  const revealedIds = new Set(shown.map((p) => p.card.rank + p.card.suit));
+
   if (shown.length === 0) {
-    return { cards: [], trickIndex: 0, winner: null, complete: false, cleared: false };
+    return { cards: [], trickIndex: 0, winner: null, complete: false, cleared: false, revealedIds };
   }
 
   const trickIndex = shown[shown.length - 1].trickIndex;
@@ -63,10 +70,13 @@ export function frameAt(sequence, revealed, clearedTrick = -1) {
   const complete = cards.length === 5;
 
   if (complete && clearedTrick === trickIndex) {
-    return { cards: [], trickIndex, winner: null, complete: false, cleared: true };
+    return { cards: [], trickIndex, winner: null, complete: false, cleared: true, revealedIds };
   }
 
-  return { cards, trickIndex, winner: complete ? cards[0].winner : null, complete, cleared: false };
+  return {
+    cards, trickIndex, winner: complete ? cards[0].winner : null,
+    complete, cleared: false, revealedIds,
+  };
 }
 
 export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS } = {}) {
@@ -146,10 +156,5 @@ export function usePacedTrick(g, { cardMs = CARD_MS, trickHoldMs = TRICK_HOLD_MS
     // trick is exactly as confusing as it sounds.
     caughtUp: revealed >= sequence.length,
     pending: sequence.length - revealed,
-    // Which cards the player has actually SEEN land. The table screen renders
-    // your own card optimistically the instant you tap it and needs to know
-    // when the real one has caught up, so it can stop drawing its stand-in
-    // without the card blinking out and back.
-    revealedIds: new Set(sequence.slice(0, revealed).map((p) => p.card.rank + p.card.suit)),
   };
 }

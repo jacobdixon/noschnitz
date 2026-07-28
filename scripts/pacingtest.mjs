@@ -221,6 +221,43 @@ if (!hand) {
   check("mid-hand scores pass through untouched",
     mid.scores.every((n, i) => n === g.scores[i]));
 
+  // The partner is the hand's most guarded secret, and the server gives it away
+  // the moment the called ace is played — which can be several plays ahead of
+  // what the client has drawn.
+  //
+  // Dealt until a hand actually reveals a partner, rather than checking the
+  // main fixture and quietly skipping when it doesn't: a random deal goes alone
+  // or never has the ace played often enough that this would have been silent
+  // coverage most runs. If no such hand turns up, that is a failure, not a pass.
+  let pg = null;
+  for (let i = 0; i < 200 && !pg; i++) {
+    const h = playFullHand(1000 + i);
+    if (h && h.final.calledSuit && h.final.partner !== null && h.final.partnerRevealed) pg = h.final;
+  }
+  check("dealt a hand where the called ace actually gets played", pg !== null,
+    "200 deals without one — the check below never ran");
+
+  if (pg) {
+    const pseq = buildPlaySequence(pg);
+    const aceId = `A${pg.calledSuit}`;
+    const aceAt = pseq.findIndex((p) => p.card.rank + p.card.suit === aceId);
+    check("the called ace is somewhere in the sequence", aceAt >= 0);
+
+    // One play before the ace lands: the server knows, the felt must not.
+    const before = displayState(pg, frameAt(pseq, aceAt), null, false);
+    check("the partner stays hidden until the called ace is shown",
+      before.partnerRevealed === false,
+      `partnerRevealed was ${before.partnerRevealed} with the ace still to come`);
+
+    // The moment it lands, the badge is earned.
+    const after = displayState(pg, frameAt(pseq, aceAt + 1), null, false);
+    check("...and is revealed as soon as it lands", after.partnerRevealed === true);
+
+    // And it must not un-reveal for the rest of the hand.
+    const atEnd = displayState(pg, frameAt(pseq, pseq.length), null, true);
+    check("...and stays revealed once shown", atEnd.partnerRevealed === true);
+  }
+
   // The active-seat glow must not run ahead of the cards either.
   check("turn is masked until the reveal catches up", during.turn === -1 && during.pickTurn === -1);
   check("turn is live once it has", after.turn === g.turn);
