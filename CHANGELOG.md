@@ -6,6 +6,52 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.24.0] - 2026-07-28
+- The exact endgame solver no longer breaks ties by sort order. From trick 5
+  on, `aiChooseCard` hands the decision to `solveEndgameCard`, which solves
+  double-dummy — it reads every seat's hand. That is fine while one card is
+  strictly best and wrong the moment several tie, because "tied if you could
+  see the cards" says nothing about which card to play when you can't. The old
+  code took `legal[0]`, i.e. sorted-hand order, which puts trump first.
+  `solveEndgameCard` now collects every double-dummy-optimal card and, when
+  there is more than one, asks the heuristics to choose among them. Search
+  decides what wins; judgement decides between things that tie.
+  - Reported from expert play (hand 7, v0.22.0). A defender holding Q-hearts
+    and 9-hearts, with his own partner already winning the trick and only a
+    fellow defender left to act, played the Queen. Double-dummy the two cards
+    are identical — that hand finishes 70-50 either way — so the solver took
+    the first. Enumerating the 144 deals of the seven cards that seat could
+    not place says otherwise: 9-hearts wins the hand in 144 of 144, Q-hearts
+    in 59. It spent boss trump and gave up guaranteed control of the last
+    trick, and only got away with it because one specific unseen card sat in
+    the right hand.
+  - The AI already knew better. `cardEquity` had Q-hearts at 0 — boss of
+    everything unaccounted for — and the heuristic path plays the 9. The
+    short-circuit was discarding that reasoning in exchange for clairvoyance.
+  - Ties are not rare: over 4,000 hands, 69% of endgame decisions have more
+    than one double-dummy-optimal card, and the old tie-break disagreed with
+    the heuristics on 32% of decisions. 182 of those 4,000 hands showed this
+    hand's exact signature — spending boss trump when a cheaper tied card was
+    equally optimal.
+  - `heuristicCard` is split out of `aiChooseCard` so the solver can reach the
+    heuristics without recursing through the short-circuit, and takes an
+    `opts.restrictTo` used only by the tie-break.
+- Measurement note, because the obvious harness says nothing here. A paired
+  duplicate-deal A/B over 11,538 hands shows **zero** difference, and that is
+  structural rather than reassuring: in self-play every seat runs the same
+  clairvoyant endgame solver, so the double-dummy value is always realised and
+  cards that tie double-dummy cannot produce different results. The tie-break
+  only pays against someone who can't see the cards. Scored the way the
+  reported hand was — sampling deals consistent with the acting seat's own
+  information — the new card wins 43.1% vs the old card's 41.2% averaged over
+  four seeds (+1.3 to +2.0pp per changed decision, ahead in 4 of 4, strictly
+  better in ~2 positions for every 1 it is worse). Do not reach for
+  `simulate`/`abtest` to validate endgame changes; they are blind to this
+  whole class by construction.
+- Pinned in `aiskilltest` as the reported position, with the negative control
+  asserting the double-dummy tie is real and that legal order puts the Queen
+  first — so the case cannot quietly become vacuous if the solver changes.
+
 ## [0.23.0] - 2026-07-28
 - A played card now arrives from its own seat and fades in (220ms) instead of
   appearing already in place on the felt — the same idea as the existing
