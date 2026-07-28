@@ -499,27 +499,79 @@ function shedCard(g, idx, legal, wantPoints, opts = {}) {
   return [...cls].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
 }
 
-export function trickSecurity(g, viewer) {
+export function trickSecurity(g, viewer, opts = {}) {
   if (!g.trick.length) return 1;
-  const opps = opponentsYetToAct(g, viewer);
-  if (!opps.length) return 1;
 
   // Would this card take the trick if it were played into it now?
   const SENTINEL = -99;
   const takesIt = (card) => trickWinner([...g.trick, { player: SENTINEL, card }]) === SENTINEL;
 
   const unseen = unaccountedFor(g, viewer);
+
+  // Priced against every exit, not just the last one. The count below can
+  // reach "certain" three separate ways, and the case this exists for takes
+  // the very first of them: a defender with no KNOWN opponent left to act
+  // returns 1.0 without ever looking at a card.
+  const acePrice = opts.priceCalledAce === false ? 1 : calledAceRisk(g, viewer, takesIt, unseen);
+
+  const opps = opponentsYetToAct(g, viewer);
+  if (!opps.length) return acePrice;
+
   const beaters = unseen.filter(takesIt).length;
-  if (!beaters) return 1;
+  if (!beaters) return acePrice;
 
   // How many unknown cards those opponents hold between them.
   const k = opps.reduce((s, p) => s + g.hands[p].length, 0);
-  if (!k) return 1;
+  if (!k) return acePrice;
   if (beaters + k > unseen.length) return 0;
 
   let safe = 1;
   for (let i = 0; i < k; i++) safe *= (unseen.length - beaters - i) / (unseen.length - i);
-  return safe;
+  return safe * acePrice;
+}
+
+/**
+ * The chance the called ace is NOT sitting in a hand still to play — from a
+ * defender's point of view, and only while it would take the trick.
+ *
+ * This is the hole the ordinary count cannot see. `opponentsYetToAct` asks
+ * knowsTeammate(), which calls every unrevealed seat a teammate, so a defender
+ * with no *known* opponent left to act reads the trick as certain — security
+ * 1.0 — and schmears into it. But one of those "teammates" is the picker's
+ * partner, and the one card that partner is guaranteed to hold is the called
+ * ace. Reported from a real hand: clubs led and the club ace still out, a
+ * defender laid the ten of hearts on his own side's king, and the partner took
+ * all of it with the ace two seats later. A 42-point swing, and it decided the
+ * hand.
+ *
+ * Narrow on purpose. The called ace is the only card whose existence is public
+ * — it was named at the call — and whose owner is known to be an opponent of
+ * the defenders. Everything else a defender might fear is a guess, and this
+ * file already records what applying that brake on a guess costs: 0.6pp to the
+ * defense. So this prices exactly one card, and only when it beats what is
+ * already down.
+ */
+function calledAceRisk(g, viewer, takesIt, unseen) {
+  if (!g.calledSuit || g.calledAcePlayed) return 1;
+  // The picker and the partner both want the called ace to land — it is their
+  // own side taking the trick. Only the defense is hurt by it.
+  if (viewer === g.picker || viewer === g.partner) return 1;
+
+  const ace = { rank: g.calledRank || "A", suit: g.calledSuit };
+  // Not in `unseen` means the viewer holds it or has already seen it fall.
+  if (!unseen.some((c) => c.rank === ace.rank && c.suit === ace.suit)) return 1;
+  if (!takesIt(ace)) return 1;
+
+  const acted = new Set(g.trick.map((t) => t.player));
+  let held = 0;
+  for (let p = 0; p < 5; p++) {
+    if (p !== viewer && !acted.has(p)) held += g.hands[p].length;
+  }
+  if (!held) return 1;
+
+  // Uniform over what the viewer cannot account for: the ace is as likely to be
+  // in any unseen card's place as any other.
+  return Math.max(0, 1 - held / unseen.length);
 }
 
 // What the trick's security becomes if `idx` plays `card` into it — i.e. the
@@ -527,13 +579,13 @@ export function trickSecurity(g, viewer) {
 // end. Comparing this against the security of leaving the trick alone is how
 // the AI decides whether taking a trick off its own side actually buys
 // anything.
-export function securityAfterPlay(g, idx, card) {
+export function securityAfterPlay(g, idx, card, opts = {}) {
   const next = {
     ...g,
     trick: [...g.trick, { player: idx, card }],
     hands: g.hands.map((h, i) => (i === idx ? h.filter((c) => cid(c) !== cid(card)) : h)),
   };
-  return trickSecurity(next, idx);
+  return trickSecurity(next, idx, opts);
 }
 
 /* ------------------------- Endgame exact solver ------------------------- */
@@ -717,7 +769,7 @@ export function aiChooseCard(g, idx, opts = {}) {
   // fell straight out of the block and landed in the generic can't-win shed,
   // which minimises points. The ownership was computed and then discarded one
   // branch later.
-  const asIs = mateWinning ? trickSecurity(g, idx) : 0;
+  const asIs = mateWinning ? trickSecurity(g, idx, opts) : 0;
   const trickLooksSafe = asIs >= SCHMEAR_CONFIDENCE;
 
   // Until the called ace falls, a defender's "teammate" is a guess — the seat
@@ -830,7 +882,7 @@ export function aiChooseCard(g, idx, opts = {}) {
         return beaters === 0 ? 4 : beaters === 1 ? 2 : 1;
       };
       const affordable = winners.filter(
-        (c) => securityAfterPlay(g, idx, c) - asIs >= overtakeGate * priceOf(c) - 1e-9,
+        (c) => securityAfterPlay(g, idx, c, opts) - asIs >= overtakeGate * priceOf(c) - 1e-9,
       );
 
       // FORCING. The gate above asks only "does this make the trick mine?" —
@@ -880,7 +932,7 @@ export function aiChooseCard(g, idx, opts = {}) {
           g.hands[idx].filter(isTrump).length <= opts.forceMaxTrump;
         // Only when it actually costs them something: forcing with a card the
         // winner can beat with what they already played is just a donation.
-        if (equityOk && trumpOk && securityAfterPlay(g, idx, cheapest) > asIs) return cheapest;
+        if (equityOk && trumpOk && securityAfterPlay(g, idx, cheapest, opts) > asIs) return cheapest;
       }
 
       if (!affordable.length) return shedCard(g, idx, legal, ourTrick, opts);
