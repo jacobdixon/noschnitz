@@ -75,6 +75,30 @@ export const TRICK_POS = {
   4: { left: "70%", top: "57%", transform: "translate(-50%,-50%)" },
 };
 
+// Where a played card flies in from, and where a swept trick flies out to —
+// keyed by the same rotated seat position as TRICK_POS. Approximate
+// directions, not measured geometry, in the same spirit as deal-in's flat
+// -190px: the point is "which corner", not a pixel-accurate seat coordinate.
+const SEAT_DIR = {
+  0: { x: 0, y: 130 },
+  1: { x: -130, y: 10 },
+  2: { x: -60, y: -110 },
+  3: { x: 60, y: -110 },
+  4: { x: 130, y: 10 },
+};
+
+// How long a finished trick sits still before it sweeps toward the winner,
+// and how long the sweep itself takes. Both callers hold the trick on the
+// felt longer than this (TRICK_HOLD_MS 1500 at a table, 2625 solo) before
+// clearing it to []; the margin is deliberate so the sweep always finishes
+// before that cut, never gets truncated mid-flight.
+const TRICK_STAND_MS = 900;
+const SWEEP_MS = 450;
+
+const reducedMotion = () =>
+  typeof matchMedia === "function" &&
+  matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 export function DealerButton() {
   return (
     <span
@@ -217,6 +241,26 @@ function SeatAvatar({ g, seat, names, extra, decision, narrating }) {
  *                              shown this naturally.
  */
 export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }) {
+  // A completed trick sits still for TRICK_STAND_MS (long enough to read
+  // "who won +points") and then sweeps toward the winner's seat. Own local
+  // clock rather than a prop from either caller — HandFan below already owns
+  // its `dealing` state the same way, and this keeps solo/multiplayer timing
+  // out of a file that is otherwise pure presentation.
+  const [sweeping, setSweeping] = useState(false);
+  const wasComplete = useRef(false);
+  useEffect(() => {
+    const complete = g.trick.length === SEATS;
+    if (complete && !wasComplete.current) {
+      wasComplete.current = true;
+      const t = setTimeout(() => setSweeping(true), TRICK_STAND_MS);
+      return () => clearTimeout(t);
+    }
+    if (!complete) {
+      wasComplete.current = false;
+      setSweeping(false);
+    }
+  }, [g.trick.length]);
+
   return (
     <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
       {names.map((_, seat) => {
@@ -247,15 +291,37 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }
         );
       })}
 
-      {g.trick.map((t) => (
-        <div key={cid(t.card)} style={{ position: "absolute", ...TRICK_POS[rotate(t.player, mySeat)], zIndex: 2 }}>
-          {/* A card played under goes down face down, for everyone — including
-              the picker, who knows perfectly well what it is. That it was
-              played under is public; which card it was is not, until the trick
-              is gathered. */}
-          <Card card={t.card} small faceDown={t.under} />
-        </div>
-      ))}
+      {g.trick.map((t) => {
+        const dir = SEAT_DIR[rotate(t.player, mySeat)];
+        // Sweeping is keyed to the WINNER's direction, not each card's own
+        // seat — all five cards converge on one corner, like a hand
+        // gathering the trick, rather than flying back to where they came
+        // from individually.
+        const innerStyle = sweeping
+          ? {
+              transform: reducedMotion()
+                ? "none"
+                : `translate(${SEAT_DIR[rotate(trickWinner(g.trick), mySeat)].x}px, ${SEAT_DIR[rotate(trickWinner(g.trick), mySeat)].y}px) scale(0.5)`,
+              opacity: 0,
+              transition: `transform ${SWEEP_MS}ms ease-in, opacity ${SWEEP_MS}ms ease-in`,
+            }
+          : {
+              "--play-dx": `${dir.x}px`,
+              "--play-dy": `${dir.y}px`,
+              animation: "play-in 220ms ease-out both",
+            };
+        return (
+          <div key={cid(t.card)} style={{ position: "absolute", ...TRICK_POS[rotate(t.player, mySeat)], zIndex: 2 }}>
+            <div style={innerStyle}>
+              {/* A card played under goes down face down, for everyone —
+                  including the picker, who knows perfectly well what it is.
+                  That it was played under is public; which card it was is
+                  not, until the trick is gathered. */}
+              <Card card={t.card} small faceDown={t.under} />
+            </div>
+          </div>
+        );
+      })}
 
       {g.trick.length === SEATS && (
         <div style={{
