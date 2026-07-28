@@ -166,7 +166,7 @@ export function RoleBadges({ g, seat }) {
   return null;
 }
 
-function SeatAvatar({ g, seat, names, extra, decision, narrating }) {
+function SeatAvatar({ g, seat, names, extra, decision, narrating, human }) {
   const active =
     (g.phase === "playing" && g.turn === seat) ||
     (g.phase === "picking" && g.pickTurn === seat);
@@ -179,7 +179,7 @@ function SeatAvatar({ g, seat, names, extra, decision, narrating }) {
           real table, without disturbing the column below it. */}
       <div style={{ position: "relative", width: 44, height: 44 }}>
         <div style={{
-          width: 44, height: 44, borderRadius: "50%", background: felt.chip,
+          width: 44, height: 44, borderRadius: "50%", background: human ? felt.chipHuman : felt.chip,
           border: `2px solid ${active ? felt.brass : "#ffffff2e"}`,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 19,
@@ -235,8 +235,14 @@ function SeatAvatar({ g, seat, names, extra, decision, narrating }) {
  *                              painting it already underway. Solo passes none —
  *                              it drives its own AI on timers and has always
  *                              shown this naturally.
+ * @param {Function} isHuman    optional (seat) => boolean, for the subtle
+ *                              red-vs-green avatar tint that tells a person's
+ *                              seat from the house AI at a glance. Defaults to
+ *                              "only the viewer", which is exactly right for
+ *                              solo; a table overrides it with each seat's
+ *                              real kind, since other seats can be human too.
  */
-export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }) {
+export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, isHuman = (seat) => seat === mySeat }) {
   // A completed trick sits still for TRICK_STAND_MS (long enough to read
   // "who won +points") and then sweeps toward the winner's seat. Own local
   // clock rather than a prop from either caller — HandFan below already owns
@@ -282,6 +288,7 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions }
               // LATEST one wins, or the badge would freeze on "Picks it up".
               decision={decisions?.filter((d) => d.seat === seat).pop()}
               narrating={Boolean(decisions)}
+              human={isHuman(seat)}
             />
           </div>
         );

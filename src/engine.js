@@ -16,6 +16,25 @@ export const CARD_POINTS = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0, "8": 0, 
 export const UNDER_RANK = "6";
 export const NAMES = ["You", "Gus", "Bunny", "Duane", "Patty"];
 
+// Solo's opponent roster, picked fresh once per session from a larger pool
+// instead of always being the same four — so the AI's occasional blunder
+// isn't forever pinned on the same name. Milwaukee-flavored beyond the
+// original three: Bernie Brewer (the Brewers' mascot), Miller (Miller Park /
+// Brewing), Fonzie (Happy Days, set in Milwaukee, statue on the Riverwalk),
+// and Kopp's/Leon's, the city's dueling frozen-custard institutions.
+// Multiplayer does NOT use this — table.js's AI_NAMES stays fixed per seat
+// position, since a seat's name should only change when its occupant does.
+export const BOT_NAME_POOL = ["Gus", "Bunny", "Patty", "Bernie", "Miller", "Fonzie", "Kopps", "Leon"];
+
+export function pickBotNames() {
+  const pool = [...BOT_NAME_POOL];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return ["You", ...pool.slice(0, 4)];
+}
+
 export const isTrump = (c) => c.rank === "Q" || c.rank === "J" || c.suit === "D";
 export const effSuit = (c) => (isTrump(c) ? "T" : c.suit);
 export const cardPts = (c) => CARD_POINTS[c.rank];

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  NAMES, cid, sortHand, handStrength,
+  pickBotNames, cid, sortHand, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay, callOptions,
   resolveTrick, gradeHandPlays, SUIT_NAME,
 } from "./engine.js";
@@ -24,6 +24,9 @@ import { CallButtons } from "./decisions.jsx";
 // with no server at all.
 export default function Sheepshead({ onPlayWithFriends }) {
   const [g, setG] = useState(() => freshHand(Math.floor(Math.random() * 5), [0, 0, 0, 0, 0], 1));
+  // Picked once per session, not per hand — the score column tracks a name
+  // across a whole sitting, so changing it mid-session would orphan history.
+  const [names] = useState(() => pickBotNames());
   const [showScores, setShowScores] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showLastTrick, setShowLastTrick] = useState(false);
@@ -209,12 +212,12 @@ export default function Sheepshead({ onPlayWithFriends }) {
           which is exactly what happened over the last week. Solo passes its
           fixed cast and seat 0; a table passes real names and whichever seat
           you got. */}
-      <Felt g={g} names={NAMES} mySeat={0} />
+      <Felt g={g} names={names} mySeat={0} />
 
       {/* Status + actions */}
       <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
         <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
-          {statusLine({ g, names: NAMES, mySeat: 0, isMyTurn: g.turn === 0, selected: g.selected.length, options: g.callOptions })}
+          {statusLine({ g, names, mySeat: 0, isMyTurn: g.turn === 0, selected: g.selected.length, options: g.callOptions })}
         </div>
 
         {g.phase === "picking" && g.pickTurn === 0 && g.passes < 5 && (
@@ -249,7 +252,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
       {/* Your hand */}
       <div style={{ flexShrink: 0, padding: "0 10px calc(14px + env(safe-area-inset-bottom))" }}>
-        <HandLabel g={g} seat={0} name={NAMES[0]}>
+        <HandLabel g={g} seat={0} name={names[0]}>
           <button onClick={() => setShowLastTrick(true)} style={{ ...btnGhost, marginLeft: "auto" }}>Last Trick</button>
         </HandLabel>
         {/* The fan holds its height even when empty. The table above is
@@ -276,7 +279,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
       {g.phase === "handEnd" && g.result && !showRecap && (
         <HandEndModal
           g={g}
-          names={NAMES}
+          names={names}
           onNext={nextHand}
           onRecap={() => setShowRecap(true)}
         />
@@ -285,7 +288,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
       {g.phase === "handEnd" && showRecap && (
         <RecapModal
           g={g}
-          names={NAMES}
+          names={names}
           grades={playGrades}
           captureRef={recapCaptureRef}
           onShare={() => shareRecap(recapCaptureRef.current, g.handNum)}
@@ -296,7 +299,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
       {showScores && (
         <ScoresModal
-          names={NAMES}
+          names={names}
           scores={g.scores}
           handNum={g.handNum}
           mySeat={0}
@@ -307,7 +310,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
       {showLastTrick && (
         <LastTrickModal
           lastTrick={g.lastTrick}
-          names={NAMES}
+          names={names}
           onClose={() => setShowLastTrick(false)}
         />
       )}

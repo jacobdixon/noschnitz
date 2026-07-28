@@ -725,6 +725,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         mySeat={mySeat}
         decisions={narration.done ? undefined : narration.shown}
         onSeatClick={(seat) => setSeatModal(seat)}
+        // A table can seat more than one real person, so "human" isn't just
+        // "is this me" the way it is in solo — it's whoever's seat this
+        // actually is, "away" included (the house AI is only covering it).
+        isHuman={(seat) => table.seats[seat]?.kind !== "ai"}
         seatExtra={(seat) => {
           const s = table.seats[seat];
           const idle = serverNow ? idleMs(table, seat, serverNow()) : 0;
