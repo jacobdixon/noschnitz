@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.35.0] - 2026-07-29
+- **You can now remove a teammate who walked away from their computer.** You
+  could not before, and the reason was that an open tab counted as a person.
+  The presence poll fires every 20s for as long as the tab is mounted — a phone
+  asleep in a pocket, a laptop lid shut on a browser that keeps its timers — and
+  the idle threshold for freeing a seat is 90s, so the clock was reset four
+  times over before it could ever expire. The seat modal sat on "you can free
+  this seat once they've been away for a while" forever, and the idle counter
+  visibly ran *backwards*.
+- **The same clock is what the AI uses to cover a seat the table is waiting on**
+  (`coverIdleSeats`), so this was never only about booting: a table stalled on
+  somebody who had gone could not un-stick itself either, for exactly as long as
+  their tab stayed open. That matters more than the boot button does.
+- The poll now says whether it speaks for a person or is merely a keep-alive.
+  The test is a real interaction — pointer, key, touch, wheel — within
+  `ACTIVITY_WINDOW_MS` (2 minutes). Coming back, by any input or by the page
+  becoming visible again, pings immediately rather than up to 20s late, because
+  the seat may be seconds from being covered.
+- **`document.visibilityState` is deliberately not part of that test**, though it
+  looks like the obvious signal for a phone going to sleep. A page can report
+  `hidden` while somebody is sitting in front of it — embedded webviews do, and
+  it was measured while building this: a fronted tab in the tool browser reports
+  `hidden` with the game plainly on screen. Vetoing presence on that would hand
+  an attentive player's seat to the AI mid-hand. Visibility is therefore only
+  ever used to *add* presence, never to withdraw it, and nothing is lost by that:
+  a tab nobody can see receives no input either.
+- The window is deliberately generous, several times longer than a turn. Reading
+  the hand-end summary can take a minute with no input at all, and the expensive
+  mistake is declaring an attentive player absent: their seat gets played by the
+  AI or handed to somebody else. Being slow to release a seat only costs
+  patience. A locked phone releases it sooner anyway, on the visibility signal.
+- A poll that sends no flag still stamps presence, so an older cached bundle
+  behaves exactly as it used to rather than having its seat quietly reclaimed.
+
 ## [0.34.0] - 2026-07-29
 - **Nobody waits on the host between hands any more.** Dealing was host-only,
   which made one person the table's clock and, worse, its single point of

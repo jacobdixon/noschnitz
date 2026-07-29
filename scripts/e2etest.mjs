@@ -473,6 +473,44 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     (await store.get(tableId)).version === versionBefore,
     `${versionBefore} -> ${(await store.get(tableId)).version}`);
 
+  // A tab is not a person. The poll fires for as long as a tab is mounted, so
+  // if every poll dated the seat, a seat could never go idle: nobody who walked
+  // away could be removed, and a seat the table was WAITING on could never be
+  // covered either, since coverIdleSeats reads the same clock. `active=0` is
+  // the client saying "keep-alive, nobody is here".
+  {
+    const before = await store.get(tableId);
+    const aged = {
+      ...before,
+      seats: before.seats.map((s, i) => (i === daveSeat ? { ...s, lastSeen: 1000 } : s)),
+    };
+    await store.put(aged, before.version);
+
+    await call(stateRoute, { method: "GET", query: { id: tableId, playerId: DAVE, active: "0" } });
+    check("a keep-alive poll does not date the seat",
+      (await store.get(tableId)).seats[daveSeat]?.lastSeen === 1000,
+      `lastSeen=${(await store.get(tableId)).seats[daveSeat]?.lastSeen}`);
+
+    // Which is what makes the seat reachable by the boot rule at all.
+    check("a seat kept alive by a tab alone is bootable",
+      isBootable(await store.get(tableId), daveSeat, Date.now()));
+
+    await call(stateRoute, { method: "GET", query: { id: tableId, playerId: DAVE, active: "1" } });
+    check("a poll that speaks for a person does date the seat",
+      (await store.get(tableId)).seats[daveSeat]?.lastSeen > 1000);
+
+    // An older cached bundle sends no flag at all and must keep working the way
+    // it always did — the costly mistake is calling a present player absent.
+    const reaged = await store.get(tableId);
+    await store.put(
+      { ...reaged, seats: reaged.seats.map((s, i) => (i === daveSeat ? { ...s, lastSeen: 1000 } : s)) },
+      reaged.version
+    );
+    await call(stateRoute, { method: "GET", query: { id: tableId, playerId: DAVE } });
+    check("a poll with no flag still dates the seat",
+      (await store.get(tableId)).seats[daveSeat]?.lastSeen > 1000);
+  }
+
   const left = await call(seatRoute, {
     method: "POST", query: { id: tableId }, body: { playerId: DAVE, action: "leave" },
   });
