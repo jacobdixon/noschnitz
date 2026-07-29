@@ -274,6 +274,7 @@ export function RecapModal({
 }) {
   const best = grades?.best;
   const worst = grades?.worst;
+  const pending = Boolean(grades?.pending);
 
   return (
     <Modal maxWidth={480} onClose={onBack}>
@@ -405,7 +406,16 @@ export function RecapModal({
           {(g.trickHistory || []).some((th) => th.trick.some((x) => x.under)) && (
             <> · <span style={{ color: felt.brass, fontWeight: 800 }}>U</span> = played under</>
           )}
-          {(best || worst) && (
+          {/* Grading runs in a worker now, so the grid is on screen before the
+              verdict is. "Still working" and "nothing worth flagging" look
+              identical if both render as blank, so say which one it is. */}
+          {pending && (
+            <>
+              <br />
+              <span style={{ opacity: 0.75 }}>grading the hand…</span>
+            </>
+          )}
+          {!pending && (best || worst) && (
             <>
               <br />
               {best && (
@@ -420,7 +430,7 @@ export function RecapModal({
                 </>
               )}
               <br />
-              <span style={{ opacity: 0.75 }}>graded from trick 3 on</span>
+              <span style={{ opacity: 0.75 }}>every trick graded</span>
             </>
           )}
         </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   pickBotNames, cid, sortHand, handStrength,
   aiBuryAndCall, aiChooseCard, legalPlays, freshHand, assignPartner, applyPlay, callOptions,
-  resolveTrick, gradeHandPlays, SUIT_NAME,
+  resolveTrick, SUIT_NAME,
 } from "./engine.js";
 
 import { felt, btnGold, btnPlain, btnGhost } from "./ui.jsx";
@@ -13,6 +13,7 @@ import { HOUSE_RULES } from "./rules.js";
 import { shareRecap } from "./shareRecap.js";
 import { statusLine, progressLine } from "./status.js";
 import { CallButtons } from "./decisions.jsx";
+import { useHandGrade } from "./useHandGrade.js";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -164,12 +165,9 @@ export default function Sheepshead({ onPlayWithFriends }) {
 
   /* ---------- derived ---------- */
   const legalNow = useMemo(() => (g.phase === "playing" && g.turn === 0 ? legalPlays(g, 0).map(cid) : []), [g]);
-  // Best/worst play grading is only meaningful once a hand is fully resolved;
-  // recompute once per hand (not on every render) since trickHistory is frozen by then.
-  const playGrades = useMemo(
-    () => (g.phase === "handEnd" ? gradeHandPlays(g) : { best: null, worst: null }),
-    [g.phase, g.handNum]
-  );
+  // Only meaningful once a hand is fully resolved, and it now grades from
+  // trick 1, which is too slow to sit on the render path — see useHandGrade.
+  const playGrades = useHandGrade(g, g.phase === "handEnd");
 
   // A lone picker is one person, so "Pickers win" is wrong on exactly the hands
   // where the win is most impressive.

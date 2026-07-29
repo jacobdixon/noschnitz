@@ -1342,23 +1342,32 @@ export function scoreHand(g) {
 // a play that was right given what the player could actually see. That is the
 // standard trade for post-mortem analysis and it is the safer direction: it
 // never invents a mistake where no better card existed.
-// Grading only looks at decisions from this trick on (0-indexed, so trick 3).
-// The cost of an exact solve is set by how many cards are still out, and it
-// falls off a cliff: measured over 38 AI-played hands, grading every decision
-// from trick 1 costs a median of 4.2s and a p90 of 14.4s (and blows any sane
-// node budget on ~10% of hands), from trick 2 a median of 345ms and p90 1.2s,
-// and from trick 3 a median of 34ms and p90 88ms. Both call sites run this
-// synchronously inside a render, so seconds are not available.
+// Grading looks at decisions from this trick on (0-indexed, so trick 1 — the
+// whole hand). It used to start at trick 3, which left the opening lead and
+// every trick-2 decision ungraded; two separately reported mistakes turned out
+// to live exactly there and the recap could not see either.
 //
-// This is a real limitation and not a tuning knob to nudge: a genuine blunder
-// in the first two tricks is not graded at all. It is the right trade against
-// the alternative, which was reporting mistakes that did not happen. Grading
-// the whole hand needs the search off the main thread, not a bigger budget.
-const GRADE_FROM_TRICK = 2;
+// The cost of an exact solve is set by how many cards are still out and it
+// falls off a cliff. Re-measured over 40 AI-played hands on the current
+// solver: from trick 3 a median of 8ms and p90 20ms, from trick 2 a median of
+// 100ms and p90 259ms, from trick 1 a median of 795ms, p90 3.9s and a worst
+// case of 6.8s. (An older note here recorded 4.2s/14.4s for trick 1; the
+// `handMask` transposition key is most of the ~5x between then and now. It is
+// still nowhere near render budget.)
+//
+// So the threshold did not move on its own — the search moved off the main
+// thread first. `grader.worker.js` owns it and `useHandGrade` delivers the
+// result asynchronously; both screens render the recap immediately and fill
+// the verdict in. Putting this back on the render path means putting the
+// threshold back with it.
+const GRADE_FROM_TRICK = 0;
 
-// Backstop only. At trick 3+ the observed worst case was 161ms, nowhere near
-// this, so tripping it means something is wrong rather than merely slow.
-const DD_NODE_BUDGET = 500_000;
+// Backstop against pathology, not a latency guard — latency is the worker's
+// problem now. Sized by measurement: grading from trick 1 over 40 hands leaves
+// 20 of them ungraded at 2M nodes and 3 at 10M, and none at 40M. Set above
+// that so the budget decides nothing on a normal hand; a hand that trips it
+// reports no verdict rather than hanging the recap.
+const DD_NODE_BUDGET = 50_000_000;
 
 // Every card gets a bit, so a hand is a 32-bit mask and two orderings of the
 // same holding collide for free. Built as a nested lookup rather than keyed by
