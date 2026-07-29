@@ -6,6 +6,43 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.31.0] - 2026-07-29
+- **Solo hands now upload themselves; no console command.** `recordHand`
+  already captured every finished hand — what was manual was getting it off the
+  device, which matters because solo is played on a phone where nothing can
+  reach localStorage. The client now POSTs unsent hands in batches of 5 as you
+  play, and `scripts/minehands.mjs` reads the corpus back.
+  - Uploads continuously rather than waiting for a round 100: a cleared browser
+    would otherwise lose the lot. 100 is when there is enough to analyse, not
+    when to start keeping it.
+  - Failure is silent and non-destructive. Unsent hands stay unsent and go out
+    after the next hand, so playing on a train loses nothing. A 503 or 404 is
+    treated as a permanent no and stops further attempts, so a browser on
+    production doesn't queue forever.
+- **`POST /api/hands`** stores a played hand; **`GET /api/hands`** reads them
+  back and requires `HANDS_READ_TOKEN`, refusing with 404 when that is unset so
+  a missing config closes the door rather than opening it.
+  - Gated by `requireMultiplayer`, deliberately not by a second mechanism of
+    its own. That gate's second condition is already "a real store is
+    configured", which is exactly what collection needs — and one gate enforced
+    by one test (`flagtest` walks `api/` and requires the call) beats two
+    mechanisms a reader has to know about. Practically this means **beta, not
+    production**, since Upstash is scoped to Preview and Development.
+  - The stored record is **rebuilt field by field, never spread**, so nothing a
+    client sends outside the known list can reach storage even by accident.
+    `handstest` asserts exactly that with a payload carrying a name and an
+    email, neither of which survives.
+- **What is collected, and the notice for it.** The cards dealt and played,
+  which seat was human, the app version, and a random per-browser install id —
+  minted for this and deliberately *not* the multiplayer `playerId`, which is
+  joined to a name. No name, no account, nothing identifying. Since the site is
+  public and this collects from everyone, there is a menu entry, "Helping the
+  AI improve", stating the list and offering a one-tap opt-out that takes
+  effect immediately.
+- `handstest` joins `npm test` (19 harnesses), covering the refusals rather
+  than the happy path: malformed tricks, out-of-range seats, oversized batches,
+  wrong method, an unset read token, and a store-less environment.
+
 ## [0.30.0] - 2026-07-29
 - **Fixed the schneider threshold for defenders — closes #52.** Schneider is
   half of what a side needs to win, and the two sides do not need the same
