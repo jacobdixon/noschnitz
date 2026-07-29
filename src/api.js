@@ -52,8 +52,15 @@ export const createTable = (playerId, hostName) =>
 export const joinTable = (id, playerId, name) =>
   request(`/api/tables/${encodeURIComponent(id)}/join`, { method: "POST", body: { playerId, name } });
 
-export const getState = (id, playerId) =>
-  request(`/api/tables/${encodeURIComponent(id)}/state?playerId=${encodeURIComponent(playerId)}`);
+// `active: false` marks the call a keep-alive rather than evidence of a person,
+// so the server leaves `lastSeen` alone — see the header of
+// api/tables/[id]/state.js. Omitted means "a person is here", which is right
+// for every caller that fires in response to somebody arriving.
+export const getState = (id, playerId, { active = true } = {}) =>
+  request(
+    `/api/tables/${encodeURIComponent(id)}/state?playerId=${encodeURIComponent(playerId)}` +
+      (active ? "" : "&active=0")
+  );
 
 export const startHand = (id, playerId) =>
   request(`/api/tables/${encodeURIComponent(id)}/start`, { method: "POST", body: { playerId } });
