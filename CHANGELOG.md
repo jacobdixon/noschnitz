@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.27.0] - 2026-07-28
+## [0.28.0] - 2026-07-28
 - **The recap grades every trick, including the first two.** `GRADE_FROM_TRICK`
   moved from 2 to 0. Two separately reported mistakes this week — a picker
   burning boss trump on trick 1, and the same shape on trick 2 — sat in the
@@ -39,6 +39,30 @@ corresponds to the entries below.
 - Verified in a real browser, not just in the harness: the module worker
   constructs, round-trips a finished hand in ~1s, and the recap renders a
   trick-1 verdict with the `!` marker on it.
+
+## [0.27.0] - 2026-07-28
+- **The trick sweep now converges on a single point instead of moving all
+  five cards by the same offset.** Previously every card shifted by the
+  winner's fixed direction vector, which reads as "parallel," not
+  "gathering" — five cards starting at five different spots and moving the
+  same distance in the same direction land at five different places. Each
+  card's `--sweep-dx`/`--sweep-dy` is now that card's own position subtracted
+  from one shared target, computed from the felt's actually measured pixel
+  size (`felt.jsx`'s new `useElementSize`) rather than the fixed approximate
+  offsets `SEAT_DIR` still uses for the entrance animation.
+  - The target is the point on the winner's avatar circle nearest the middle
+    of the felt, so cards visibly stop at the avatar's edge instead of
+    flying into it. The viewer's own seat has no avatar (drawn as the hand
+    below in both solo and at a table), so it aims at the bottom-center of
+    the felt instead.
+  - Verified with a plain Node script reproducing the same math for every
+    winner seat and every card-origin seat: all land at the identical target
+    point in every case. Getting a live browser to hold still long enough to
+    screenshot the 450ms sweep remains unreliable in this environment (timer
+    throttling on a backgrounded tab), so the geometry was proven
+    computationally rather than by chasing the animation frame — the same
+    keyframe mechanism already confirmed working in v0.23.0/v0.25.0 is
+    unchanged, only the dx/dy values it's given are now exact.
 
 ## [0.26.0] - 2026-07-28
 - **The picker no longer burns her boss trump on a thin trick she may already

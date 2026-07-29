@@ -95,6 +95,46 @@ const SEAT_DIR = {
 const TRICK_STAND_MS = 900;
 const SWEEP_MS = 450;
 
+// SeatAvatar's circle: 44px, centered in an 84px-wide column. Needed to turn
+// a SEAT_POS entry into the avatar's actual pixel center, for the sweep
+// target below.
+const AVATAR_D = 44;
+const AVATAR_COL_W = 84;
+
+// SEAT_POS and TRICK_POS are both percentages of the same felt container, so
+// converting both to one pixel basis (given the container's measured size)
+// lets the sweep aim every card at the exact same point — the winner's
+// avatar edge closest to the table's center — instead of moving all five by
+// the same approximate offset, which converges on a direction, not a point.
+function seatCenterPx(pos, w, h) {
+  const y = (parseFloat(pos.top) / 100) * h + AVATAR_D / 2;
+  const x = pos.left != null
+    ? (parseFloat(pos.left) / 100) * w + AVATAR_COL_W / 2
+    : w - (parseFloat(pos.right) / 100) * w - AVATAR_COL_W / 2;
+  return { x, y };
+}
+
+// TRICK_POS cards are already centered on their left/top point (the
+// translate(-50%,-50%) in each entry), so this is a plain percentage lookup.
+function trickCenterPx(pos, w, h) {
+  return { x: (parseFloat(pos.left) / 100) * w, y: (parseFloat(pos.top) / 100) * h };
+}
+
+// Where the sweep aims: the point on the winner's avatar nearest the middle
+// of the felt, so cards visibly stop at the avatar's edge rather than
+// flying into it. The viewer's own seat has no avatar to aim at (drawn as
+// the hand below), so it aims at the bottom-center of the felt instead —
+// same spirit as SEAT_DIR[0]'s "toward your hand", just now a real point.
+function sweepTargetPx(winnerSeat, w, h) {
+  if (winnerSeat === 0) return { x: w / 2, y: h };
+  const avatar = seatCenterPx(SEAT_POS[winnerSeat], w, h);
+  const center = { x: w / 2, y: h / 2 };
+  const dx = center.x - avatar.x, dy = center.y - avatar.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const r = AVATAR_D / 2;
+  return { x: avatar.x + (dx / len) * r, y: avatar.y + (dy / len) * r };
+}
+
 export function DealerButton() {
   return (
     <span
@@ -242,7 +282,26 @@ function SeatAvatar({ g, seat, names, extra, decision, narrating, human }) {
  *                              solo; a table overrides it with each seat's
  *                              real kind, since other seats can be human too.
  */
+// The felt's own rendered size, for turning SEAT_POS/TRICK_POS percentages
+// into real pixels — same ResizeObserver pattern as useRowWidth below, just
+// tracking both dimensions since the sweep target needs height too.
+function useElementSize(ref) {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
 export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, isHuman = (seat) => seat === mySeat }) {
+  const feltRef = useRef(null);
+  const { w: feltW, h: feltH } = useElementSize(feltRef);
   // A completed trick sits still for TRICK_STAND_MS (long enough to read
   // "who won +points") and then sweeps toward the winner's seat. Own local
   // clock rather than a prop from either caller — HandFan below already owns
@@ -264,7 +323,7 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, 
   }, [g.trick.length]);
 
   return (
-    <div style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
+    <div ref={feltRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
       {names.map((_, seat) => {
         const pos = SEAT_POS[rotate(seat, mySeat)];
         if (!pos) return null; // the viewer — drawn as the hand below
@@ -296,11 +355,23 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, 
 
       {g.trick.map((t) => {
         const dir = SEAT_DIR[rotate(t.player, mySeat)];
-        // Sweeping is keyed to the WINNER's direction, not each card's own
-        // seat — all five cards converge on one corner, like a hand
-        // gathering the trick, rather than flying back to where they came
-        // from individually.
-        const winnerDir = SEAT_DIR[rotate(trickWinner(g.trick), mySeat)];
+        const rotatedWinner = rotate(trickWinner(g.trick), mySeat);
+        // Sweeping aims every card at the same PIXEL POINT — the winner's
+        // avatar edge nearest the table's center — computed from the felt's
+        // measured size (feltW/feltH). Each card's own delta is that target
+        // minus its own position, so five cards starting from five different
+        // spots genuinely converge, rather than all moving by the same
+        // offset (which converges on a direction, not a point). Falls back
+        // to the old approximate offset for the one frame before the felt
+        // has been measured (feltW/feltH still 0).
+        let sweepDx = SEAT_DIR[rotatedWinner].x;
+        let sweepDy = SEAT_DIR[rotatedWinner].y;
+        if (sweeping && feltW > 0 && feltH > 0) {
+          const target = sweepTargetPx(rotatedWinner, feltW, feltH);
+          const from = trickCenterPx(TRICK_POS[rotate(t.player, mySeat)], feltW, feltH);
+          sweepDx = target.x - from.x;
+          sweepDy = target.y - from.y;
+        }
         // Same mechanism as the entrance (a CSS keyframe, not a JS-toggled
         // transition): a transition triggered by swapping inline styles
         // depends on the browser seeing a genuine before/after style change,
@@ -308,8 +379,8 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, 
         // animation just plays once assigned, same as play-in already does.
         const innerStyle = sweeping
           ? {
-              "--sweep-dx": `${winnerDir.x}px`,
-              "--sweep-dy": `${winnerDir.y}px`,
+              "--sweep-dx": `${sweepDx}px`,
+              "--sweep-dy": `${sweepDy}px`,
               animation: `sweep-out ${SWEEP_MS}ms ease-in both`,
             }
           : {
