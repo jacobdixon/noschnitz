@@ -6,6 +6,37 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.33.0] - 2026-07-29
+- **Accidental alone hands are gone — 0.45% of picks to zero.** v0.32.0 stopped
+  the bury from throwing away the only callable suit, but left a residue, and
+  the residue turned out to be a bug in its own exemption rather than a gap in
+  its reach. It asked "is this hand strong enough to go alone on purpose?" of
+  all eight cards, on the reasoning that the bury only ever discards fail cards
+  so the answer would not move. That is false for exactly the hands it mattered
+  to: a picker holding a single fail card must spend a trump to keep a call, so
+  the six that remain read two below the eight. `9D KD 7D AD JS QH 8D 10S` reads
+  17 — precisely the bar — buries the 10♠ for its points under an exemption it
+  has not earned, and plays alone on a hand of 15. Now the bury runs greedily
+  first and the exemption is judged on the six cards left over, which costs one
+  more pass and cannot be wrong about it. That hand buries 7♦ 8♦ and calls
+  spades.
+- **A partner is worth any diamond, not only a low one.** The other half of the
+  residue. Points buried are points *banked* — they still score for the picking
+  team — so what a diamond costs when it is spent buying a partner is its rank
+  and nothing else, which is why the choice sorts by power rather than by
+  points. The cap of "below the King" is gone; the weakest diamond in the hand
+  goes, whatever it is. A Queen or a Jack still never does, because those cost
+  a trick rather than a rank.
+- Measured the same way as v0.32.0 — every firing position finished twice from
+  an identical deal, the same engine driving all five seats. Over 3 seeds x
+  40,000 deals the picker is **+2.6 stake points per firing**, winning 79% of
+  those hands with a partner against 58% alone; ahead in every seed. Smaller
+  than v0.32.0's +4.2 and it should be, since these are the hands that sat near
+  the alone bar in the first place. Across 74,000 picks the picker now goes
+  alone on 19.8% of them, all of it deliberate.
+- Both pinned in `aitest` from the hands that exposed them, with negative
+  controls that fail against v0.32.0.
+
 ## [0.32.0] - 2026-07-29
 - **The picker no longer sends a Queen or a Jack under.** Reported from hand 16:
   holding Q♦ Q♠ Q♣ 10♦ A♦ K♥, the picker designated the queen of diamonds as her

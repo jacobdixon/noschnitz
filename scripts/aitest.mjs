@@ -782,12 +782,38 @@ for (let humans = 0; humans <= 5; humans++) {
   check("...and it is the lowest diamond that goes, not the 8",
     twoClubs.buried.some((c) => cid(c) === "7D"));
 
-  // Only a spare one, though. The same shape with no diamond below the King
-  // plays alone rather than burying a card that could take a trick.
-  const noSpare = aiBuryAndCall(H(["QD", "JH", "JS", "AD", "10D", "KD", "9C", "8C"]));
-  check("but not a Queen, a Jack, or the ace of diamonds",
-    noSpare.call === null && noSpare.buried.map(cid).sort().join(" ") === "8C 9C",
-    `${noSpare.buried.map(cid).join(" ")} -> ${noSpare.call}`);
+  // Any diamond, not only a low one — points buried are points banked, so what
+  // a diamond costs is its rank and nothing else. With no 7/8/9 in the hand the
+  // King goes and the partner is still bought.
+  const highTrump = aiBuryAndCall(H(["QD", "JH", "JS", "AD", "10D", "KD", "9C", "8C"]));
+  check("with no low diamond the King is spent instead",
+    highTrump.call === "C" && highTrump.buried.map(cid).sort().join(" ") === "9C KD",
+    `${highTrump.buried.map(cid).join(" ")} -> ${highTrump.call}`);
+  check("...and never a Queen or a Jack, which cost a trick rather than a rank",
+    !highTrump.buried.some((c) => c.rank === "Q" || c.rank === "J"));
+
+  // The weakest diamond in the hand, judged by power rather than by points:
+  // here the 8, with the King, the ten and the ace all left alone.
+  const weakest = aiBuryAndCall(H(["AD", "KD", "JC", "KC", "8D", "JH", "10D", "QD"]));
+  check("it is the weakest diamond that goes",
+    weakest.call === "C" && weakest.buried.some((c) => cid(c) === "8D"),
+    `${weakest.buried.map(cid).join(" ")} -> ${weakest.call}`);
+
+  // The alone exemption is judged on the six cards kept, not the eight dealt.
+  // This hand reads 17 on eight — at the bar — but its only fail card is the
+  // 10♠, so any bury that keeps a call spends a trump, and the six that remain
+  // read 15. v0.32.0 asked the eight, granted the exemption, and buried 10♠ for
+  // its points: alone on a hand that never chose to be. Two 0-point diamonds go
+  // instead and the spade stays to call with.
+  const atTheBar = H(["9D", "KD", "7D", "AD", "JS", "QH", "8D", "10S"]);
+  check("the eight-card hand sits exactly at the alone bar",
+    handStrength(atTheBar) === ALONE_HANDSTRENGTH, `${handStrength(atTheBar)}`);
+  const kept = aiBuryAndCall(atTheBar);
+  check("...but the exemption is judged on the six that remain",
+    handStrength(kept.hand) < ALONE_HANDSTRENGTH, `${handStrength(kept.hand)}`);
+  check("...so it calls a partner rather than going alone at 15",
+    kept.call === "S" && kept.buried.map(cid).sort().join(" ") === "7D 8D",
+    `${kept.buried.map(cid).join(" ")} -> ${kept.call}`);
 
   // And the constraint stands down for a hand that is going alone on purpose:
   // the same shape, four Queens stronger, buries all 21 points and names
