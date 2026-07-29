@@ -1099,7 +1099,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
             table={table}
             mySeat={mySeat}
             busy={busy}
-            onRename={(name) => { setModal(null); act(() => api.renameSeat(tableId, playerId, name)); }}
+            onRename={(name) => { setModal(null); act(() => api.setName(tableId, playerId, name)); }}
             onAway={() => { setModal(null); act(() => api.stepAway(tableId, playerId)); }}
             onBack={() => { setModal(null); act(() => api.takeSeatBack(tableId, playerId)); }}
           />
