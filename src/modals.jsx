@@ -87,6 +87,47 @@ export function TrumpModal({ onClose }) {
  * concept of — renaming yourself, stepping away — so this file never learns
  * what a seat kind is.
  */
+/**
+ * What is being collected and how to stop it.
+ *
+ * Solo hands are uploaded so the AI can be compared against how people
+ * actually play — `scripts/minehands.mjs` reads them. This site is public, so
+ * that includes hands played by people who never asked to help, which is why
+ * this screen exists rather than a line in a README: if you are going to
+ * collect from everyone, everyone has to be able to see it and switch it off.
+ *
+ * The list below is exhaustive, and short on purpose.
+ */
+export function ShareHandsModal({ sharing, onToggle, onClose }) {
+  return (
+    <Modal maxWidth={430} onClose={onClose}>
+      <div style={{ fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>
+        Helping the AI improve
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 10 }}>
+        When a hand finishes, the cards are sent to us and compared against what
+        the computer players would have done. That is how the AI gets better at
+        the spots people actually beat it in.
+      </div>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 4 }}>What gets sent:</div>
+      <ul style={{ fontSize: 13, color: felt.creamDim, margin: "0 0 10px 18px", padding: 0 }}>
+        <li>the cards dealt and every card played</li>
+        <li>which seat was the human one</li>
+        <li>the app version, and a random id for this browser</li>
+      </ul>
+      <div style={{ fontSize: 13, color: felt.creamDim, marginBottom: 14 }}>
+        No name, no account, nothing that says who you are — there is no login
+        here to attach it to. Turning this off stops it immediately and nothing
+        further is sent.
+      </div>
+      <button style={{ ...btnGold, width: "100%", marginBottom: 8 }} onClick={onToggle}>
+        {sharing ? "Stop sending my hands" : "Send my hands to help"}
+      </button>
+      <button style={btnPlain} onClick={onClose}>Close</button>
+    </Modal>
+  );
+}
+
 export function ScoresModal({ names, scores, handNum, mySeat, onClose, children }) {
   return (
     <Modal onClose={onClose}>
