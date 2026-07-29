@@ -8,13 +8,13 @@ import {
 import { felt, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { Felt, HandFan, HandLabel } from "./felt.jsx";
 import { TableHeader } from "./header.jsx";
-import { HandEndModal, RecapModal, ScoresModal, LastTrickModal, TrumpModal } from "./modals.jsx";
+import { HandEndModal, RecapModal, ScoresModal, LastTrickModal, TrumpModal, ShareHandsModal } from "./modals.jsx";
 import { HOUSE_RULES } from "./rules.js";
 import { shareRecap } from "./shareRecap.js";
 import { statusLine, progressLine } from "./status.js";
 import { CallButtons } from "./decisions.jsx";
 import { useHandGrade } from "./useHandGrade.js";
-import { recordHand, installExportGlobal } from "./handLog.js";
+import { recordHand, installExportGlobal, isSharing, setSharing } from "./handLog.js";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -31,6 +31,8 @@ export default function Sheepshead({ onPlayWithFriends }) {
   const [names] = useState(() => pickBotNames());
   const [showScores, setShowScores] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [sharing, setSharingState] = useState(() => isSharing());
   const [showLastTrick, setShowLastTrick] = useState(false);
   const [showRecap, setShowRecap] = useState(false);
   const recapCaptureRef = useRef(null);
@@ -203,6 +205,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
         doubler={g.doubler || 1}
         menuItems={[
           { label: "Trump order", onSelect: () => setShowHelp(true) },
+          { label: "Helping the AI improve", onSelect: () => setShowShare(true) },
           { label: "Scores", onSelect: () => setShowScores(true) },
           // Only when a host supplied a handler — the solo game keeps no
           // dependency on the networked half and must work with no server.
@@ -323,6 +326,13 @@ export default function Sheepshead({ onPlayWithFriends }) {
       )}
 
       {showHelp && <TrumpModal onClose={() => setShowHelp(false)} />}
+      {showShare && (
+        <ShareHandsModal
+          sharing={sharing}
+          onToggle={() => { const next = !sharing; setSharing(next); setSharingState(next); }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>
   );
 }

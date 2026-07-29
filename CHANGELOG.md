@@ -50,6 +50,68 @@ corresponds to the entries below.
   with a negative control that fails against the previous engine — `undertest`
   for the designation, `aitest` for the bury.
 
+## [0.31.0] - 2026-07-29
+- **Solo hands now upload themselves; no console command.** `recordHand`
+  already captured every finished hand — what was manual was getting it off the
+  device, which matters because solo is played on a phone where nothing can
+  reach localStorage. The client now POSTs unsent hands in batches of 5 as you
+  play, and `scripts/minehands.mjs` reads the corpus back.
+  - Uploads continuously rather than waiting for a round 100: a cleared browser
+    would otherwise lose the lot. 100 is when there is enough to analyse, not
+    when to start keeping it.
+  - Failure is silent and non-destructive. Unsent hands stay unsent and go out
+    after the next hand, so playing on a train loses nothing. A 503 or 404 is
+    treated as a permanent no and stops further attempts, so a browser on
+    production doesn't queue forever.
+- **`POST /api/hands`** stores a played hand; **`GET /api/hands`** reads them
+  back and requires `HANDS_READ_TOKEN`, refusing with 404 when that is unset so
+  a missing config closes the door rather than opening it.
+  - Gated by `requireMultiplayer`, deliberately not by a second mechanism of
+    its own. That gate's second condition is already "a real store is
+    configured", which is exactly what collection needs — and one gate enforced
+    by one test (`flagtest` walks `api/` and requires the call) beats two
+    mechanisms a reader has to know about. Practically this means **beta, not
+    production**, since Upstash is scoped to Preview and Development.
+  - The stored record is **rebuilt field by field, never spread**, so nothing a
+    client sends outside the known list can reach storage even by accident.
+    `handstest` asserts exactly that with a payload carrying a name and an
+    email, neither of which survives.
+- **What is collected, and the notice for it.** The cards dealt and played,
+  which seat was human, the app version, and a random per-browser install id —
+  minted for this and deliberately *not* the multiplayer `playerId`, which is
+  joined to a name. No name, no account, nothing identifying. Since the site is
+  public and this collects from everyone, there is a menu entry, "Helping the
+  AI improve", stating the list and offering a one-tap opt-out that takes
+  effect immediately.
+- `handstest` joins `npm test` (19 harnesses), covering the refusals rather
+  than the happy path: malformed tricks, out-of-range seats, oversized batches,
+  wrong method, an unset read token, and a store-less environment.
+
+## [0.30.0] - 2026-07-29
+- **Fixed the schneider threshold for defenders — closes #52.** Schneider is
+  half of what a side needs to win, and the two sides do not need the same
+  thing: the picker's team needs 61 and the defenders 60, because a 60-60 tie
+  goes to the defenders. Halving each gives 31 for the picker and 30 for the
+  defenders, so every defender threshold sits one point below the picker's,
+  exactly as 60 sits below 61.
+  - The code tested `<= 30` on both sides, and the comment above it asserted
+    the symmetry as though it were the rule — so the comment was wrong in the
+    same way the code was, which is why it had survived. Defenders finishing on
+    exactly 30 were scored as schneidered when they were not.
+  - **Measured, paired.** The change is scoring-only, so the same played hand
+    can be scored under both rules with no run-to-run noise at all: over 28,828
+    played hands it changes **1.09%** of them, and the picker's EV goes from
+    0.7312 to 0.7019 a hand — the picker had been collecting **844 unearned
+    points** across that sample, every one of them from an undeserved 2x.
+  - `handStrength >= 10` still needs no retuning: the move is small, and it is
+    in the direction of making picking very slightly less attractive, which is
+    the correct direction for a rule that was over-paying the picker.
+  - Both sides of both boundaries are now pinned in `scoringtest` — defenders
+    on 29/30/31 and the picker on 29/30/31 — plus the no-tricker cases, since
+    an off-by-one is invisible anywhere except at the boundary. An unseeded
+    `simulate` comparison is NOT sufficient here and was misleading when tried:
+    two runs disagreed on "went alone" by 0.8pp, which this fix cannot affect.
+
 ## [0.29.0] - 2026-07-28
 - **Solo now keeps a local record of finished hands, so human play can be
   compared against the engine's.** Two deliberate constraints: nothing leaves

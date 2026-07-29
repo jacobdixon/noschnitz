@@ -54,6 +54,44 @@ function checkZeroSum(name, g) {
   check(`${name}: zero-sum`, sum(deltasOf(g)) === 0, show(deltasOf(g)));
 }
 
+/* ------------------- Schneider boundaries are asymmetric ------------------ */
+// Schneider is half of what a side needs to win, and the sides need different
+// things: 61 for the picker, 60 for the defenders, because a 60-60 tie goes to
+// the defenders. So the picker is out of schneider at 31 and the defenders at
+// 30 — every defender threshold one point below the picker's.
+//
+// The code used to test <= 30 on both sides. Measured over 19,218 played
+// hands, that handed the picker an unearned 2x on 1.12% of them — 4.4% of all
+// schneiders, every one in the picker's favour. Both sides of both boundaries
+// are pinned here because an off-by-one is invisible anywhere except at the
+// boundary itself.
+{
+  const label = (teamPts, tricks) => finished({
+    // seat 0 is the picker, seat 2 a defender; the split is all that matters.
+    ptsTaken: [teamPts, 0, 120 - teamPts, 0, 0],
+    trickCounts: tricks,
+  }).result.label;
+
+  // Picker wins; the DEFENDERS are the side at risk. Out of schneider at 30.
+  check("defenders on 31 are not schneidered", label(89, [3, 0, 3, 0, 0]) === "");
+  check("defenders on 30 are NOT schneidered — this is the fix",
+    label(90, [3, 0, 3, 0, 0]) === "", `got "${label(90, [3, 0, 3, 0, 0])}"`);
+  check("defenders on 29 ARE schneidered",
+    label(91, [3, 0, 3, 0, 0]) === "No Schneider!", `got "${label(91, [3, 0, 3, 0, 0])}"`);
+
+  // Defenders win; the PICKER's team is the side at risk. Out of schneider at 31.
+  check("picker on 31 is not schneidered", label(31, [3, 0, 3, 0, 0]) === "");
+  check("picker on 30 IS schneidered",
+    label(30, [3, 0, 3, 0, 0]) === "No Schneider!", `got "${label(30, [3, 0, 3, 0, 0])}"`);
+  check("picker on 29 is schneidered", label(29, [3, 0, 3, 0, 0]) === "No Schneider!");
+
+  // The boundary must not swallow the no-tricker, which outranks it.
+  check("taking every trick is a no-tricker, not a schneider",
+    label(120, [6, 0, 0, 0, 0]) === "No-tricker!", `got "${label(120, [6, 0, 0, 0, 0])}"`);
+  check("losing every trick is a no-tricker",
+    label(0, [0, 0, 6, 0, 0]) === "No-tricker!", `got "${label(0, [0, 0, 6, 0, 0])}"`);
+}
+
 /* ----------------------------- Ordinary hands ---------------------------- */
 {
   // Picker team takes 70. Picker +2, partner +1, three defenders -1 each.

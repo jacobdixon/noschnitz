@@ -17,6 +17,13 @@
  */
 
 const KEY = "noschnitz.handlog.v1";
+const INSTALL_KEY = "noschnitz.install";
+const OPTOUT_KEY = "noschnitz.sharehands";
+const ENDPOINT = "/api/hands";
+// Small batches, sent as you play. Waiting for a round 100 before sending
+// anything would mean a cleared browser loses the lot, and the threshold is
+// about when there is enough to analyse — not about when to start keeping it.
+const BATCH = 5;
 // ~3KB a hand against a ~5MB localStorage budget, so this is a long way from
 // the limit while still being months of play.
 const MAX_HANDS = 300;
@@ -24,6 +31,35 @@ const MAX_HANDS = 300;
 const canStore = () => {
   try { return typeof localStorage !== "undefined"; } catch { return false; }
 };
+
+// A random id for this browser, minted here and used for nothing else. It is
+// deliberately NOT the multiplayer playerId, which is joined to a name: this
+// one exists only so one device's hands can be grouped, which is what makes
+// "does this player beat the engine" answerable at all.
+export function installId() {
+  if (!canStore()) return null;
+  try {
+    let id = localStorage.getItem(INSTALL_KEY);
+    if (!id) {
+      id = "i-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(INSTALL_KEY, id);
+    }
+    return id;
+  } catch { return null; }
+}
+
+export const isSharing = () => {
+  if (!canStore()) return false;
+  try { return localStorage.getItem(OPTOUT_KEY) !== "off"; } catch { return false; }
+};
+
+export function setSharing(on) {
+  if (!canStore()) return;
+  try {
+    if (on) localStorage.removeItem(OPTOUT_KEY);
+    else localStorage.setItem(OPTOUT_KEY, "off");
+  } catch { /* nothing to do */ }
+}
 
 export function readHandLog() {
   if (!canStore()) return [];
@@ -66,9 +102,41 @@ export function recordHand(g, version, humanSeat = 0) {
     log.push(rec);
     while (log.length > MAX_HANDS) log.shift();
     localStorage.setItem(KEY, JSON.stringify(log));
+    // Fire and forget: a failed upload must never affect the game.
+    flushHands();
   } catch {
     // A full or disabled localStorage must never take the game down with it.
   }
+}
+
+// Sends anything not yet sent, oldest first, and marks it. Failure is silent
+// and non-destructive: unsent records stay unsent and go out with the next
+// hand, so playing on a train loses nothing.
+//
+// Environments without a store answer 503 and that is a permanent no, not a
+// retry — production has no Redis, so a browser there would otherwise queue
+// forever and re-send on every hand.
+let sharingOff = false;
+export async function flushHands() {
+  if (!canStore() || sharingOff || !isSharing()) return;
+  let log = readHandLog();
+  const pending = log.filter((r) => !r.sent);
+  if (pending.length < BATCH) return;
+
+  const batch = pending.slice(0, BATCH);
+  const install = installId();
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hands: batch.map(({ sent, ...h }) => ({ ...h, install })) }),
+    });
+    if (res.status === 503 || res.status === 404) { sharingOff = true; return; }
+    if (!res.ok) return;
+    const keys = new Set(batch.map((b) => `${b.at}`));
+    log = readHandLog().map((r) => (keys.has(`${r.at}`) ? { ...r, sent: true } : r));
+    localStorage.setItem(KEY, JSON.stringify(log));
+  } catch { /* offline; try again after the next hand */ }
 }
 
 export function clearHandLog() {
