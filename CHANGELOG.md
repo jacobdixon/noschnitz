@@ -6,6 +6,35 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.34.0] - 2026-07-29
+- **Nobody waits on the host between hands any more.** Dealing was host-only,
+  which made one person the table's clock and, worse, its single point of
+  failure: `hostPlayerId` is set once when the table is created and never
+  reassigned, and the auto-cover that rescues an absent player cannot help here
+  — it only covers the seat that is *owed a decision*, and at a finished hand
+  nobody is owed one. A host whose phone died at the recap left everyone else
+  looking at a summary with no way forward and no way to recover. Any seated
+  player can now deal; the Host badge stays, but it is a label rather than an
+  office.
+- **Closing the hand-end summary is what deals the next hand.** The gold button
+  reads "Close" instead of "Deal next hand", and the first person to finish
+  reading moves the table on. Everyone else keeps their summary — and their
+  recap — for as long as they want it, and lands in the hand already under way
+  when they close. The table no longer runs at the pace of its slowest reader,
+  and nobody has to ask anyone to press anything.
+- The summary and recap now render from a snapshot of the finished hand taken
+  when it ended, not from live table state. Without that they were torn off the
+  screen by somebody else's click the moment the deal landed — which, with the
+  change above, is the ordinary case rather than a rare one. The snapshot keeps
+  the seat names of the hand it belongs to as well, so a player seated by that
+  very deal (MP-2.3) cannot relabel a recap of a hand they were never in.
+- Two people closing on the same beat is now routine, so it is covered rather
+  than assumed: the second deal of a hand is refused by the compare-and-swap,
+  and the client says nothing about it, because there is nothing to say — the
+  hand it was asking for is already on the felt.
+- Multiplayer only. The solo game keeps its "Deal next hand" button, and the
+  flag-off production bundle is unchanged.
+
 ## [0.33.2] - 2026-07-29
 - **The picker's under card no longer leaks through the AI log.** `advanceAI`
   recorded the *physical* card each AI seat played. For every card but one that

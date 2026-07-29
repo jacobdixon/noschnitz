@@ -3,14 +3,26 @@
 
    Body: { playerId }
    200:  { you, table: <redacted> }
-   403:  not the host
+   403:  not seated at this table
    404:  no such table
    409:  a hand is already in progress
 
-   Host-only. The check runs inside the mutate callback against freshly-read
-   state rather than against a table read earlier in the request — the host
-   could have left between the two, and the authorization decision has to be
-   made on the same snapshot the write lands on.
+   Anyone SEATED may deal, not just the host. It was host-only, and that made
+   the host a single point of failure with no recovery: `hostPlayerId` is
+   assigned once at createTable and never reassigned, and the COM-3.4 auto-cover
+   cannot help here because it only ever covers the seat owed a decision — at
+   handEnd `seatOwedDecision` returns -1, so nobody is owed one. A host whose
+   phone died at the recap left four people looking at a modal with no way
+   forward. Now any of them can move the table on.
+
+   The check runs inside the mutate callback against freshly-read state rather
+   than against a table read earlier in the request — a player could have been
+   booted between the two, and the authorization decision has to be made on the
+   same snapshot the write lands on.
+
+   A seat is a seat whether or not the AI is currently covering it ("away"),
+   which is what `seatOf` matches: someone coming back to a covered seat can
+   deal on their way in.
 
    startHand() seats any pending joiners first, then deals. advanceTable() then
    runs the AI seats through picking (and the opening lead, if the AI leads)
@@ -44,7 +56,7 @@ export default async function handler(req, res) {
     // that hit a live three-player table.
     table = markSeen(table, { playerId, now: Date.now() });
 
-    if (table.hostPlayerId !== playerId) return { table, denied: "not-host" };
+    if (seatOf(table, playerId) < 0) return { table, denied: "not-seated" };
     if (!atHandBoundary(table)) return { table, denied: "hand-in-progress" };
 
     const now = Date.now();
@@ -58,7 +70,9 @@ export default async function handler(req, res) {
     return fail(res, 409, "conflict", "The table changed while starting. Try again.");
   }
 
-  if (out.denied === "not-host") return fail(res, 403, "not-host", "Only the host can start a hand.");
+  if (out.denied === "not-seated") {
+    return fail(res, 403, "not-seated", "Only someone at the table can deal.");
+  }
   if (out.denied === "hand-in-progress") {
     return fail(res, 409, "hand-in-progress", "A hand is already in progress.");
   }
