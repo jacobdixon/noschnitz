@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.28.0] - 2026-07-28
+- **The recap grades every trick, including the first two.** `GRADE_FROM_TRICK`
+  moved from 2 to 0. Two separately reported mistakes this week — a picker
+  burning boss trump on trick 1, and the same shape on trick 2 — sat in the
+  ungraded window, so the recap could not see either of the plays an expert
+  was pointing at. The legend now reads "every trick graded" rather than
+  "graded from trick 3 on".
+- **The threshold could not move on its own; the search had to come off the
+  main thread first.** Re-measured over 40 AI-played hands on the current
+  solver: grading from trick 3 is a median of 8ms (p90 20ms), from trick 2 a
+  median of 100ms (p90 259ms), and from trick 1 a median of **795ms with a p90
+  of 3.9s and a worst case of 6.8s**. The old note here recorded 4.2s/14.4s for
+  trick 1 — the `handMask` transposition key is most of the ~5x since — but it
+  is still nowhere near a render budget, and both call sites were `useMemo`
+  running inside a render.
+  - `grader.worker.js` now owns the solve and `useHandGrade` delivers it
+    asynchronously. Both screens render the recap immediately and fill the
+    verdict in. The worker is deliberately thin — every decision worth testing
+    stays in `gradeHandPlays`, which the harnesses call directly.
+  - The recap distinguishes "still working" from "nothing worth flagging",
+    which would otherwise both render as a blank legend. While the solve is out
+    it says *grading the hand…*.
+  - If a worker cannot be constructed the recap simply shows no verdict.
+    Falling back to grading on this thread would reintroduce exactly the freeze
+    this avoids, and quietly grading from a later trick would answer a
+    different question than the legend claims.
+- `DD_NODE_BUDGET` 500k -> 50M. It is a backstop against pathology now, not a
+  latency guard — latency is the worker's problem. Sized by measurement:
+  grading from trick 1 over 40 hands leaves 20 ungraded at 2M nodes and 3 at
+  10M, and none at 40M.
+- Verified in a real browser, not just in the harness: the module worker
+  constructs, round-trips a finished hand in ~1s, and the recap renders a
+  trick-1 verdict with the `!` marker on it.
+
 ## [0.27.0] - 2026-07-28
 - **The trick sweep now converges on a single point instead of moving all
   five cards by the same offset.** Previously every card shifted by the

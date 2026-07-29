@@ -19,7 +19,7 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { cid, legalPlays, gradeHandPlays, callOptions, SUIT_NAME } from "./engine.js";
+import { cid, legalPlays, callOptions, SUIT_NAME } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
@@ -38,6 +38,7 @@ import { shareRecap } from "./shareRecap.js";
 import { HOUSE_RULES } from "./rules.js";
 import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
 import * as api from "./api.js";
+import { useHandGrade } from "./useHandGrade.js";
 
 // Reserved height for the status + action block. Without it the felt reflows
 // every time a button appears or disappears, and the whole play area jumps as
@@ -462,12 +463,9 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // recap at the END of the next hand instead of on the summary.
   useEffect(() => { setShowRecap(false); setCallStep(false); }, [table?.g?.handNum]);
   const serverNow = useServerNow(table);
-  // Only meaningful once every card is down, and it walks the whole hand,
-  // so it is not worth computing on each of the ~30 renders before that.
-  const playGrades = useMemo(
-    () => (table?.g?.phase === "handEnd" ? gradeHandPlays(table.g) : { best: null, worst: null }),
-    [table?.g?.phase, table?.g?.handNum]
-  );
+  // Only meaningful once every card is down, and it walks the whole hand
+  // double-dummy from trick 1 — off the main thread, see useHandGrade.
+  const playGrades = useHandGrade(table?.g, table?.g?.phase === "handEnd");
   useTick(1000);
 
   // Proof of life. Ignores the response — the stream is authoritative for
