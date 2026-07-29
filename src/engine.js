@@ -393,6 +393,90 @@ export function knowsTeammate(g, viewer, target) {
   return false;
 }
 
+/* --------------------- Who is my partner, probably? ---------------------- */
+// Which seats could still be holding the called card, as far as `viewer` can
+// tell. Deduction only — every exclusion below is a fact, not a read.
+//
+// The engine's own rules do most of the work. `legalPlays` forces the partner
+// to play the called card the first time that suit is led, and forbids leading
+// that suit with anything else, so a called-suit lead settles the question
+// inside the same trick. The interesting case is the one where it settles it
+// *negatively*: if the suit is led and the card never appears, every seat that
+// followed or showed void is excluded, and the table has just learned the
+// picker is effectively alone without anyone announcing it.
+//
+// Returns [] when nobody can hold it (alone, declared or deduced), and a
+// single seat once it is known. Never excludes the seat that actually holds
+// it — `belieftest` asserts that invariant on every decision it sees.
+export function calledCardCandidates(g, viewer) {
+  if (!g.calledSuit) return [];
+  const rank = g.calledRank || "A";
+  const isCalled = (c) => c.suit === g.calledSuit && c.rank === rank && !isTrump(c);
+
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+
+  // Already on the table: everyone saw who played it.
+  for (const t of tricks) for (const pl of t || []) if (isCalled(pl.card)) return [pl.player];
+
+  // Led that suit and it did not appear -> nobody in that trick holds it.
+  // effSuit returns "T" for trump, so this can only match a fail lead. The
+  // picker's under card is stored physically, so an under lead is missed here
+  // rather than mis-read: a deduction we fail to make, never a wrong one.
+  const out = new Set();
+  for (const t of tricks) {
+    if (!t || !t.length || effSuit(t[0].card) !== g.calledSuit) continue;
+    for (const pl of t) out.add(pl.player);
+  }
+
+  const cands = [];
+  for (let p = 0; p < 5; p++) {
+    if (p === g.picker) continue;              // never calls a card it holds
+    if (out.has(p)) continue;
+    if (p === viewer) {
+      // The one seat whose hand this viewer can read.
+      if (g.hands[viewer]?.some(isCalled)) return [viewer];
+      continue;
+    }
+    cands.push(p);
+  }
+  return cands;
+}
+
+// How likely `target` is on `viewer`'s side, in [0,1].
+//
+// This is the calibrated version of knowsTeammate(), which answers the same
+// question with a hard 1 or 0 and is wrong in both directions by construction:
+// it tells a defender every unrevealed seat is a teammate (really about two in
+// three) and tells the picker no seat is (really about one in four, since the
+// partner is one of the four other seats). Both reported hands this week were
+// the picker being certain about a trick its own partner was holding.
+//
+// Deliberately NOT wired into play here. A belief is worth having as a
+// measured quantity before anything acts on it — see belieftest, which checks
+// it against ground truth in self-play. Wiring it into trickSecurity and the
+// duck rule is a separate change with its own measurement.
+export function teammateProbability(g, viewer, target) {
+  if (viewer === target) return 1;
+  const cands = calledCardCandidates(g, viewer);
+
+  // Alone, declared or deduced: the picker stands by itself.
+  if (!g.calledSuit || cands.length === 0) {
+    if (viewer === g.picker) return 0;
+    return target === g.picker ? 0 : 1;
+  }
+
+  // Settled: fall through to certainty rather than a probability.
+  if (cands.length === 1) {
+    const onPickerTeam = (p) => p === g.picker || p === cands[0];
+    return onPickerTeam(viewer) === onPickerTeam(target) ? 1 : 0;
+  }
+
+  const pPartner = cands.includes(target) ? 1 / cands.length : 0;
+  if (viewer === g.picker) return pPartner;   // the picker's only teammate IS the partner
+  if (target === g.picker) return 0;          // and a defender knows the picker
+  return 1 - pPartner;                        // otherwise a teammate unless they are the partner
+}
+
 /* ------------------- How safe is the trick, really? --------------------- */
 // A schmear is a bet, not a gift: the points go to whoever actually ends up
 // taking the trick. Up to 0.11.x the AI decided this by looking at the rank of
