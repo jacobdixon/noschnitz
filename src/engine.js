@@ -315,17 +315,15 @@ export function chooseUnderCard(hand) {
 // accident to a hand this far below the bar.
 export const ALONE_HANDSTRENGTH = 17;
 
-// The trump a picker can afford to throw away: a diamond below the King, so
-// 7, 8 or 9 — no points, and beaten by every other trump in the deck. The bury
-// already used this as its last resort when the hand held no fail card at all;
-// naming it makes the second use, buying a partner with one, the same idea
-// rather than a second magic number.
+// The trump the bury falls back on when the hand holds no fail card at all: a
+// diamond below the King, so 7, 8 or 9 — no points, and beaten by every other
+// trump in the deck. Buying a partner spends a trump too, but by a different
+// rule: there the cheapest diamond the hand holds, whatever it is, since a
+// hand with no low diamond should still get to name somebody.
 export const SPARE_TRUMP_POWER = 3;
 
 export function aiBuryAndCall(hand) {
   // choose 2 to bury from 8, then a suit to call
-  let h = [...hand];
-  const fails = () => h.filter((c) => !isTrump(c));
   const suitsHeld = (arr) => {
     const m = { C: [], S: [], H: [] };
     arr.forEach((c) => m[c.suit].push(c));
@@ -342,53 +340,69 @@ export function aiBuryAndCall(hand) {
   // 10, and every other fail suit was a suit whose ace she held — so spades
   // was her only partner. The bury liked its ten points (10 x 2 = 20 beat the
   // old -8 for killing the call) and she played alone on two Jacks and three
-  // diamonds. So keeping a call alive is a constraint here, not a term in the
-  // score: when some candidate preserves one, no candidate that destroys one
-  // is even considered. The exception is a hand already strong enough to go
-  // alone on purpose, which wants the points and is not going to call anybody.
-  // Measured on the eight, but the bury only ever discards fail (or, cornered,
-  // the lowest diamonds), so it is the same number the call step will see.
-  const meansToGoAlone = handStrength(hand) >= ALONE_HANDSTRENGTH;
-
-  const buried = [];
-  for (let k = 0; k < 2; k++) {
-    const f = fails();
-    let pool = f.length ? f : h.filter((c) => trumpPower(c) <= SPARE_TRUMP_POWER); // low diamonds as last resort
-    if (!pool.length) pool = [...h].sort((a, b) => power(a) - power(b)).slice(0, 1);
-    if (!meansToGoAlone && callable(h, buried).length) {
-      const keepsCall = (c) => callable(h.filter((x) => x !== c), [...buried, c]).length > 0;
-      let keeps = pool.filter(keepsCall);
-      // Nothing in the fail suits can be spared: every fail card left is the
-      // last one of the only suit there is to call with. Buying the partner
-      // costs a trump, then — the cheapest one in the deck, a diamond below the
-      // King, which is 0 points and loses to every other trump anyway. A
-      // partner is worth that. It is NOT worth a Queen or a Jack or the ace of
-      // diamonds, so if the hand holds no spare diamond this does nothing and
-      // the picker plays alone as before.
-      if (!keeps.length) {
-        const spare = h
-          .filter((c) => isTrump(c) && trumpPower(c) <= SPARE_TRUMP_POWER && keepsCall(c))
-          .sort((a, b) => trumpPower(a) - trumpPower(b));
-        if (spare.length) keeps = [spare[0]];
+  // diamonds. So keeping a call alive is a constraint, not a term in the score:
+  // when some candidate preserves one, no candidate that destroys one is even
+  // considered. `protectCall` is that constraint. A hand strong enough to go
+  // alone on purpose does not want it — it wants the points, and it is not
+  // going to name anybody.
+  function buryPass(protectCall) {
+    let h = [...hand];
+    const fails = () => h.filter((c) => !isTrump(c));
+    const buried = [];
+    for (let k = 0; k < 2; k++) {
+      const f = fails();
+      let pool = f.length ? f : h.filter((c) => trumpPower(c) <= SPARE_TRUMP_POWER); // low diamonds as last resort
+      if (!pool.length) pool = [...h].sort((a, b) => power(a) - power(b)).slice(0, 1);
+      if (protectCall && callable(h, buried).length) {
+        const keepsCall = (c) => callable(h.filter((x) => x !== c), [...buried, c]).length > 0;
+        let keeps = pool.filter(keepsCall);
+        // Nothing in the fail suits can be spared: every fail card left is the
+        // last one of the only suit there is to call with. Buying the partner
+        // costs a trump, then — the weakest one the hand holds, which is why
+        // this sorts by power and not by points. Points buried are points
+        // banked, so a diamond costs nothing but its rank; a Queen or a Jack
+        // costs a trick, so those are never spent and a hand holding nothing
+        // but power trump plays alone as before.
+        if (!keeps.length) {
+          const spare = h
+            .filter((c) => isTrump(c) && !isPowerTrump(c) && keepsCall(c))
+            .sort((a, b) => trumpPower(a) - trumpPower(b));
+          if (spare.length) keeps = [spare[0]];
+        }
+        if (keeps.length) pool = keeps;
       }
-      if (keeps.length) pool = keeps;
+      // prefer high points. The keepsCall term below only bites on the
+      // unprotected pass, since otherwise the pool has already been filtered to
+      // candidates that keep a call.
+      const scored = pool
+        .map((c) => {
+          const rest = h.filter((x) => x !== c);
+          const keepsCall = callable(rest, [...buried, c]).length > 0 || callable(h, buried).length === 0;
+          const m = suitsHeld(fails());
+          const shortBonus = !isTrump(c) && m[c.suit].length === 1 && !m[c.suit].some((x) => x.rank === "A") ? -3 : 0;
+          return { c, score: cardPts(c) * 2 + (keepsCall ? 4 : -8) + shortBonus + (c.rank === "A" && !isTrump(c) ? 3 : 0) };
+        })
+        .sort((a, b) => b.score - a.score);
+      const pick = scored[0].c;
+      buried.push(pick);
+      h = h.filter((c) => c !== pick);
     }
-    // prefer high points. The keepsCall term below now only bites on an
-    // alone-strength hand, since otherwise the pool has already been filtered
-    // to candidates that keep a call.
-    const scored = pool
-      .map((c) => {
-        const rest = h.filter((x) => x !== c);
-        const keepsCall = callable(rest, [...buried, c]).length > 0 || callable(h, buried).length === 0;
-        const m = suitsHeld(fails());
-        const shortBonus = !isTrump(c) && m[c.suit].length === 1 && !m[c.suit].some((x) => x.rank === "A") ? -3 : 0;
-        return { c, score: cardPts(c) * 2 + (keepsCall ? 4 : -8) + shortBonus + (c.rank === "A" && !isTrump(c) ? 3 : 0) };
-      })
-      .sort((a, b) => b.score - a.score);
-    const pick = scored[0].c;
-    buried.push(pick);
-    h = h.filter((c) => c !== pick);
+    return { buried, hand: h };
   }
+
+  // Which pass to keep can only be decided on the six cards that remain, so
+  // bury greedily first and look at the result. v0.32.0 asked the question of
+  // all eight instead, on the reasoning that the bury only ever discards fail
+  // cards so the number would not move — false for exactly the hands it
+  // mattered to. A picker holding a single fail card spends a trump, so the
+  // kept six come in two below the eight: hands reading 17 on eight were 15 on
+  // six, claimed an alone exemption they had not earned, and went alone with
+  // 0.34% of all picks landing there. Asking after the fact costs one more pass
+  // and cannot be wrong about it.
+  const greedy = buryPass(false);
+  const { buried, hand: h } =
+    handStrength(greedy.hand) >= ALONE_HANDSTRENGTH ? greedy : buryPass(true);
+
   const opts = callable(h, buried);
   let call = null;
   let callRank = null;
