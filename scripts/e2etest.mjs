@@ -204,18 +204,35 @@ const rejoin = await call(joinRoute, {
 check("re-joining reclaims the same seat, doesn't consume another",
   (await store.get(tableId)).seats.filter((s) => s.kind === "human").length === 2);
 
-// --- start: only the host -------------------------------------------------
-const notHost = await call(startRoute, {
+// --- start: anyone seated, and only once ----------------------------------
+// Dealing is not the host's office. It was, and that made the host a single
+// point of failure the table could not recover from — see the header of
+// api/tables/[id]/start.js.
+const stranger = await call(startRoute, {
+  method: "POST", query: { id: tableId }, body: { playerId: "p-nobody" },
+});
+check("someone with no seat cannot start the hand", stranger.status === 403, `got ${stranger.status}`);
+check("unseated start uses the not-seated code", stranger.body?.error?.code === "not-seated",
+  `code=${stranger.body?.error?.code}`);
+
+// Dave holds seat 1 and is not the host.
+const started = await call(startRoute, {
   method: "POST", query: { id: tableId }, body: { playerId: DAVE },
 });
-check("non-host cannot start the hand", notHost.status === 403, `got ${notHost.status}`);
-check("non-host start uses the not-host code", notHost.body?.error?.code === "not-host");
+check("a seated non-host can start the hand", started.status === 200, `got ${started.status}`);
+assertNoLeak("start", started.body, await store.get(tableId), 1, DAVE, ALL_IDS);
 
-const started = await call(startRoute, {
+// Everyone closes their own hand-end summary now, so several players racing to
+// deal the same hand is routine rather than exotic. The second one through must
+// not deal again — the guard runs inside the CAS callback, against fresh state.
+const secondDeal = await call(startRoute, {
   method: "POST", query: { id: tableId }, body: { playerId: HOST },
 });
-check("host can start the hand", started.status === 200, `got ${started.status}`);
-assertNoLeak("start", started.body, await store.get(tableId), 0, HOST, ALL_IDS);
+check("a second deal of the same hand is refused", secondDeal.status === 409, `got ${secondDeal.status}`);
+check("the refusal is hand-in-progress", secondDeal.body?.error?.code === "hand-in-progress",
+  `code=${secondDeal.body?.error?.code}`);
+check("the refused deal left the hand alone", (await store.get(tableId)).g.handNum === 1,
+  `handNum=${(await store.get(tableId)).g.handNum}`);
 
 // --- play a complete hand -------------------------------------------------
 // Drives every HUMAN decision through the API — pick/pass, bury+call, and each

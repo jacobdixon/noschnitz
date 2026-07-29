@@ -180,15 +180,12 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
 
       {err && <div style={{ color: felt.red, marginTop: 12, fontSize: 14 }}>{err}</div>}
 
-      {table.youAreHost ? (
-        <button style={{ ...btnGold, marginTop: 18, width: "100%" }} disabled={busy} onClick={onStart}>
-          {busy ? "Dealing…" : "Deal the first hand"}
-        </button>
-      ) : (
-        <div style={{ marginTop: 18, fontSize: 14, color: felt.creamDim }}>
-          Waiting for {table.seats[table.hostSeat]?.name || "the host"} to deal…
-        </div>
-      )}
+      {/* Everyone seated gets this, not just the host. The Host badge above is
+          all that's left of the role: dealing is not an office, and making it
+          one is what left a table stranded when the host dropped. */}
+      <button style={{ ...btnGold, marginTop: 18, width: "100%" }} disabled={busy} onClick={onStart}>
+        {busy ? "Dealing…" : "Deal the first hand"}
+      </button>
     </div>
   );
 }
@@ -417,20 +414,51 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // up while the table is still starting.
   const caughtUp = frame.caughtUp && narration.done;
 
+  // The finished hand, latched on arrival and cleared only when THIS player
+  // closes the summary.
+  //
+  // Closing is what deals the next hand now (see closeSummary below), so the
+  // table moves on while other people are still reading. Rendering the result
+  // straight off live state meant their summary was torn off the screen by
+  // somebody else's click the instant the deal landed — `table.g` had already
+  // become the next hand's. The snapshot is what keeps a hand-end on screen
+  // until its reader is done with it.
+  //
+  // Names ride along because the deal this triggers can seat a queued player
+  // (MP-2.3), which would otherwise relabel a seat in the recap of a hand that
+  // player was never in.
+  const [ended, setEnded] = useState(null); // { g, names } | null
+  useEffect(() => {
+    const finished = table?.g;
+    if (finished?.phase !== "handEnd" || !finished.result) return;
+    // Returning `cur` unchanged is what makes this safe to run on every frame:
+    // the first snapshot of a hand wins, and React bails out on the identity.
+    setEnded((cur) =>
+      cur && cur.g.handNum === finished.handNum
+        ? cur
+        : { g: finished, names: table.seats.map((s) => s.name) }
+    );
+  }, [table]);
+
   // The summary used to appear the instant the last card was revealed, which
   // covered that card with a modal before anyone had read it — the hand ended
   // on a card you never saw. Wait out the same beat a completed trick gets
   // anywhere else (CARD_MS to take it in, TRICK_HOLD_MS to sit on the finished
   // trick), so the last trick resolves on screen and THEN the result arrives.
   const [summaryReady, setSummaryReady] = useState(false);
+  useEffect(() => { setSummaryReady(false); }, [ended?.g?.handNum]);
   useEffect(() => {
-    if (table?.g?.phase !== "handEnd" || !caughtUp) {
-      setSummaryReady(false);
-      return;
-    }
-    const t = setTimeout(() => setSummaryReady(true), CARD_MS + TRICK_HOLD_MS);
+    if (!ended || summaryReady) return undefined;
+    // That beat is only worth waiting out while this client is still WATCHING
+    // the hand that ended. If somebody closed and dealt before we caught up,
+    // there is no last card left on screen to protect — and since `caughtUp`
+    // then belongs to the NEW hand's reveal, waiting on it would hold the
+    // summary back until the next hand had played itself in, or forever.
+    const watching = table?.g?.handNum === ended.g.handNum;
+    if (watching && !caughtUp) return undefined;
+    const t = setTimeout(() => setSummaryReady(true), watching ? CARD_MS + TRICK_HOLD_MS : 0);
     return () => clearTimeout(t);
-  }, [table?.g?.phase, table?.g?.handNum, caughtUp]);
+  }, [ended, summaryReady, caughtUp, table?.g?.handNum]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [selected, setSelected] = useState([]);
@@ -458,14 +486,19 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const [underOpt, setUnderOpt] = useState(null);
   const recapCaptureRef = useRef(null);
 
-  // Reset between hands. Without this, closing the recap is the only thing
-  // that clears it, so a player who left it open would land straight in the
-  // recap at the END of the next hand instead of on the summary.
-  useEffect(() => { setShowRecap(false); setCallStep(false); }, [table?.g?.handNum]);
+  // The call step belongs to the hand being played, so it resets on the live
+  // hand number.
+  useEffect(() => { setCallStep(false); }, [table?.g?.handNum]);
+  // The recap belongs to the hand it recaps, so it resets on the LATCHED one.
+  // Keyed on the live hand it would close itself under a reader the moment
+  // anyone else dealt — which is now the common case, not a rare one. Without
+  // any reset at all, a player who left it open would land straight in the
+  // recap at the end of the next hand instead of on the summary.
+  useEffect(() => { setShowRecap(false); }, [ended?.g?.handNum]);
   const serverNow = useServerNow(table);
   // Only meaningful once every card is down, and it walks the whole hand
   // double-dummy from trick 1 — off the main thread, see useHandGrade.
-  const playGrades = useHandGrade(table?.g, table?.g?.phase === "handEnd");
+  const playGrades = useHandGrade(ended?.g, Boolean(ended));
   useTick(1000);
 
   // Proof of life. Ignores the response — the stream is authoritative for
@@ -630,6 +663,34 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         // card returns to your hand rather than being stranded on the felt.
         setOptimistic(null);
         throw e;
+      }
+    });
+  };
+
+  // Done reading — and, if nobody has dealt yet, that IS the deal.
+  //
+  // Whoever finishes with the summary first moves the table on; everybody else
+  // reads at their own pace and lands in a hand already under way when they
+  // close. This is what replaced the host's Deal button: a table of five no
+  // longer sits on one person, and no single person can strand it.
+  //
+  // Nothing here decides whether this player is the first — the server does,
+  // from state it reads itself. Two people closing on the same beat is a
+  // routine race: the compare-and-swap lets one of them through and the other
+  // is told a hand is in progress, which is not an error worth showing anyone.
+  const closeSummary = () => {
+    const finished = ended;
+    setEnded(null);
+    setShowRecap(false);
+    if (!finished) return;
+    // Someone else got there first. The felt behind this modal is already the
+    // next hand, so there is nothing to deal.
+    if (g.phase !== "handEnd" || g.handNum !== finished.g.handNum) return;
+    act(async () => {
+      try {
+        await api.startHand(tableId, playerId);
+      } catch (e) {
+        if (e.code !== "hand-in-progress") throw e;
       }
     });
   };
@@ -869,13 +930,15 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           the second one visible through the modal. The summary is the better
           home: it is what you are reading when you decide to move on.
 
-          A non-host still needs to know why nothing is happening, which the
-          summary does not say — it simply has no button for them. */}
+          What's left is the gap between closing the summary and the deal
+          landing, plus the rarer case where that request failed and `err` is
+          the only other thing on screen. Either way the felt should say what
+          it is waiting for rather than sit blank at a finished hand. */}
       {/* Not <Centered> — that is the full-screen fixed overlay used for
           loading and error states, and it would blank the table behind it. */}
-      {g.phase === "handEnd" && caughtUp && !table.youAreHost && (
+      {g.phase === "handEnd" && caughtUp && !ended && (
         <div style={{ textAlign: "center", color: felt.creamDim, fontStyle: "italic" }}>
-          Waiting for the host to deal.
+          {busy ? "Dealing…" : "Waiting for the next deal…"}
         </div>
       )}
 
@@ -916,30 +979,39 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           viewFor() opens up at handEnd: hands, buried and partner are all
           disclosed once the hand is over, so nothing extra crosses the wire.
 
-          Held back until the paced reveal catches up, for the same reason the
-          deal button is: otherwise the summary covers the felt while the last
-          card of the last trick is still landing. */}
-      {g.phase === "handEnd" && g.result && summaryReady && !showRecap && (
+          Both render from the LATCHED hand, never from `g`. That is what lets
+          them outlive the deal that closing them sets off — the felt behind is
+          free to be the next hand already.
+
+          Held back until the paced reveal catches up: otherwise the summary
+          covers the felt while the last card of the last trick is still
+          landing. */}
+      {ended && summaryReady && !showRecap && (
         <HandEndModal
-          g={g}
-          names={table.seats.map((x) => x.name)}
+          g={ended.g}
+          names={ended.names}
           mySeat={mySeat}
-          onNext={table.youAreHost ? () => act(() => api.startHand(tableId, playerId)) : undefined}
+          onNext={closeSummary}
+          nextLabel="Close"
           nextDisabled={busy}
           onRecap={() => setShowRecap(true)}
         />
       )}
 
-      {g.phase === "handEnd" && g.result && summaryReady && showRecap && (
+      {/* The recap closes the same way the summary does, rather than sending
+          you back a screen to find the button: getting here is a detour, and
+          finishing here should end the hand just the same. */}
+      {ended && summaryReady && showRecap && (
         <RecapModal
-          g={g}
-          names={table.seats.map((x) => x.name)}
+          g={ended.g}
+          names={ended.names}
           mySeat={mySeat}
           grades={playGrades}
           captureRef={recapCaptureRef}
-          onShare={() => shareRecap(recapCaptureRef.current, g.handNum)}
+          onShare={() => shareRecap(recapCaptureRef.current, ended.g.handNum)}
           onBack={() => setShowRecap(false)}
-          onNext={table.youAreHost ? () => act(() => api.startHand(tableId, playerId)) : undefined}
+          onNext={closeSummary}
+          nextLabel="Close"
           nextDisabled={busy}
         />
       )}
