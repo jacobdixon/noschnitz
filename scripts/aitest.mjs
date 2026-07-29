@@ -21,6 +21,7 @@
 import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
   isTrump, cid, freshHand, aiChooseCard, trickSecurity, isUnderCard, underFace,
+  callOptions, cardPts, ALONE_HANDSTRENGTH,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
 import { advanceAI } from "../src/ai-runner.js";
@@ -735,6 +736,68 @@ for (let humans = 0; humans <= 5; humans++) {
   check("with the ace played the rule stops applying",
     trickSecurity({ ...g, calledAcePlayed: true }, 3) ===
     trickSecurity({ ...g, calledAcePlayed: true }, 3, { priceCalledAce: false }));
+}
+
+/* ------------- reported hand: the bury that went alone by accident -------- */
+{
+  // noschnitz.com hand 19, v0.28.0. Patty picked on J♠ J♥ A♦ K♦ 8♦ 9♥ A♥ 10♠
+  // and buried A♥ + 10♠. The ten of spades was her ONLY spade, and spades was
+  // her only callable suit — hearts was out because she held its ace — so the
+  // bury left nobody to name and she played alone against four, on a hand
+  // whose strength is 12 against an alone bar of 17. She took 39.
+  //
+  // The old bury priced this: ten points doubled is +20, against -8 for
+  // killing the call. Points won, as they always would. Whether to go alone is
+  // the call step's decision and it has a bar for it; the bury's job is not to
+  // pre-empt it.
+  const C = (x) => ({ rank: x.slice(0, -1), suit: x.slice(-1) });
+  const H = (a) => a.map(C);
+  const eight = H(["JS", "JH", "8D", "KD", "AD", "9H", "AH", "10S"]);
+  const r = aiBuryAndCall(eight);
+
+  check("the picker calls a partner instead of going alone by accident",
+    r.call === "S" && r.callKind === "ace", `${r.callKind} ${r.call}`);
+  check("...by burying the nine of hearts, not the last spade",
+    r.buried.map(cid).sort().join(" ") === "9H AH", r.buried.map(cid).join(" "));
+  check("...on a hand nowhere near alone strength",
+    handStrength(r.hand) < ALONE_HANDSTRENGTH, `${handStrength(r.hand)}`);
+
+  // The negative controls. The trap is real — burying the ten really does
+  // leave no call at all — and the ten really is the greedier card, so this is
+  // not a case the old scoring could have got right by accident.
+  check("burying the last spade would have left nothing to call",
+    callOptions(H(["JS", "JH", "8D", "KD", "AD", "9H"]), H(["AH", "10S"])).length === 0);
+  check("...and it was the higher-scoring bury", cardPts(C("10S")) > cardPts(C("9H")));
+
+  // When no fail card can be spared — both of them are the last of the only
+  // callable suit — the partner is bought with a trump instead. The cheapest
+  // one in the deck: a diamond below the King, no points, beaten by every other
+  // trump. Here that is the 7♦, and it turns an alone hand of strength 13 into
+  // a called one. Paired duplicate-deal playouts put this at +4.2 stake points
+  // per firing for the picker, 70% wins with a partner against 44% alone.
+  const twoClubs = aiBuryAndCall(H(["7D", "9C", "JH", "QC", "8D", "7C", "10D", "KD"]));
+  check("a partner is worth a spare diamond",
+    twoClubs.call === "C" && twoClubs.buried.map(cid).sort().join(" ") === "7D 9C",
+    `${twoClubs.buried.map(cid).join(" ")} -> ${twoClubs.call}`);
+  check("...and it is the lowest diamond that goes, not the 8",
+    twoClubs.buried.some((c) => cid(c) === "7D"));
+
+  // Only a spare one, though. The same shape with no diamond below the King
+  // plays alone rather than burying a card that could take a trick.
+  const noSpare = aiBuryAndCall(H(["QD", "JH", "JS", "AD", "10D", "KD", "9C", "8C"]));
+  check("but not a Queen, a Jack, or the ace of diamonds",
+    noSpare.call === null && noSpare.buried.map(cid).sort().join(" ") === "8C 9C",
+    `${noSpare.buried.map(cid).join(" ")} -> ${noSpare.call}`);
+
+  // And the constraint stands down for a hand that is going alone on purpose:
+  // the same shape, four Queens stronger, buries all 21 points and names
+  // nobody. Protecting a call it is about to throw away would cost it ten
+  // points for nothing.
+  const strong = aiBuryAndCall(H(["QC", "QS", "QH", "QD", "JC", "10S", "AH", "9H"]));
+  check("an alone-strength hand still buries the points",
+    strong.buried.map(cid).sort().join(" ") === "10S AH", strong.buried.map(cid).join(" "));
+  check("...and goes alone deliberately", strong.call === null &&
+    handStrength(strong.hand) >= ALONE_HANDSTRENGTH, `${handStrength(strong.hand)}`);
 }
 
 /* ------------------------------- Report --------------------------------- */

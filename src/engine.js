@@ -285,14 +285,42 @@ function handSeed(cards) {
  * whose points you can afford, because it still scores for whoever gathers the
  * trick, and the trick will not be yours.
  *
- * Low fail before low trump: a spare 7 is nearly worthless, whereas even the
- * smallest diamond is a trump you might have led or followed with.
+ * Fail before trump, and a Queen or a Jack last of all. The first version
+ * scored points ten times heavier than everything else, which reads sensibly
+ * and is wrong at exactly the cards that matter: a Queen is three points, so
+ * the cheapest card in the hand was routinely the boss trump. Reported from a
+ * real hand where the picker held Q♦ Q♠ Q♣ 10♦ A♦ K♥ and sent a Queen under —
+ * spending the strongest card on the table to save four points on a King.
+ *
+ * Power is the thing an under card destroys, not points. The card cannot win a
+ * trick and it leaves the hand as soon as the called suit is led, so a Queen
+ * sent under is a Queen that never takes anything; the points it carries are
+ * the small part. Hence three tiers — fail, plain trump, power trump — and
+ * only inside a tier do points decide, since a spare 7 really is worth less
+ * than a King. Within the diamonds points and power agree anyway (7 8 9 K 10 A
+ * runs the same way both times), so the tiers are what does the work.
  */
 export function chooseUnderCard(hand) {
+  const tier = (c) => (!isTrump(c) ? 0 : isPowerTrump(c) ? 2 : 1);
   return [...hand]
-    .map((c) => ({ c, score: cardPts(c) * 10 + (isTrump(c) ? 8 : 0) + power(c) / 100 }))
-    .sort((a, b) => a.score - b.score)[0]?.c ?? null;
+    .sort((a, b) => tier(a) - tier(b) || cardPts(a) - cardPts(b) || power(a) - power(b))[0] ?? null;
 }
+
+// Go it alone on hand for the 4x multiplier instead of calling a partner:
+// reserved for hands well above the pick threshold (10) — this is the same
+// handStrength() used to decide whether to pick at all, just held to a much
+// higher bar since winning 61+ solo against four defenders is a lot harder
+// than winning it with a secret partner's help. Module scope because the bury
+// consults it too, so that going alone is never something the bury does by
+// accident to a hand this far below the bar.
+export const ALONE_HANDSTRENGTH = 17;
+
+// The trump a picker can afford to throw away: a diamond below the King, so
+// 7, 8 or 9 — no points, and beaten by every other trump in the deck. The bury
+// already used this as its last resort when the hand held no fail card at all;
+// naming it makes the second use, buying a partner with one, the same idea
+// rather than a second magic number.
+export const SPARE_TRUMP_POWER = 3;
 
 export function aiBuryAndCall(hand) {
   // choose 2 to bury from 8, then a suit to call
@@ -309,12 +337,45 @@ export function aiBuryAndCall(hand) {
   // under or calling a ten.
   const callable = (arr, buriedSoFar = []) => callOptions(arr, buriedSoFar);
 
+  // Going alone is a decision, and it belongs to the call step below, not to
+  // the bury. Reported from a real hand: the picker was dealt one spade, the
+  // 10, and every other fail suit was a suit whose ace she held — so spades
+  // was her only partner. The bury liked its ten points (10 x 2 = 20 beat the
+  // old -8 for killing the call) and she played alone on two Jacks and three
+  // diamonds. So keeping a call alive is a constraint here, not a term in the
+  // score: when some candidate preserves one, no candidate that destroys one
+  // is even considered. The exception is a hand already strong enough to go
+  // alone on purpose, which wants the points and is not going to call anybody.
+  // Measured on the eight, but the bury only ever discards fail (or, cornered,
+  // the lowest diamonds), so it is the same number the call step will see.
+  const meansToGoAlone = handStrength(hand) >= ALONE_HANDSTRENGTH;
+
   const buried = [];
   for (let k = 0; k < 2; k++) {
     const f = fails();
-    let pool = f.length ? f : h.filter((c) => trumpPower(c) <= 3); // low diamonds as last resort
+    let pool = f.length ? f : h.filter((c) => trumpPower(c) <= SPARE_TRUMP_POWER); // low diamonds as last resort
     if (!pool.length) pool = [...h].sort((a, b) => power(a) - power(b)).slice(0, 1);
-    // prefer high points; avoid destroying the only callable suit
+    if (!meansToGoAlone && callable(h, buried).length) {
+      const keepsCall = (c) => callable(h.filter((x) => x !== c), [...buried, c]).length > 0;
+      let keeps = pool.filter(keepsCall);
+      // Nothing in the fail suits can be spared: every fail card left is the
+      // last one of the only suit there is to call with. Buying the partner
+      // costs a trump, then — the cheapest one in the deck, a diamond below the
+      // King, which is 0 points and loses to every other trump anyway. A
+      // partner is worth that. It is NOT worth a Queen or a Jack or the ace of
+      // diamonds, so if the hand holds no spare diamond this does nothing and
+      // the picker plays alone as before.
+      if (!keeps.length) {
+        const spare = h
+          .filter((c) => isTrump(c) && trumpPower(c) <= SPARE_TRUMP_POWER && keepsCall(c))
+          .sort((a, b) => trumpPower(a) - trumpPower(b));
+        if (spare.length) keeps = [spare[0]];
+      }
+      if (keeps.length) pool = keeps;
+    }
+    // prefer high points. The keepsCall term below now only bites on an
+    // alone-strength hand, since otherwise the pool has already been filtered
+    // to candidates that keep a call.
     const scored = pool
       .map((c) => {
         const rest = h.filter((x) => x !== c);
@@ -332,12 +393,6 @@ export function aiBuryAndCall(hand) {
   let call = null;
   let callRank = null;
   let callKind = null;
-  // Go it alone on hand for the 4x multiplier instead of calling a partner:
-  // reserved for hands well above the pick threshold (10) — this is the same
-  // handStrength() used to decide whether to pick at all, just held to a much
-  // higher bar since winning 61+ solo against four defenders is a lot harder
-  // than winning it with a secret partner's help.
-  const ALONE_HANDSTRENGTH = 17;
   const strongEnoughToGoAlone = handStrength(h) >= ALONE_HANDSTRENGTH;
   if (opts.length && !strongEnoughToGoAlone) {
     const m = suitsHeld(h.filter((c) => !isTrump(c)));

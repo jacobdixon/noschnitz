@@ -163,6 +163,30 @@ const H = (a) => a.map(C);
   check("the AI spends its cheapest card", cid(c) === "7S", cid(c));
   const allTrump = chooseUnderCard(H(["QC", "QS", "JD", "10D", "9D", "7D"]));
   check("...and the lowest trump when that is all there is", cid(allTrump) === "7D", cid(allTrump));
+
+  // noschnitz.com hand 16, v0.28.0. The picker held Q♦ Q♠ Q♣ 10♦ A♦ K♥ after
+  // burying A♥ 10♥ and sent the QUEEN OF DIAMONDS under — a card that would
+  // have taken any trick in the hand, spent on a card that can take none, to
+  // avoid giving up the four points on the King. An under card's cost is the
+  // power it takes off the table, not the points it carries.
+  const queens = H(["QD", "10D", "QS", "QC", "AD", "KH"]);
+  check("a Queen is never the under card", cid(chooseUnderCard(queens)) === "KH",
+    cid(chooseUnderCard(queens)));
+
+  // The negative control, and the reason this was not obvious: scoring points
+  // ten times heavier than everything else — the rule before the fix — really
+  // does name the Queen as this hand's cheapest card.
+  const byPointsFirst = [...queens]
+    .map((x) => ({ x, score: cardPts(x) * 10 + (isTrump(x) ? 8 : 0) }))
+    .sort((a, b) => a.score - b.score)[0].x;
+  check("...and pricing it by points alone picks one", cid(byPointsFirst) === "QD", cid(byPointsFirst));
+
+  // Jacks are the same mistake two points cheaper, which is why the rule is
+  // about power trump rather than about Queens.
+  const jack = chooseUnderCard(H(["JD", "8D", "QC", "AD", "10D", "KH"]));
+  check("nor a Jack", cid(jack) === "KH", cid(jack));
+  check("...with the low diamond preferred once the fail is gone",
+    cid(chooseUnderCard(H(["JD", "8D", "QC", "AD", "10D"]))) === "8D");
 }
 
 /* ----------------------------- full playouts ------------------------------ */

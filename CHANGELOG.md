@@ -6,6 +6,50 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.32.0] - 2026-07-29
+- **The picker no longer sends a Queen or a Jack under.** Reported from hand 16:
+  holding Q♦ Q♠ Q♣ 10♦ A♦ K♥, the picker designated the queen of diamonds as her
+  under card — the strongest card left in the hand, spent on a card that by rule
+  cannot win a trick, to avoid giving up the four points on the King. The old
+  rule scored points ten times heavier than everything else, which reads sensible
+  and is wrong exactly at the cards that matter: a Queen is three points, so the
+  boss trump kept coming out as the hand's cheapest card. Power is what an under
+  card destroys, not points. Now three tiers — fail, then plain trump, then Q/J
+  last of all — with points deciding only inside a tier. Changes the designation
+  on 17% of under calls; 5.6% of them were a Queen or a Jack.
+- **The bury no longer goes alone by accident.** Reported from hand 19: the
+  picker was dealt one spade, the ten, and spades was her only callable suit
+  (hearts was out — she held its ace). The bury liked the ten points, buried it,
+  and left her with nobody to name; she played alone against four on a hand
+  whose strength is 12 against an alone bar of 17, and took 39. Ten points
+  doubled beat the eight-point penalty for killing the call, as it always would.
+  Whether to go alone belongs to the call step, which has a bar for it, so
+  keeping a call alive is now a constraint on the bury rather than a term in its
+  score: if any candidate preserves one, no candidate that destroys one is
+  considered. A hand already strong enough to go alone on purpose is exempt and
+  still buries for points. Fires on 1.1% of picks, giving up an average of 9.5
+  buried points to keep the partner.
+- **A partner is also worth a spare trump.** The larger half of the same bug: a
+  picker dealt only two fail cards in its eight buried both, because the bury
+  pool never looked at trump while any fail card remained — 4.4% of picks, every
+  one an alone hand nobody chose. It now spends the cheapest trump in the deck
+  instead, a diamond below the King: no points, and beaten by every other trump.
+  Not a Queen, a Jack, or a high diamond, so a hand holding no spare diamond
+  still plays alone. Between the two changes the picker goes alone on 20.1% of
+  picks rather than 25.6%, and what remains is almost all deliberate — hands at
+  or above the alone bar — with the accidental share down from 5.9% of picks to
+  0.46%.
+- Measured the way a narrow rule has to be: every firing position finished twice
+  from an identical deal with the same engine driving all five seats, comparing
+  only those hands. Over 3 seeds x 40,000 deals the picker is **+4.2 stake
+  points per firing** for the spare-diamond bury and **+4.7** for the fail-card
+  one, winning ~69% of those hands with a partner against ~40% alone —
+  consistent in every seed. The whole-hand aggregate cannot see either, so it
+  was not used.
+- All three are pinned as constructed assertions from the reported hands, each
+  with a negative control that fails against the previous engine — `undertest`
+  for the designation, `aitest` for the bury.
+
 ## [0.31.0] - 2026-07-29
 - **Solo hands now upload themselves; no console command.** `recordHand`
   already captured every finished hand — what was manual was getting it off the
