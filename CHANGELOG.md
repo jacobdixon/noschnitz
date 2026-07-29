@@ -6,6 +6,20 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.33.1] - 2026-07-29
+- **Vercel Speed Insights is now collecting.** The package had been installed
+  but never mounted, so the dashboard had nothing to show. `<SpeedInsights />`
+  now sits at the root next to `<Analytics />`, where a page load is measured
+  once whichever screen someone lands on. Nothing about the game changes; the
+  component renders nothing.
+- **Table codes stay out of the vitals too.** The route is passed explicitly
+  rather than detected, because automatic detection is a framework integration
+  and this app routes with pushState and no router — left alone, every table
+  would arrive as its own unique path, which puts a live credential in a third
+  party's logs and splits one page across thousands of one-visit rows. Both
+  `/t/<code>` paths collapse to `/t/[code]`, the same redaction analytics has
+  always done, now shared by the two of them.
+
 ## [0.33.0] - 2026-07-29
 - **Accidental alone hands are gone — 0.45% of picks to zero.** v0.32.0 stopped
   the bury from throwing away the only callable suit, but left a residue, and

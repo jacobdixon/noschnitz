@@ -14,6 +14,7 @@
    ========================================================================= */
 import React, { useState, useEffect } from "react";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import Sheepshead from "./Sheepshead.jsx";
 import TableScreen from "./TableScreen.jsx";
 import { felt, btnGold, btnPlain } from "./ui.jsx";
@@ -68,6 +69,18 @@ export default function App() {
           collapsing /t/<code> to a single label is a feature, not a
           limitation. See the note in vercel.json's rewrite. */}
       <Analytics beforeSend={redactTableCode} />
+      {/* Web vitals, and it renders nothing either. Same reasoning for sitting
+          at the root: the measurement is of the page load, which happens once
+          whichever screen someone lands on.
+
+          `route` is passed explicitly because the automatic detection is a
+          framework integration — with pushState and no router there is nothing
+          for it to read, and every table would otherwise arrive in the
+          dashboard as its own unique path, which both leaks the code and makes
+          the numbers useless by splitting one page across thousands of rows.
+          The redaction is repeated in beforeSend because `url` is always the
+          real location regardless of what `route` says. */}
+      <SpeedInsights route={tableId ? "/t/[code]" : "/"} beforeSend={redactTableCode} />
     </>
   );
 }
@@ -77,8 +90,16 @@ export default function App() {
 // short-lived and per-session, so the individual values are worth nothing to us
 // anyway. What we actually want to know is "how many people opened a table
 // link", which the collapsed form answers exactly.
+//
+// Shared by Analytics and Speed Insights. Their events differ — a vital carries
+// a `route` alongside `url` — so the route is only touched when it is there,
+// and an analytics event comes back through unchanged apart from its url.
+const collapseCode = (s) => s.replace(/\/t\/[A-Za-z0-9-]+/, "/t/[code]");
+
 function redactTableCode(event) {
-  return { ...event, url: event.url.replace(/\/t\/[A-Za-z0-9-]+/, "/t/[code]") };
+  const out = { ...event, url: collapseCode(event.url) };
+  if (typeof out.route === "string") out.route = collapseCode(out.route);
+  return out;
 }
 
 /* ---------------------------------------------------------------------------

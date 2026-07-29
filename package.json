@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.33.0",
+  "version": "0.33.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -34,6 +34,7 @@
   "dependencies": {
     "@upstash/redis": "^1.38.0",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
