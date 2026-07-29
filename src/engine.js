@@ -723,6 +723,60 @@ export const SCHMEAR_CONFIDENCE = 0.85;
 // his partner's third-best trump onto his own second-best, and lost both.
 export const OVERTAKE_MIN_GAIN = 0.15;
 
+// How fat a trick the picker will hand over rather than spend boss trump on
+// it. Above this she takes it; at or below, a free duck is the better card.
+//
+// A trick averages 20 points (120 over six), and the boss trump she keeps back
+// will take one of the later ones, so the honest comparison is "this trick
+// against an average one". Set below that average rather than at it, because
+// she does not get to choose which later trick she takes — only that she takes
+// one. Move it in response to a reported hand, not a sweep: the two values
+// either side of it were inside the noise on 3x9,000 duplicate deals.
+export const DUCK_MAX_TRICK_POINTS = 12;
+
+// The picker, sitting last, holding trump nothing can beat, looking at a thin
+// trick already won by a trump — and a card worth nothing she could throw
+// instead. See the call site in heuristicCard for why ducking wins here.
+// Returns the card to duck with, or null to leave the decision alone.
+function freeDuckForPicker(g, idx, legal, winners, opts = {}) {
+  const cap = opts.duckMaxTrickPoints ?? DUCK_MAX_TRICK_POINTS;
+  if (cap < 0) return null;
+
+  // Only the picker, and only while the partnership is genuinely unknown to
+  // her. Once the ace is down she knows whose trick it is and the ordinary
+  // teammate logic upstream handles it properly.
+  if (idx !== g.picker || g.partner === null || g.partnerRevealed) return null;
+
+  // Last to act only. The pot is then final, so what she gives up is exactly
+  // what she can see — no seat left to fatten it. This is also the seat both
+  // reports came from. Whether the same reasoning holds from an earlier seat
+  // is a separate question and wants its own evidence.
+  if (g.trick.length !== 4) return null;
+
+  // A trick a fail card is winning is worth capturing: trumping it takes
+  // points that otherwise leave the table. The argument below is about tricks
+  // already contested in trump.
+  const winnerSoFar = trickWinner(g.trick);
+  if (!isTrump(g.trick.find((t) => t.player === winnerSoFar).card)) return null;
+
+  const pot = g.trick.reduce((s, t) => s + cardPts(t.card), 0);
+  if (pot > cap) return null;
+
+  // Winning has to actually cost the boss. If she holds a cheaper winner she
+  // should just take the trick with that — nothing here argues otherwise.
+  const cheapestWinner = [...winners].sort((a, b) => power(a) - power(b))[0];
+  if (cardEquity(g, idx, cheapestWinner) !== 0) return null;
+
+  // And the duck has to be free. A card that costs points is a donation to
+  // whoever actually holds the trick, which is the whole risk being avoided.
+  const isWinner = (c) => winners.some((w) => cid(w) === cid(c));
+  const ducks = legal.filter((c) => cardPts(c) === 0 && !isWinner(c));
+  if (!ducks.length) return null;
+
+  // Weakest of them, so the better trump is kept back as well.
+  return ducks.sort((a, b) => power(a) - power(b))[0];
+}
+
 export function aiChooseCard(g, idx, opts = {}) {
   // Last two tricks: solve exactly rather than using heuristics, and let the
   // heuristics settle any tie the solve leaves behind — see solveEndgameCard.
@@ -1007,6 +1061,31 @@ export function heuristicCard(g, idx, opts = {}) {
     }
   }
   if (winners.length) {
+    // Before taking it: the picker's boss trump is not a resource that can be
+    // lost. Nothing outstanding beats it, so it takes a trick whenever she
+    // chooses to play it. Spending it to overtake therefore buys only the
+    // difference between this trick and the one it would have taken later,
+    // and on a thin early trick that difference is negative.
+    //
+    // She also cannot tell whose trick she is taking. `knowsTeammate` returns
+    // false for every seat while the picker has not seen the called ace, so
+    // this branch treats a trick her own partner is winning exactly like an
+    // opponent's. Reported twice from real play, both times the same shape:
+    // the partner led a high trump, the picker sat last, and she overtook with
+    // Q-clubs — the boss — on the thinnest trick of the hand.
+    //
+    // What makes ducking safe rather than a guess is that the duck is free.
+    // The trick's existing points are at risk either way; a zero-point card
+    // donates nothing on top. Measured on the reported hand by sampling deals
+    // consistent with what the picker actually knows, ducking with the 7 of
+    // diamonds beats overtaking once she is more than ~13-16% sure the trick
+    // is her partner's — and with four unknown seats, chance alone already
+    // puts that at 25%. So this needs no read on who the partner is. It is
+    // decidable from the cards, which is why it lives here and not behind the
+    // belief model the 85%-threshold cases would need.
+    const duck = freeDuckForPicker(g, idx, legal, winners, opts);
+    if (duck) return duck;
+
     // The weakest card that takes the trick takes it — always, with no
     // "secure with strength" exception for a fat or late trick.
     //
