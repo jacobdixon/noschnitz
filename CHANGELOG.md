@@ -6,6 +6,43 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.29.0] - 2026-07-28
+- **Solo now keeps a local record of finished hands, so human play can be
+  compared against the engine's.** Two deliberate constraints: nothing leaves
+  the browser — the log lives in localStorage and only moves when exported by
+  hand — and it stores the *hand*, not the analysis. Grading takes ~800ms and
+  the grader keeps improving, so re-deriving costs offline beats freezing
+  today's verdict into the record. `trickHistory` already contains every card
+  every seat played, which is enough to rebuild all five starting hands, so a
+  record is ~1.1KB and 300 of them sit comfortably inside localStorage.
+  - No UI for it on purpose. It is a tool for whoever is tuning the AI, not a
+    feature, and a menu entry would have to be designed and maintained. Two
+    documented globals do the same job: `noschnitzExportHands()` downloads the
+    log, `noschnitzClearHands()` empties it.
+- **`gradeAllPlays` exposes what `gradeHandPlays` was already computing and
+  throwing away** — an exact double-dummy cost for every decision in the hand,
+  plus the cost of every *legal* card at each one, rather than only the best
+  and worst play the recap shows. It also reports whether the hand graded at
+  all, which the recap can ignore and an analysis cannot: counting a hand that
+  blew the node budget as a clean one biases every average toward zero.
+- **`scripts/minehands.mjs`** reads an exported log and ranks the position
+  shapes where the human's card cost less than the card the engine would have
+  played. Both AI fixes shipped today were found this way by hand, from
+  screenshots; this does the same reading mechanically.
+  - The metric is a **signed cost difference**, not "who found the best card".
+    The script's own self-test caught that: a seat playing a random legal card
+    25% of the time still *wins* individual disagreements by luck — 3 of 28 in
+    the control run — and a win count scores it as an improvement. On signed
+    cost the same seat is -69 points, which is the answer. `--selftest` exists
+    to keep that honest and is the reason the first metric did not ship.
+  - Deliberately not in `npm test`: it grades whole hands, so a meaningful run
+    is tens of seconds. Run `node scripts/minehands.mjs --selftest` after
+    touching it.
+  - A cluster it surfaces is a hypothesis, not a fix. Double-dummy cost is
+    biased against play that is correct under uncertainty, so the comparison is
+    only survivable because the human and the engine are judged on the same
+    hands with the same bias.
+
 ## [0.28.0] - 2026-07-28
 - **The recap grades every trick, including the first two.** `GRADE_FROM_TRICK`
   moved from 2 to 0. Two separately reported mistakes this week — a picker

@@ -14,6 +14,7 @@ import { shareRecap } from "./shareRecap.js";
 import { statusLine, progressLine } from "./status.js";
 import { CallButtons } from "./decisions.jsx";
 import { useHandGrade } from "./useHandGrade.js";
+import { recordHand, installExportGlobal } from "./handLog.js";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -168,6 +169,14 @@ export default function Sheepshead({ onPlayWithFriends }) {
   // Only meaningful once a hand is fully resolved, and it now grades from
   // trick 1, which is too slow to sit on the render path — see useHandGrade.
   const playGrades = useHandGrade(g, g.phase === "handEnd");
+
+  // Keep a local record of finished hands so human play can be compared
+  // against the engine's offline — see handLog.js. Nothing leaves the browser;
+  // export is a console call, not a feature.
+  useEffect(() => { installExportGlobal(); }, []);
+  useEffect(() => {
+    if (g.phase === "handEnd") recordHand(g, __APP_VERSION__, 0);
+  }, [g.phase, g.handNum]);
 
   // A lone picker is one person, so "Pickers win" is wrong on exactly the hands
   // where the win is most impressive.

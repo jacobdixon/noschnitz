@@ -1549,8 +1549,20 @@ export function solveHandValue(g, memo = new Map(), budget = { n: 0 }) {
 // every swing is zero and both come back null. That is the intended answer,
 // not a failure to find one: labelling a best and a worst play on a hand that
 // was decided at the deal is worse than labelling neither.
-export function gradeHandPlays(g) {
-  if (!g.trickHistory || g.trickHistory.length < 6) return { best: null, worst: null };
+// Every graded decision in the hand, not just the two the recap shows.
+//
+// gradeHandPlays already computed this and threw all but two entries away.
+// Keeping it is what makes a played hand a dataset: each entry is an exact
+// double-dummy cost for one decision, so a human seat and the four AI seats
+// can be compared *within the same deal*, which removes almost all of the
+// luck that makes per-hand scores useless for judging play.
+//
+// `graded` distinguishes "nothing was worth flagging" from "this hand blew the
+// node budget and was not graded at all" — a distinction the recap can ignore
+// and an analysis absolutely cannot, since counting an ungraded hand as a
+// clean one biases every average toward zero.
+export function gradeAllPlays(g) {
+  if (!g.trickHistory || g.trickHistory.length < 6) return { decisions: [], graded: false };
 
   // Shared across every decision in the hand — see solveHandValue. The budget
   // is shared too, so a pathological hand gives up rather than freezing the
@@ -1594,7 +1606,18 @@ export function gradeHandPlays(g) {
         const actual = vals.find((v) => cid(v.card) === cid(play.card));
         const cost = isPickerSide ? bestVal - actual.val : actual.val - bestVal;
         const swing = Math.abs(bestVal - worstVal);
-        decisions.push({ trickIdx, player: idx, card: play.card, cost, swing });
+        const bestCard = vals.find((v) => v.val === bestVal).card;
+        // The cost of EVERY legal card, not just the one played. Without this
+        // an analysis can only ask "did they find the best card", which
+        // rewards a careless player for stumbling onto it; with it the
+        // question becomes "how much did this choice cost against that one",
+        // which is a magnitude and cannot be answered by luck. The solve has
+        // already been paid for here — these are the same values.
+        const costs = vals.map((v) => ({
+          card: v.card,
+          cost: isPickerSide ? bestVal - v.val : v.val - bestVal,
+        }));
+        decisions.push({ trickIdx, player: idx, card: play.card, cost, swing, bestCard, costs });
       }
       sim = applyPlay(sim, idx, play.card);
     }
@@ -1604,8 +1627,17 @@ export function gradeHandPlays(g) {
     // Only the node budget aborts a grade. Anything else is a real bug and
     // should surface rather than be swallowed into a silent "no mistakes".
     if (!(e instanceof RangeError && e.message === "dd budget")) throw e;
-    return { best: null, worst: null };
+    return { decisions: [], graded: false };
   }
+
+  return { decisions, graded: true };
+}
+
+// The recap's view: the single biggest mistake and the single most impactful
+// correct call. Unchanged behaviour — an ungraded hand yields [] above and so
+// still reports neither, which is the intended answer rather than a failure.
+export function gradeHandPlays(g) {
+  const { decisions } = gradeAllPlays(g);
 
   let worst = null;
   let best = null;
