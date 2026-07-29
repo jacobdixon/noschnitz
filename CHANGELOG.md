@@ -6,6 +6,36 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.33.2] - 2026-07-29
+- **The picker's under card no longer leaks through the AI log.** `advanceAI`
+  recorded the *physical* card each AI seat played. For every card but one that
+  is the same thing the table shows — the exception is the under card, which
+  lands as the 6 of the called suit with its real face hidden. The log ships to
+  every client with the rest of the table state and `viewFor` does not redact
+  it, so the moment an AI picker played her under card its true face went out to
+  the whole table. That is the one thing the under rule exists to hide, and it
+  has been live in multiplayer since the log was introduced.
+  - Fixed by logging the face the table shows. Nothing is lost: the log exists
+    so a client can replay a burst of AI plays at human speed, and what it draws
+    is what is on the table. The real card still travels on the trick as
+    `actual`, which `viewFor` releases only to the picker, to whoever won that
+    trick, and to everyone once the hand ends.
+- **The "flaky" `e2etest` was this bug, not a flaky test.** It failed about 4% of
+  runs — 5 in 120 on v0.33.1 — with `leaked card 8C at table.aiLog[1].card`, and
+  the randomness was only ever `makeDeck`'s: whether a deal produces an under
+  call is up to `Math.random()`, so the leak fired on every under hand and no
+  other. 0 failures in 200 runs with the fix. **Worth remembering: an
+  intermittent failure in this repo's leak harnesses means the under card until
+  proven otherwise** — that is now twice, and the first time it was the *test*
+  that got adjusted rather than the code.
+- The regression test is constructed rather than dealt, so it runs on every
+  invocation instead of one in twenty-five: hearts called under with Q♣
+  designated and hearts led, leaving the under card as the AI picker's only
+  legal play. Three assertions in `aitest` that fail against v0.33.1. Two places
+  in that harness that had been taught to expect the discrepancy — a `faceOf`
+  helper and an `.actual` fallback in the randomized sweep — are gone with it, so
+  the sweep now enforces the invariant rather than excusing it.
+
 ## [0.33.1] - 2026-07-29
 - **Vercel Speed Insights is now collecting.** The package had been installed
   but never mounted, so the dashboard had nothing to show. `<SpeedInsights />`

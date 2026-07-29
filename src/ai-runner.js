@@ -36,7 +36,7 @@
    ========================================================================= */
 import {
   handStrength, aiBuryAndCall, aiChooseCard, assignPartner, applyPlay,
-  resolveTrick, sortHand,
+  resolveTrick, sortHand, isUnderCard, underFace,
 } from "./engine.js";
 import { commit, startHand, atHandBoundary, coverIdleSeats } from "./table.js";
 
@@ -180,11 +180,22 @@ export function advanceAI(table, now) {
       if (!isAISeat(table, idx)) break;
 
       const card = aiChooseCard(g, idx);
+      // The face the table shows — for an under card the 6 of the called suit,
+      // not the card the picker actually laid. The log ships to every client
+      // with the rest of the table state and `viewFor` does not redact it, so
+      // recording the physical card published the picker's under card to the
+      // whole table the moment she played it: precisely what the under rule
+      // exists to hide. Nothing is lost by logging the face. The log's job is
+      // to replay a burst of AI plays at human speed, and what a client draws
+      // is what is on the table; the real card still travels on the trick as
+      // `actual`, which `viewFor` releases only to the picker, to whoever won
+      // that trick, and to everyone once the hand is over.
+      const face = isUnderCard(g, idx, card) ? underFace(g) : card;
       g = applyPlay(g, idx, card);
       seq++;
       // Copied rather than referenced: the log outlives the hand state it came
       // from and gets serialized to the store on its own.
-      entries.push({ seq, seat: idx, card: { suit: card.suit, rank: card.rank }, at: now });
+      entries.push({ seq, seat: idx, card: { suit: face.suit, rank: face.rank }, at: now });
       changed = true;
       continue;
     }

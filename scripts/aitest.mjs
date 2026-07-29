@@ -20,7 +20,7 @@
    ========================================================================= */
 import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
-  isTrump, cid, freshHand, aiChooseCard, trickSecurity, isUnderCard, underFace,
+  isTrump, cid, freshHand, aiChooseCard, trickSecurity,
   callOptions, cardPts, ALONE_HANDSTRENGTH,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
@@ -208,12 +208,11 @@ function advanceChecked(t, now, ctx) {
     note("logLen", `${ctx}: ${newPlays.length} plays, log tail ${tail.length}`);
   }
   for (let i = 0; i < tail.length && i < newPlays.length; i++) {
-    // A card played under sits on the trick as the 6 of the called suit, with
-    // the card actually chosen alongside it. The log records what the AI
-    // decided to play, so compare against that — not against the stand-in.
-    const laid = newPlays[i].actual ?? newPlays[i].card;
-    if (tail[i].seat !== newPlays[i].player || cid(tail[i].card) !== cid(laid)) {
-      note("logMatch", `${ctx}: log ${tail[i].seat}/${cid(tail[i].card)} vs play ${newPlays[i].player}/${cid(laid)}`);
+    // Including the under card, which the log now records as the 6 the table
+    // shows rather than the card the picker laid — so `.card` on both sides is
+    // the right comparison and `.actual` is deliberately not consulted here.
+    if (tail[i].seat !== newPlays[i].player || cid(tail[i].card) !== cid(newPlays[i].card)) {
+      note("logMatch", `${ctx}: log ${tail[i].seat}/${cid(tail[i].card)} vs play ${newPlays[i].player}/${cid(newPlays[i].card)}`);
     }
   }
   for (let i = 1; i < log.length; i++) {
@@ -533,18 +532,63 @@ function playHand(t, rand, ctx) {
   check("aiLog entries name an AI seat", log.every((e) => t.seats[e.seat]?.kind === "ai"));
   check("aiLog entries carry a real card",
     log.every((e) => e.card && typeof e.card.suit === "string" && typeof e.card.rank === "string"));
-  // The picker's under card is the one play whose two records legitimately
-  // disagree: the log keeps the physical card, while the table shows the
-  // called suit's 6. Comparing them raw made this check fail on exactly the
-  // hands where an under was called — every under hand and no other, which
-  // read as a flaky test because `makeDeck` shuffles with `Math.random()`, so
-  // the deal (and therefore whether an under happens) is not seeded by
-  // anything the test controls. Measured at 20 of 583 completed all-AI hands.
-  const faceOf = (g, e) => (isUnderCard(g, e.seat, e.card) ? underFace(g) : e.card);
+  // Compared raw. This used to need a faceOf() helper, because the log kept
+  // the picker's physical under card while the table showed the called suit's
+  // 6 — which is exactly the leak fixed in v0.33.2. The log now records what
+  // the table shows, so the two records agree on every play including that
+  // one, and the helper that papered over the difference is gone with it.
   check("aiLog entries are in play order",
-    log.every((e, i) => cid(faceOf(after.g, e)) === cid(allPlays(after.g)[i].card)
+    log.every((e, i) => cid(e.card) === cid(allPlays(after.g)[i].card)
       && e.seat === allPlays(after.g)[i].player));
   check("aiLog is tagged with the hand it belongs to", after.aiLogHand === after.g.handNum);
+}
+
+/* ------- the under card does not leak through the AI log (v0.33.2) -------- */
+{
+  // `e2etest` reported this as a leak on roughly 4% of runs and it read as
+  // flakiness, because whether a deal produces an under call at all is up to
+  // `makeDeck`'s Math.random(). It was not flaky — it was a real leak firing
+  // exactly when an under call happened: the log recorded the physical card,
+  // the log ships to every client with the table state, and nothing redacts it
+  // per viewer. So the picker's under card went out to the whole table the
+  // moment she played it.
+  //
+  // Constructed rather than dealt, so it runs on every invocation instead of
+  // one in twenty-five. Hearts called under with Q♣ designated and hearts led:
+  // the under card is the picker's only legal play.
+  const C = (x) => ({ rank: x.slice(0, -1), suit: x.slice(-1) });
+  const H = (a) => a.map(C);
+  const base = dealtAllAIHand(41).t;
+  const t = withG(tableWith(2), {
+    ...base.g,
+    phase: "playing", turn: 2, tricksDone: 0, trickHistory: [], lastTrick: null,
+    played: [], ptsTaken: [0, 0, 0, 0, 0],
+    picker: 2, partner: 4, calledSuit: "H", calledRank: "A", calledUnder: true,
+    underCard: C("QC"), partnerRevealed: false, calledAcePlayed: false, calledSuitLed: false,
+    trick: [{ player: 1, card: C("9H") }],
+    hands: [H(["KH", "8S"]), H(["7H"]), H(["QC", "JD"]), H(["7C", "KC"]), H(["AH", "10C"])],
+  });
+  // The setup only means anything if seat 2 really is an AI the runner will
+  // move and seat 0 really is a human it must stop at.
+  check("the constructed table has an AI picker and a human to stop at",
+    t.seats[2]?.kind === "ai" && t.seats[0]?.kind === "human",
+    `${t.seats[2]?.kind} / ${t.seats[0]?.kind}`);
+
+  const after = advanceAI(t, T0 + 9);
+  const log = after.aiLog || [];
+  const pickerEntry = log.find((e) => e.seat === 2);
+  check("the AI's under play is logged as the 6 of the called suit",
+    pickerEntry && cid(pickerEntry.card) === "6H", pickerEntry ? cid(pickerEntry.card) : "no entry");
+  check("...and the card the picker actually laid is nowhere in the log",
+    !log.some((e) => cid(e.card) === "QC"), log.map((e) => cid(e.card)).join(" "));
+
+  // Not lost, just not published: the real card still travels on the trick as
+  // `actual`, which viewFor releases to the picker, to whoever won that trick,
+  // and to everyone once the hand is over.
+  const laid = [...after.g.trick, ...(after.g.trickHistory || []).flatMap((h) => h.trick || [])]
+    .find((p) => p.under);
+  check("...while the real card still travels on the trick as `actual`",
+    laid && cid(laid.actual) === "QC", laid ? cid(laid.actual ?? laid.card) : "no under play on the trick");
 }
 
 {
