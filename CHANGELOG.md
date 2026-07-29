@@ -6,6 +6,31 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.30.0] - 2026-07-29
+- **Fixed the schneider threshold for defenders — closes #52.** Schneider is
+  half of what a side needs to win, and the two sides do not need the same
+  thing: the picker's team needs 61 and the defenders 60, because a 60-60 tie
+  goes to the defenders. Halving each gives 31 for the picker and 30 for the
+  defenders, so every defender threshold sits one point below the picker's,
+  exactly as 60 sits below 61.
+  - The code tested `<= 30` on both sides, and the comment above it asserted
+    the symmetry as though it were the rule — so the comment was wrong in the
+    same way the code was, which is why it had survived. Defenders finishing on
+    exactly 30 were scored as schneidered when they were not.
+  - **Measured, paired.** The change is scoring-only, so the same played hand
+    can be scored under both rules with no run-to-run noise at all: over 28,828
+    played hands it changes **1.09%** of them, and the picker's EV goes from
+    0.7312 to 0.7019 a hand — the picker had been collecting **844 unearned
+    points** across that sample, every one of them from an undeserved 2x.
+  - `handStrength >= 10` still needs no retuning: the move is small, and it is
+    in the direction of making picking very slightly less attractive, which is
+    the correct direction for a rule that was over-paying the picker.
+  - Both sides of both boundaries are now pinned in `scoringtest` — defenders
+    on 29/30/31 and the picker on 29/30/31 — plus the no-tricker cases, since
+    an off-by-one is invisible anywhere except at the boundary. An unseeded
+    `simulate` comparison is NOT sufficient here and was misleading when tried:
+    two runs disagreed on "went alone" by 0.8pp, which this fix cannot affect.
+
 ## [0.29.0] - 2026-07-28
 - **Solo now keeps a local record of finished hands, so human play can be
   compared against the engine's.** Two deliberate constraints: nothing leaves
