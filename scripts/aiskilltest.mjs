@@ -18,7 +18,7 @@
    ========================================================================= */
 import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
-  cardEquity, applyPlay, solveHandValue,
+  cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
   SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
 } from "../src/engine.js";
 
@@ -756,6 +756,104 @@ const trick2 = [
   const pick = aiChooseCard(g, 3);
   check("keeps the boss trump rather than schmearing it onto a trick already won",
     cid(pick) === "9H", `played ${cid(pick)}`);
+}
+
+/* --------- The picker's free duck (reported 2026-07-28, hand 2) ----------- */
+// Trick 1. You (the partner) led Q-spades, Gus followed J-spades, Bunny 8 of
+// diamonds, Duane K-diamonds. Patty is the PICKER, sitting last, and holds
+// Q-clubs — the boss, which nothing can ever beat — plus J-diamonds and the
+// 7 of diamonds.
+//
+// She took it with Q-clubs. That spends the one card guaranteed to win a
+// trick later on the thinnest trick of the hand, to gain three points, on a
+// trick her own partner already held. The engine got here because
+// `knowsTeammate` returns false for every seat while the picker has not seen
+// the called ace, so this position reads to her exactly like an opponent's
+// trick and falls through to "cheapest winner".
+//
+// Sampling deals consistent with what she actually knows put the break-even
+// at ~13-16% confidence that the trick is her partner's; chance alone is 25%
+// with four unknown seats. Measured in self-play over 24,000 hands the rule
+// fires on 0.6% of picker-last decisions and is worth +2.2 picking-team points
+// per firing (+18 when the trick really was the partner's, -4 when not, and it
+// is the partner's 28% of the time).
+{
+  const g = position({
+    hands: [
+      [C("9", "D"), C("A", "H"), C("9", "C"), C("7", "S"), C("J", "H")],   // You — Q-spades already led
+      [C("Q", "H"), C("K", "H"), C("7", "C"), C("9", "S"), C("10", "S")],  // Gus
+      [C("A", "D"), C("Q", "D"), C("8", "C"), C("8", "S"), C("K", "C")],   // Bunny
+      [C("10", "D"), C("7", "H"), C("J", "C"), C("K", "S"), C("9", "H")],  // Duane
+      [C("Q", "C"), C("J", "D"), C("8", "H"), C("10", "C"), C("7", "D"), C("10", "H")], // Patty (picker)
+    ],
+    trick: [
+      { player: 0, card: C("Q", "S") },
+      { player: 1, card: C("J", "S") },
+      { player: 2, card: C("8", "D") },
+      { player: 3, card: C("K", "D") },
+    ],
+    picker: 4, partner: 0, partnerRevealed: false,
+    calledSuit: "H", calledAcePlayed: false, tricksDone: 0, leader: 0, turn: 4,
+  });
+
+  check("Patty is last to act, so the pot is final",
+    g.trick.length === 4);
+  check("the trick is thin — 9 points, well under the cap",
+    g.trick.reduce((s, t) => s + cardPts(t.card), 0) === 9);
+  check("a trump is winning it, not a fail card",
+    isTrump(g.trick.find((t) => t.player === trickWinner(g.trick)).card));
+  check("Q-clubs is boss — nothing unaccounted for beats it",
+    cardEquity(g, 4, C("Q", "C")) === 0);
+  check("Q-clubs is her only winner, so taking it costs the boss",
+    legalPlays(g, 4).filter((c) => trickWinner([...g.trick, { player: 4, card: c }]) === 4)
+      .every((c) => cid(c) === "QC"));
+  check("the 7 of diamonds is a free duck — zero points, and not a winner",
+    cardPts(C("7", "D")) === 0);
+  check("she cannot know whose trick it is",
+    !knowsTeammate(g, 4, 0) && !g.partnerRevealed);
+
+  // NEGATIVE CONTROL. The position only means something if the old engine was
+  // genuinely tempted by it. Turning the rule off must bring Q-clubs back —
+  // if this ever goes green alongside the assertion below, the case has
+  // stopped testing the thing it was written for.
+  check("with the rule disabled she still burns the boss, as she used to",
+    cid(aiChooseCard(g, 4, { duckMaxTrickPoints: -1 })) === "QC",
+    `played ${cid(aiChooseCard(g, 4, { duckMaxTrickPoints: -1 }))}`);
+
+  const pick = aiChooseCard(g, 4);
+  check("ducks the 7 of diamonds instead of spending the boss on a thin trick",
+    cid(pick) === "7D", `played ${cid(pick)}`);
+}
+
+{
+  // The other half of the rule: it must NOT fire when the duck costs points.
+  // Reported in the same session (hand 4) — Patty held Q-clubs, Q-hearts and
+  // the Ace of diamonds behind her partner's Q-spades. Ducking there means
+  // handing over 3 or 11 points on a guess, and the break-even measured 85%
+  // rather than 13%. That case wants a belief model, not this rule, so the
+  // engine should still take the trick.
+  const g = position({
+    hands: [
+      [C("7", "D"), C("J", "C"), C("8", "C"), C("A", "C")],
+      [C("K", "D"), C("Q", "D"), C("9", "H"), C("K", "H")],
+      [C("J", "H"), C("A", "H"), C("9", "C"), C("K", "C")],
+      [C("J", "S"), C("7", "C"), C("7", "H"), C("8", "H")],
+      [C("Q", "C"), C("Q", "H"), C("A", "D"), C("K", "S"), C("10", "C")],
+    ],
+    trick: [
+      { player: 0, card: C("Q", "S") },
+      { player: 1, card: C("9", "D") },
+      { player: 2, card: C("J", "D") },
+      { player: 3, card: C("8", "D") },
+    ],
+    picker: 4, partner: 0, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 4,
+  });
+  check("no zero-point card is legal here, so there is no free duck",
+    !legalPlays(g, 4).some((c) => cardPts(c) === 0));
+  const pick = aiChooseCard(g, 4);
+  check("takes the trick when ducking would cost points",
+    cid(pick) === "QC", `played ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);

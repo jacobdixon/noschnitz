@@ -6,6 +6,50 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.26.0] - 2026-07-28
+- **The picker no longer burns her boss trump on a thin trick she may already
+  own.** Reported from real play: trick 1, the partner led Q-spades, the picker
+  sat last holding Q-clubs, J-diamonds and the 7 of diamonds, and took the
+  trick with Q-clubs. That spends the one card guaranteed to win a trick later
+  — nothing outstanding beats it — to gain three points on the thinnest trick
+  of the hand, on a trick her own partner already held.
+  - The engine got there because `knowsTeammate` returns **false for every
+    seat** while the picker has not seen the called ace ("picker unsure of
+    partner"). So the position reads to her exactly like an opponent's trick,
+    the teammate branch is skipped entirely, and she falls through to "play the
+    cheapest winner" — which here was the boss.
+  - `freeDuckForPicker` now intercepts that fall-through under conditions that
+    are all decidable from the cards: she is the picker with the partnership
+    still unknown, she is **last to act** so the pot is final, a **trump** is
+    winning it (a fail-winning trick is worth capturing), the pot is at or
+    under `DUCK_MAX_TRICK_POINTS` (12), her cheapest winner is **boss**
+    (`cardEquity === 0`), and a **zero-point** legal card exists to throw
+    instead. She throws the weakest of those.
+  - The point is that the duck is free. The trick's existing points are at risk
+    either way; a zero-point card donates nothing on top. That is why this
+    needs no read on who the partner is and does not wait for the belief model.
+- Measurement, and note the whole-hand aggregate is the wrong instrument here.
+  The rule fires on **0.6% of picker-last decisions**, so `abtest` over 9,000
+  hands x 3 seeds cannot resolve it — it read +0.0008/seat/hand *against* the
+  rule, which is the same order as the largest effect the rule could possibly
+  have. Measured instead on the decisions it actually changes — finishing each
+  firing position twice from identical state, 139 firings from 24,000 hands —
+  ducking is worth **+2.2 picking-team points per firing**, positive in 3 of 3
+  seeds, and picker win rate on those positions is **93.5% vs 84.2%**.
+  - The asymmetry is the whole argument: **+18 points when the trick really was
+    the partner's, -4 when it was not**, and it is the partner's **28%** of the
+    time. That implies a break-even of 18%, which independently matches the
+    ~13-16% obtained by sampling deals consistent with what the picker knows on
+    the reported hand. Chance alone puts it at 25% with four unknown seats, so
+    the old play was wrong even with no read at all.
+- Deliberately **not** extended to the case reported alongside it, where the
+  picker held Q-clubs, Q-hearts and the Ace of diamonds and had no zero-point
+  card. Ducking there costs 3 or 11 points on a guess and the break-even
+  measured **85%**, not 13% — that one wants the belief layer, and the engine
+  still takes the trick. Both halves are pinned in `aiskilltest`, with the
+  negative control asserting the position still tempts the old behaviour when
+  the rule is switched off via `duckMaxTrickPoints`.
+
 ## [0.25.0] - 2026-07-28
 - **Solo's opponent roster now rotates.** Picked once per session from an
   8-name pool instead of the same fixed four every game, so an AI blunder
