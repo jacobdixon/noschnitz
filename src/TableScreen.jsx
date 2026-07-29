@@ -18,7 +18,7 @@
    created the table). Players expect to sit at the bottom of their own screen,
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { cid, legalPlays, callOptions, SUIT_NAME } from "./engine.js";
 import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
