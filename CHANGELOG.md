@@ -6,6 +6,68 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.38.0] - 2026-07-30
+- **Defenders stop taking tricks off each other on a hunch.** The overtake brake
+  — "taking a trick off our own side has to buy something" — was gated on the
+  partnership being *certain*. Everywhere else a seat that could win simply won,
+  so defenders routinely spent a card seizing a trick another defender already
+  had. It now applies on a strong BELIEF too (`OVERTAKE_BELIEF_FLOOR`, 0.6).
+  This is the largest AI gain measured in a long while.
+- **It took a second harness to see it honestly, because the two disagreed.**
+  `abtest` — the variant in one seat against four unchanged — said
+  +0.0128/seat/hand, ahead in 8 of 8 seeds. An all-five-seats `simulate` run
+  said the opposite, and matched the 0.6pp defensive LOSS this very branch's
+  comment records from a 3x200,000-hand run as the reason the gate was there.
+- That could not be settled by preferring a harness, so **`scripts/coalitiontest.mjs`**
+  is new: identical deals to both arms, the variant applied to EVERY DEFENDER,
+  scoring the defending side. A one-seat test can't see this class of change,
+  because one defender can stand down while the other two still contest the
+  trick — that seat banks the saving and somebody else pays for it. Paired,
+  12,000 hands x 5 seeds, as a change in the picker's win rate on partnered
+  hands:
+
+      null control            0.00pp   defenders better in 0 of 5
+      floor 0.0 (no belief)  -0.53pp   defenders better in 5 of 5
+      floor 0.6              -0.74pp   defenders better in 5 of 5
+      floor 0.66             -0.87pp   defenders better in 5 of 5
+
+  Defenders gain, consistently. **The `simulate` reading was noise** — 3,000
+  unpaired hands against roughly a point of standard error on the difference.
+  Worth remembering the next time one `simulate` run seems to say something.
+- The belief earns its place here in a way `abtest` could barely resolve
+  (+0.0122 at floor 0.0 against +0.0128 at 0.3, inside each other's spread)
+  but the coalition harness shows plainly: consulting it is worth about half
+  again as much as the brake alone. Standing down for a seat that is really the
+  picker's partner is exactly the mistake, and only the belief knows which
+  "teammate" that is.
+- `npm test` now runs `coalitiontest` with no variant and asserts the null
+  control is **exactly** zero. A harness that cannot prove it is paired cannot
+  make a fraction of a point readable.
+- **The beta testers' broader rule was measured and did not ship.** They
+  described it as "a non-picker leading TRUMP is almost certainly the partner",
+  which is broader than the Queens-and-Jacks read 0.37.0 implemented. Over 6,000
+  self-play hands, of every trick opened by a non-picker (base rate 25%):
+
+      power trump (Q/J)   2908 leads   the partner 75.2%
+      plain trump         1279 leads   the partner 60.4%
+      fail               13538 leads   the partner 12.8%
+
+  So they are right — a plain trump lead is real evidence, about 4.6:1. It is
+  simply almost never *actionable*: swept at 2 / 3 / 5 / 8 it measures +0.0000
+  to +0.0001, ahead in 0 to 1 of 5 seeds. The gate it feeds is the schmear,
+  which only exists as a decision while the leader still HOLDS the trick — and a
+  plain trump lead gets overtrumped nine times in ten (won its own trick 9.4% of
+  the time, against 41.1% for a power trump). Left switchable and off.
+- Also corrected: 0.37.0's note described the power-trump read as ~98% accurate.
+  That was the accuracy of the belief's confident bucket, which combines the read
+  with the deduction. The read alone is 75% — a 3x lift on the base rate, and
+  still the strongest single inference in the file, but 98% overstated it.
+- `teammateProbability` gained a `partnerWeight` tier for plain trump, and
+  `trumpLeadKind` replaces `ledPowerTrump`. Repeat leads from one seat take the
+  strongest signal rather than multiplying: it is the same seat with the same
+  hand and the same plan, and multiplying would put a three-time leader past any
+  odds this can be calibrated to.
+
 ## [0.37.0] - 2026-07-30
 - **The AI now reads the partnership off how a seat has PLAYED**, not only off
   what the cards have proven. Reported from hand 1, which finished 120-0: a

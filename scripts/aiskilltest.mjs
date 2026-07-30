@@ -916,7 +916,9 @@ const trick2 = [
   // consistent loss (see its comment in engine.js) and is asserted here only
   // where it is the thing under test.
   const ON = { forcedFollow: true, deducePartner: true };
-  const OFF = { forcedFollow: false, deducePartner: false };
+  // Every flag added after this hand has to be pinned off too, or "what the old
+  // engine did" quietly becomes "what the current engine does minus one thing".
+  const OFF = { forcedFollow: false, deducePartner: false, overtakeBeliefFloor: 1.01 };
 
   /* ---- the deduction itself ---- */
   check("hand 27: only one seat can still hold the called ace",
@@ -1138,6 +1140,89 @@ const trick2 = [
     check("control: a low-diamond lead is not read as the picker's book",
       Math.abs(teammateProbability(g3, 2, 0) - teammateProbability(g3, 2, 0, OFF)) < 1e-9,
       `${teammateProbability(g3, 2, 0)} vs ${teammateProbability(g3, 2, 0, OFF)}`);
+  }
+}
+
+
+/* ============================================================================
+   Standing down from a teammate's trick on a BELIEF, not only on proof.
+
+   The overtake brake — "taking a trick off our own side has to buy something"
+   — was gated on the partnership being certain. Everywhere else, a seat that
+   could win simply won, which meant defenders routinely spent a card taking a
+   trick another defender already had.
+
+   Opening that gate to a strong belief is worth more than anything else
+   measured this week, and it needed a second harness to see honestly: abtest
+   said +0.0128/seat/hand ahead in 8 of 8, while an unpaired simulate run looked
+   like the 0.6pp defensive LOSS this branch's own comment records. The paired
+   coalition test (scripts/coalitiontest.mjs), which applies the variant to
+   every defender on identical deals, settles it — defenders gain 0.74pp, ahead
+   in 5 of 5, and the simulate reading was noise.
+   ========================================================================= */
+{
+  // Seat 0 leads a fail heart, seat 1 trumps in with the 9 of diamonds. Seat 1
+  // is winning but did NOT lead, so the trump-lead read has nothing to say and
+  // the belief is the uninformed two-in-three — the case under test.
+  const board = (mine, winCard) => position({
+    hands: [
+      [C("7", "S")], [C("8", "S"), C("9", "S")],
+      [mine, C("8", "C"), C("7", "C")],
+      [C("K", "S"), C("10", "S"), C("9", "C")],
+      [C("A", "S"), C("10", "C"), C("K", "C")],
+    ],
+    trick: [{ player: 0, card: C("9", "H") }, { player: 1, card: winCard }],
+    picker: 4, partner: 3, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 2, leader: 0, turn: 2,
+  });
+  const NOBRAKE = { overtakeBeliefFloor: 1.01 };
+
+  const g = board(C("10", "D"), C("9", "D"));
+  check("brake: the partnership is genuinely unproven here",
+    knownPartner(g, 2) === null && !g.partnerRevealed);
+  check("brake: but believed two-in-three a teammate",
+    teammateProbability(g, 2, 1) > 0.6, `p=${teammateProbability(g, 2, 1)}`);
+  check("brake: the 10 of trump would take the trick",
+    legalPlays(g, 2).some((c) => cid(c) === "10D"));
+  check("brake: and taking it buys almost nothing",
+    securityAfterPlay(g, 2, C("10", "D")) - trickSecurity(g, 2) < 0.1,
+    `gain=${(securityAfterPlay(g, 2, C("10", "D")) - trickSecurity(g, 2)).toFixed(3)}`);
+
+  check("brake (old): the engine spent the 10 to take it anyway",
+    cid(aiChooseCard(g, 2, NOBRAKE)) === "10D", `played ${cid(aiChooseCard(g, 2, NOBRAKE))}`);
+  const kept = aiChooseCard(g, 2);
+  check("brake: now stands down from a believed teammate's trick",
+    cid(kept) !== "10D", `played ${cid(kept)}`);
+  check("brake: and keeps the ten points rather than donating them",
+    cardPts(kept) === 0, `played ${cid(kept)} worth ${cardPts(kept)}`);
+
+  /* ---- CONTROL: a price, not a prohibition ---- */
+  {
+    // Q-spades over K-diamonds genuinely secures the trick — beaten by one
+    // outstanding card instead of nine. "Never overtake your own side" would be
+    // the wrong rule, and the gain here pays for the card.
+    const g2 = board(C("Q", "S"), C("K", "D"));
+    check("control: this overtake really does secure the trick",
+      securityAfterPlay(g2, 2, C("Q", "S")) - trickSecurity(g2, 2) > 0.5);
+    check("control: so it still happens, brake or no brake",
+      cid(aiChooseCard(g2, 2)) === "QS", `played ${cid(aiChooseCard(g2, 2))}`);
+  }
+
+  /* ---- CONTROL: the read must be able to switch the brake back off ---- */
+  {
+    // The seat winning LED a power trump earlier in the hand, so the read marks
+    // it as the picker's. Standing down for the picker's partner is precisely
+    // the mistake the floor exists to avoid.
+    const g3 = board(C("10", "D"), C("9", "D"));
+    g3.trickHistory = [{ trick: [
+      { player: 1, card: C("Q", "D") }, { player: 2, card: C("8", "S") },
+      { player: 3, card: C("9", "S") }, { player: 4, card: C("K", "S") },
+      { player: 0, card: C("7", "S") },
+    ] }];
+    check("control: the read marks the earlier trump-leader as the picker's",
+      teammateProbability(g3, 2, 1) < 0.6, `p=${teammateProbability(g3, 2, 1)}`);
+    check("control: so the brake stands aside and the trick is contested",
+      cid(aiChooseCard(g3, 2)) === "10D", `played ${cid(aiChooseCard(g3, 2))}`);
   }
 }
 

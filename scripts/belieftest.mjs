@@ -88,6 +88,7 @@ const PLAIN = { trumpLeadRead: false };
 const READ = {
   trumpLeadRead: true,
   ...(process.env.TRUMP_LEAD_ODDS ? { trumpLeadOdds: Number(process.env.TRUMP_LEAD_ODDS) } : {}),
+  ...(process.env.PLAIN_TRUMP_LEAD_ODDS ? { plainTrumpLeadOdds: Number(process.env.PLAIN_TRUMP_LEAD_ODDS) } : {}),
 };
 
 function tally(target, p, truth) {
