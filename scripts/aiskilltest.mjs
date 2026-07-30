@@ -19,7 +19,7 @@
 import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
   cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
-  SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
+  unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
   freshHand, assignPartner, resolveTrick, sortHand,
   calledCardCandidates, knownPartner, provenSide, teammateProbability,
 } from "../src/engine.js";
@@ -39,7 +39,7 @@ const C = (rank, suit) => ({ rank, suit });
 function position({
   hands, trick = [], picker, partner = null, partnerRevealed = false,
   calledSuit = null, calledAcePlayed = true, tricksDone = 0, leader = 0,
-  played = [], turn = 0,
+  played = [], turn = 0, buried = [],
 }) {
   return {
     phase: "playing",
@@ -47,7 +47,7 @@ function position({
     dealer: 0,
     hands,
     blind: [],
-    buried: [],
+    buried,
     picker,
     partner,
     partnerRevealed,
@@ -1224,6 +1224,117 @@ const trick2 = [
     check("control: so the brake stands aside and the trick is contested",
       cid(aiChooseCard(g3, 2)) === "10D", `played ${cid(aiChooseCard(g3, 2))}`);
   }
+}
+
+/* ------- The fat-trump lead (reported twice; corpus hand 9, 2026-07-29) ---- */
+// Trick 4, and this is a real hand out of the collected corpus, not a
+// construction: You are the picker holding K-D, A-D and 10-D. Both jacks of
+// trump are still out, so every one of those three cards loses to the same two
+// cards — they are equal in power and differ only in what they pay.
+//
+// The engine led A-D. The branch responsible is "opponents nearly tapped out,
+// press now", which leads the TOP trump; with two higher trumps outstanding
+// that is not pressure, it is eleven points handed to whoever holds a jack. The
+// defense has to follow trump either way, so the bleed is identical and the
+// only variable is the price. The human led K-D.
+//
+// Measured the way a rare rule has to be — every firing finished twice from
+// identical state, engine driving all five seats, over 100,000 deals across 5
+// seeds: fires on 0.5% of hands, worth +5.34 picking-team points per firing,
+// ahead in 5 of 5 seeds, and it moves the schneider multiplier on 10% of
+// firings (picker win rate 85.7% against 84.3%). The whole-hand aggregate is
+// the wrong instrument at this firing rate and would have called it noise.
+{
+  const g = position({
+    hands: [
+      [C("K", "D"), C("A", "D"), C("10", "D")],   // You — picker, on lead
+      [C("J", "S"), C("9", "C"), C("9", "H")],    // Gus holds a jack
+      [C("J", "D"), C("8", "H"), C("A", "H")],    // Bunny (partner) holds the other
+      [C("10", "S"), C("7", "H"), C("10", "H")],
+      [C("10", "C"), C("K", "C"), C("K", "H")],
+    ],
+    played: [
+      C("9", "S"), C("K", "S"), C("8", "S"), C("A", "S"), C("7", "S"),
+      C("J", "C"), C("Q", "D"), C("Q", "S"), C("Q", "C"), C("8", "D"),
+      C("Q", "H"), C("J", "H"), C("7", "D"), C("9", "D"), C("7", "C"),
+    ],
+    buried: [C("A", "C"), C("8", "C")],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 3, leader: 0, turn: 0,
+  });
+
+  check("two trump are still outstanding, which is what opens the press branch",
+    unseenTrumpCount(g, g.hands[0]) === 2);
+  check("all three trump in hand are equally beatable — the choice is price only",
+    legalPlays(g, 0).every((c) => cardEquity(g, 0, c) === 2));
+  check("and A-D is the dearest of them",
+    cardPts(C("A", "D")) === 11 && cardPts(C("K", "D")) === 4);
+
+  // NEGATIVE CONTROL. If this ever passes alongside the assertion below, the
+  // position has stopped reproducing the bug and the case is worthless.
+  check("with the guard disabled it still leads the fat ace, as it used to",
+    cid(aiChooseCard(g, 0, { guardFatTrumpLead: false })) === "AD",
+    `led ${cid(aiChooseCard(g, 0, { guardFatTrumpLead: false }))}`);
+
+  const pick = aiChooseCard(g, 0);
+  check("bleeds with the cheap trump instead of donating eleven points",
+    cid(pick) === "KD", `led ${cid(pick)}`);
+}
+
+{
+  // The other half: a fat trump that nothing can beat is a perfectly good
+  // press, and must stay one. Every Queen and Jack is gone, so A-D is boss and
+  // the two unseen trump are both below it.
+  const g = position({
+    hands: [
+      [C("A", "D"), C("K", "D"), C("8", "S")],
+      [C("9", "C"), C("9", "H"), C("A", "H")],
+      [C("8", "H"), C("A", "C"), C("K", "C")],
+      [C("10", "S"), C("7", "H"), C("10", "H")],
+      [C("10", "C"), C("K", "H"), C("9", "S")],
+    ],
+    played: [
+      C("Q", "C"), C("Q", "S"), C("Q", "H"), C("Q", "D"), C("J", "C"),
+      C("J", "S"), C("J", "H"), C("J", "D"), C("10", "D"), C("9", "D"),
+    ],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "C", calledAcePlayed: true, tricksDone: 2, leader: 0, turn: 0,
+  });
+  check("the press branch is live — two trump unseen, two in hand",
+    unseenTrumpCount(g, g.hands[0]) === 2 && g.hands[0].filter(isTrump).length === 2);
+  check("A-D is boss of everything left",
+    cardEquity(g, 0, C("A", "D")) === 0);
+  const pick = aiChooseCard(g, 0);
+  check("still presses with the fat ace when nothing can beat it",
+    cid(pick) === "AD", `led ${cid(pick)}`);
+}
+
+{
+  // And the guard must not leak into the measured trump-lead rule. A lone fat
+  // trump is still led — pulling trump is worth more than the points it risks,
+  // which is the +0.019/seat/hand result the leading block documents. This
+  // shape appeared twice in the same corpus and is NOT the bug.
+  const g = position({
+    hands: [
+      [C("10", "D"), C("8", "S"), C("7", "H")],
+      [C("J", "S"), C("9", "C"), C("9", "H")],
+      [C("J", "D"), C("8", "H"), C("A", "H")],
+      [C("10", "S"), C("Q", "D"), C("10", "H")],
+      [C("10", "C"), C("K", "C"), C("K", "H")],
+    ],
+    played: [
+      C("9", "S"), C("K", "S"), C("8", "S"), C("A", "S"), C("7", "S"),
+      C("J", "C"), C("Q", "S"), C("Q", "C"), C("8", "D"), C("Q", "H"),
+      C("J", "H"), C("7", "D"), C("9", "D"), C("7", "C"), C("A", "D"),
+    ],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 3, leader: 0, turn: 0,
+  });
+  check("only one trump in hand, so the press branch cannot be the one deciding",
+    g.hands[0].filter(isTrump).length === 1);
+  const pick = aiChooseCard(g, 0);
+  check("leads the lone fat trump anyway — pulling trump is the measured rule",
+    cid(pick) === "10D", `led ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
