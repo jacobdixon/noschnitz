@@ -25,7 +25,7 @@
    ========================================================================= */
 import React from "react";
 import { SUIT_SYM, cid, cardPts, makeDeck, isTrump, trumpPower } from "./engine.js";
-import { felt, Card, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { felt, Card, Badge, Modal, ModalActions, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { SEAT_POS, rotate } from "./felt.jsx";
 
 // Derived from the engine rather than typed out, so it cannot disagree with
@@ -77,7 +77,9 @@ export function TrumpModal({ onClose }) {
         The player holding the called ace is the picker's secret partner, and
         must play it when that suit is led.
       </div>
-      <button style={btnPlain} onClick={onClose}>Close</button>
+      <ModalActions>
+        <button style={btnPlain} onClick={onClose}>Close</button>
+      </ModalActions>
     </Modal>
   );
 }
@@ -120,15 +122,21 @@ export function ShareHandsModal({ sharing, onToggle, onClose }) {
         here to attach it to. Turning this off stops it immediately and nothing
         further is sent.
       </div>
-      <button style={{ ...btnGold, width: "100%", marginBottom: 8 }} onClick={onToggle}>
-        {sharing ? "Stop sending my hands" : "Send my hands to help"}
-      </button>
-      <button style={btnPlain} onClick={onClose}>Close</button>
+      {/* The toggle is what this screen is for, so it takes the primary slot on
+          the right. It was a full-width block above Close; full width is the
+          one shape that can't sit in a right-aligned row, and it made the
+          dismissal look like the equal of the setting. */}
+      <ModalActions>
+        <button style={btnPlain} onClick={onClose}>Close</button>
+        <button style={btnGold} onClick={onToggle}>
+          {sharing ? "Stop sending my hands" : "Send my hands to help"}
+        </button>
+      </ModalActions>
     </Modal>
   );
 }
 
-export function ScoresModal({ names, scores, handNum, mySeat, onClose, children }) {
+export function ScoresModal({ names, scores, handNum, mySeat, onClose, children, actions }) {
   return (
     <Modal onClose={onClose}>
       {/* "Hand N", not "After hand N" — which is what the table said, and was
@@ -162,7 +170,14 @@ export function ScoresModal({ names, scores, handNum, mySeat, onClose, children 
         </tbody>
       </table>
       {children}
-      <button style={btnPlain} onClick={onClose}>Close</button>
+      {/* `actions` is the WHOLE footer row, Close included — not extra buttons
+          bolted on beside a Close this component owns. Only the caller knows
+          which of its controls is the primary one, and the primary is the one
+          that has to end up on the right. Solo has no controls here, so the
+          default is the row it needs: dismissal alone. */}
+      <ModalActions>
+        {actions ?? <button style={btnPlain} onClick={onClose}>Close</button>}
+      </ModalActions>
     </Modal>
   );
 }
@@ -244,7 +259,9 @@ export function LastTrickModal({ lastTrick, names, mySeat = 0, onClose }) {
         <div style={{ fontSize: 16, color: felt.creamDim }}>No trick played yet this hand.</div>
       )}
       <div style={{ marginTop: 12 }}>
-        <button style={btnPlain} onClick={onClose}>Close</button>
+        <ModalActions>
+          <button style={btnPlain} onClick={onClose}>Close</button>
+        </ModalActions>
       </div>
     </Modal>
   );
@@ -295,12 +312,15 @@ export function HandEndModal({ g, names, mySeat = 0, onNext, onRecap, nextLabel 
           ))}
         </tbody>
       </table>
-      <div style={{ display: "flex", gap: 10 }}>
+      {/* Dealing on is the primary and now sits rightmost; Recap flows to its
+          left. The pair used to read left-to-right, which put the button you
+          press every single hand at the far edge from the thumb. */}
+      <ModalActions>
+        <button style={btnPlain} onClick={onRecap}>Recap</button>
         {onNext && (
           <button style={btnGold} onClick={onNext} disabled={nextDisabled}>{nextLabel}</button>
         )}
-        <button style={btnPlain} onClick={onRecap}>Recap</button>
-      </div>
+      </ModalActions>
     </Modal>
   );
 }
@@ -477,12 +497,12 @@ export function RecapModal({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 10 }}>
+      <ModalActions>
+        <button style={btnPlain} onClick={onBack}>Back</button>
         {onNext && (
           <button style={btnGold} onClick={onNext} disabled={nextDisabled}>{nextLabel}</button>
         )}
-        <button style={btnPlain} onClick={onBack}>Back</button>
-      </div>
+      </ModalActions>
     </Modal>
   );
 }
