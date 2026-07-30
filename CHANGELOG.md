@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.35.0] - 2026-07-29
+## [0.40.0] - 2026-07-30
 - **The AI stops schmearing a boss fail card over a dead one.** Reported from a
   real hand: a defender void in trump sat behind her partner's winning
   Q-diamonds holding A-clubs, 10-hearts, 9-clubs and 10-spades, with hearts the
@@ -32,17 +32,331 @@ corresponds to the entries below.
     model gives back. Points-first was right all along; it is only the near-tie
     at the top that it got wrong. Both the rejected rule and the reasoning are
     kept in `engine.js` so nobody has to rebuild them to re-check.
-  - Measured at +0.0003/seat/hand, ahead in 7 of 8 seeds over 25,000 hands per
+  - Measured at +0.0001/seat/hand, ahead in 7 of 10 seeds over 60,000 hands per
     split, with the mirrored run (old rule in one seat against four new) agreeing
-    at -0.0002, behind in 7 of 8. Both knobs were swept and this pair is the
-    peak. Small, because of how rarely it fires — the claim is the sign, not the
-    magnitude. `npm run simulate` is unmoved: 66.8% picker win rate, 72.9 avg
-    picker-team points.
+    at -0.0001, behind in 10 of 10. The null test resolves to exactly +0.0000,
+    which is what makes a number this small readable at all.
+  - Worth recording that this was tuned before 0.36-0.39 and re-measured after.
+    On the pre-0.36 engine it was +0.0003, ahead in 7 of 8 — the belief gate
+    those versions put in front of the schmear branch halves it. Both directions
+    still lean the same way and nothing regressed, but the honest claim is now
+    a sign rather than a magnitude, and the case for the change rests as much on
+    the pinned hand as on the aggregate. The knobs were re-swept on the current
+    engine and this pair is still the best of them, thinly.
+  - `npm run simulate` unmoved; full suite green.
   - Pinned in `scripts/aiskilltest.mjs` from the real deal rather than a
     constructed one — every card of that hand is visible in the recap, so the
     position is exactly as it stood — with a negative control that brings the
     Ace back when the rule is switched off, and two cases guarding the failure
     mode above.
+
+## [0.39.1] - 2026-07-30
+- **Renaming yourself at a table works again.** `TableScreen` called
+  `api.renameSeat(...)`; `src/api.js` exports that function as `setName`. There
+  was never a `renameSeat`, so the Rename button in the seat controls threw
+  `TypeError: api.renameSeat is not a function` and the name never changed. Fixed
+  at the call site rather than by renaming the export — one caller was wrong, not
+  the API. The seat route itself was fine; nothing server-side changes.
+- **`npm run exporttest` — a guard for the class, not just this bug.** For every
+  `import * as NS from "./local.js"`, it loads the module and asserts every
+  `NS.member` the file reads is actually exported.
+  - This is the sibling of the gap `no-undef` exists for (see the note in
+    `eslint.config.js`): lint catches a free identifier that resolves to nothing,
+    this catches a *member* that resolves to nothing. Lint cannot see it — `api`
+    is a perfectly well-defined binding, and ESLint does not follow the import to
+    check what is on it.
+  - The build did notice, and that is the part worth remembering: Vite printed
+    `"renameSeat" is not exported by "src/api.js"` on **both** the flag-off and
+    the flag-on build, and exited 0 anyway. A warning in a passing build is a
+    thing nobody reads. It fails the test run now instead, in milliseconds and
+    without a bundler.
+  - Verified by negative control: reintroducing `api.renameSeat` makes it exit 1.
+- The bug outlived five releases (0.34.0 through 0.39.0) with the warning in
+  every build log the whole time, which is the case for the guard more than the
+  one-word fix is.
+
+## [0.39.0] - 2026-07-30
+- **The picker no longer leads a fat trump into higher trump.** Holding K-D, A-D
+  and 10-D with both jacks still out, the engine led the Ace — eleven points to
+  whoever held a jack, on a trick it could not win. The defense has to follow
+  trump whichever of the three it leads, so the bleed is identical and the only
+  variable is the price.
+- The branch responsible is "opponents nearly tapped out, press now", which
+  leads the *top* trump. Pressing is right, but it is only pressure if the top
+  trump can plausibly hold the trick; with higher trump outstanding a fat diamond
+  is a donation. It now declines and falls through to the bleed rule below it,
+  which sends the weakest trump.
+- Deliberately narrow, in three ways. A fat trump that nothing left can beat is
+  still a press. A *lone* fat trump is still led, because pulling trump is worth
+  more than the points it risks — that is the measured +0.019/seat/hand rule in
+  the leading block and this change does not touch it. And the separate
+  "which trump to lead" test one line down (`isPowerTrump || cardEquity <= 1`) is
+  left exactly as measured.
+- Needed no belief model and no inference: `cardEquity` already reported the card
+  as beatable. This is the leading counterpart to the "protect your trump power"
+  family `aiskilltest` covers when following.
+- **Found twice, the second time mechanically.** Once from a recap screenshot,
+  then again as hand 9 of the collected corpus — the first bug `minehands.mjs`
+  turned up on its own, in the first 41 hands off beta, from a position where the
+  human led K-D and the engine led A-D. The pinned assertion uses that real
+  position, with a negative control that fails if it ever stops reproducing.
+- Measured the way a rule this rare has to be, since it fires on 0.5% of hands
+  and a whole-hand aggregate would call that noise: every firing finished twice
+  from identical state, engine driving all five seats, 100,000 deals across 5
+  seeds. **+5.34 picking-team points per firing, ahead in 5 of 5 seeds**, the
+  schneider multiplier moving on 10% of firings (picker win rate 85.7% against
+  84.3%). Re-measured on top of 0.37.0-0.38.2 rather than carried over from the
+  first run: the belief layer changes how the hand plays out after the lead, so
+  the older numbers (+5.66 per firing) no longer describe this engine.
+
+## [0.38.2] - 2026-07-30
+- **The grading cost test measured the machine, not the code.** It asserted a flat
+  `gradeMs < 1000` under a label claiming grading "renders synchronously" — and that
+  stopped being true when the solve moved into `grader.worker.js`, which documents it
+  as a median of ~800ms and up to ~8s precisely *because* it is off the render path.
+  The test was enforcing a contract the design had deliberately abandoned.
+- It is now a RATIO against a reference solve on the same machine and the same hand,
+  so machine speed divides out. What is left is the thing worth guarding: grading a
+  whole hand must not become dramatically more expensive per solve than solving one
+  position. Observed at roughly 50-70x, bounded at 150x, and the ratio is printed on
+  every run so drift is visible long before the bound is reached. The reference is
+  averaged over five runs because a single ~15ms solve is small enough for timer noise
+  to show up in the quotient.
+- **`CLAUDE.md`'s deploy section told you to fast-forward `beta` by hand.**
+  `.github/workflows/release.yml` has done that automatically for some time, so
+  following the doc was at best a no-op. Rewritten: if beta is behind, the question is
+  never "did somebody forget to push" but "why did the Release job not run".
+- The same section now records the failure mode that cost a deploy today. `Release` is
+  gated on CI *succeeding*, so a marginal test can pass on a pull request, fail on
+  `master` for the identical commit, and **silently withhold the deploy** — beta stays
+  put and production is never content-verified. A flaky assertion in this repo is a
+  deploy outage with extra steps.
+- Also added there: a green commit status on `master` does not mean production shipped,
+  because Vercel attributes the *beta* build to the same commit; and a stale local
+  `master` can leave the working tree dozens of commits behind without complaining,
+  which is worth a `git log --oneline -1` before believing anything you read.
+- **The tuning conventions now describe both harnesses.** `scripts/coalitiontest.mjs`
+  is required for any rule about co-operating with teammates, because a one-seat A/B
+  structurally cannot see them. 0.38.0 is written up there as the worked example: the
+  harnesses disagreed, and the answer was to build the one that asked the real question
+  rather than to prefer whichever agreed. Two matching notes: one `simulate` run is not
+  evidence at 3,000 unpaired hands, and any new piece of partnership evidence belongs
+  in `partnerWeight`, calibrated by sweeping it in `belieftest` rather than chosen.
+
+## [0.38.1] - 2026-07-30
+- **Fixes a flaky assertion that turned master red and stranded beta.** The
+  belief calibration test asserted a flat 2pp error bar on every bucket. The
+  trump-lead read's confident bucket sits at 1.8-2.2pp, so the test passed on
+  the pull request and failed on master for the identical commit — and because
+  `Release` fires only on CI *succeeding*, beta was never fast-forwarded and
+  production was never content-verified.
+- The bar is now direction-aware, which is a design decision rather than a
+  convenience. `TRUMP_LEAD_ODDS` is deliberately set below its best-calibrated
+  value (40 against 64) so the read stays honest against off-book human
+  opponents it was never calibrated on, and the price of that choice is exactly
+  this: the read predicts 97% where the truth is 99%. **Under-confidence is the
+  intended error**; over-confidence is the one that makes the play code act on a
+  lie. So the conservative direction gets 5pp and the dangerous one keeps 2pp.
+  Verified still strict enough to fail the 8.6pp that odds of 8 produce.
+- Worth recording that the failure was NOT sampling noise, which was the first
+  guess. With n=4178 in that bucket the standard error is about 0.27pp, so 2.2pp
+  is roughly eight sigma — a real, small, deliberate miscalibration. The test was
+  wrong about what it should be asserting, not unlucky.
+
+## [0.38.0] - 2026-07-30
+- **Defenders stop taking tricks off each other on a hunch.** The overtake brake
+  — "taking a trick off our own side has to buy something" — was gated on the
+  partnership being *certain*. Everywhere else a seat that could win simply won,
+  so defenders routinely spent a card seizing a trick another defender already
+  had. It now applies on a strong BELIEF too (`OVERTAKE_BELIEF_FLOOR`, 0.6).
+  This is the largest AI gain measured in a long while.
+- **It took a second harness to see it honestly, because the two disagreed.**
+  `abtest` — the variant in one seat against four unchanged — said
+  +0.0128/seat/hand, ahead in 8 of 8 seeds. An all-five-seats `simulate` run
+  said the opposite, and matched the 0.6pp defensive LOSS this very branch's
+  comment records from a 3x200,000-hand run as the reason the gate was there.
+- That could not be settled by preferring a harness, so **`scripts/coalitiontest.mjs`**
+  is new: identical deals to both arms, the variant applied to EVERY DEFENDER,
+  scoring the defending side. A one-seat test can't see this class of change,
+  because one defender can stand down while the other two still contest the
+  trick — that seat banks the saving and somebody else pays for it. Paired,
+  12,000 hands x 5 seeds, as a change in the picker's win rate on partnered
+  hands:
+
+      null control            0.00pp   defenders better in 0 of 5
+      floor 0.0 (no belief)  -0.53pp   defenders better in 5 of 5
+      floor 0.6              -0.74pp   defenders better in 5 of 5
+      floor 0.66             -0.87pp   defenders better in 5 of 5
+
+  Defenders gain, consistently. **The `simulate` reading was noise** — 3,000
+  unpaired hands against roughly a point of standard error on the difference.
+  Worth remembering the next time one `simulate` run seems to say something.
+- The belief earns its place here in a way `abtest` could barely resolve
+  (+0.0122 at floor 0.0 against +0.0128 at 0.3, inside each other's spread)
+  but the coalition harness shows plainly: consulting it is worth about half
+  again as much as the brake alone. Standing down for a seat that is really the
+  picker's partner is exactly the mistake, and only the belief knows which
+  "teammate" that is.
+- `npm test` now runs `coalitiontest` with no variant and asserts the null
+  control is **exactly** zero. A harness that cannot prove it is paired cannot
+  make a fraction of a point readable.
+- **The beta testers' broader rule was measured and did not ship.** They
+  described it as "a non-picker leading TRUMP is almost certainly the partner",
+  which is broader than the Queens-and-Jacks read 0.37.0 implemented. Over 6,000
+  self-play hands, of every trick opened by a non-picker (base rate 25%):
+
+      power trump (Q/J)   2908 leads   the partner 75.2%
+      plain trump         1279 leads   the partner 60.4%
+      fail               13538 leads   the partner 12.8%
+
+  So they are right — a plain trump lead is real evidence, about 4.6:1. It is
+  simply almost never *actionable*: swept at 2 / 3 / 5 / 8 it measures +0.0000
+  to +0.0001, ahead in 0 to 1 of 5 seeds. The gate it feeds is the schmear,
+  which only exists as a decision while the leader still HOLDS the trick — and a
+  plain trump lead gets overtrumped nine times in ten (won its own trick 9.4% of
+  the time, against 41.1% for a power trump). Left switchable and off.
+- Also corrected: 0.37.0's note described the power-trump read as ~98% accurate.
+  That was the accuracy of the belief's confident bucket, which combines the read
+  with the deduction. The read alone is 75% — a 3x lift on the base rate, and
+  still the strongest single inference in the file, but 98% overstated it.
+- `teammateProbability` gained a `partnerWeight` tier for plain trump, and
+  `trumpLeadKind` replaces `ledPowerTrump`. Repeat leads from one seat take the
+  strongest signal rather than multiplying: it is the same seat with the same
+  hand and the same plan, and multiplying would put a three-time leader past any
+  odds this can be calibrated to.
+
+## [0.37.0] - 2026-07-30
+- **The AI now reads the partnership off how a seat has PLAYED**, not only off
+  what the cards have proven. Reported from hand 1, which finished 120-0: a
+  defender won trick 1 with Q-clubs and led Q-hearts into trick 2, and both
+  remaining defenders read that seat as a teammate and schmeared an Ace onto it.
+  22 points to the picker's partner on a single trick.
+- Nothing there was deducible. Hearts had not been led, so three seats could
+  still hold the called ace and no amount of deduction narrows that — the
+  machinery added in 0.36.0 correctly declines to guess. What was available is
+  inference: this engine's leading branch has the picker's team lead trump
+  whenever it holds any, while defenders lead fail and reach for trump only
+  holding nothing else, weakest-first. **A Queen or a Jack on lead is the
+  picker's book.**
+- `teammateProbability` is no longer uniform over the candidate seats. It
+  reweights them by `partnerWeight`, and a seat that has opened a trick with a
+  power trump carries `TRUMP_LEAD_ODDS`. In the reported hand that moves a
+  defender's read of the trump-leader from "two-in-three my friend" to 0.048.
+- **`TRUMP_LEAD_ODDS` was calibrated, not guessed.** `belieftest` buckets every
+  judgement by what the belief predicted and checks it against ground truth, so
+  the constant was swept until the buckets came out honest: at 8 the read was
+  under-confident by 4.4pp and 8.1pp on the two buckets it moves, improving
+  monotonically to 0.2pp / 0.5pp at 64. The finding behind that curve is the
+  interesting part — **a seat that leads a Queen or a Jack is on the picker's
+  team about 98% of the time.** Shipped at 40 rather than the flattest point,
+  because the calibration is measured in self-play where every seat runs this
+  file's book, and a human defender is off-book and will lead trump more often
+  than an AI one.
+- The belief is now spent, by a floor the schmear gate must clear
+  (`BELIEF_FLOOR`, 0.5). **Worth +0.0018/seat/hand, ahead in 8 of 8 seeds** at
+  20,000 hands per split. The control that makes that readable: the identical
+  floor with the read turned OFF measures +0.0000, ahead in 0 of 5 — the
+  mechanism earns nothing, the entire gain is the inference.
+- **Two blunter fixes measured worse and did not ship**, and the reason is the
+  same in both. Gating the schmear on the probability directly (`BELIEF_SCHMEAR`)
+  is -0.0028, ahead in 1 of 5: with no evidence at all the best a defender can
+  believe is 1 - 1/n, which never reaches `SCHMEAR_CONFIDENCE`, so it bans
+  speculative schmearing outright and pays the 0.6pp the overtake branch already
+  documents. Capping what may be spent by the card's points
+  (`SPECULATIVE_SCHMEAR_MAX` at 4) is -0.0022, ahead in 0 of 5 — the card is the
+  wrong axis, since it gives up the fat schmears that pay whenever the trick
+  really is ours without ever asking which case this is. A floor that bites only
+  where there is evidence is the version that works.
+- `teammateProbability` now short-circuits on a revealed partnership rather than
+  re-deriving it. Same answer in real play by construction, and it keeps the
+  result anchored to the state's own account of who the partner is.
+- Hand 1 is pinned in `scripts/aiskilltest.mjs`. The load-bearing control is not
+  that the bug is fixed but that **speculative schmearing still happens**: a fail
+  lead with no power trump played and the partnership unknown must still pay its
+  King, which is precisely what the two rejected variants broke.
+
+## [0.36.0] - 2026-07-30
+- **A trick that cannot be lost is now priced as one.** Reported from hand 27:
+  clubs called, clubs led for the first time, a defender's partner winning it
+  with the 9 of diamonds — and the two seats left to play were the picker and
+  the partner, both forced to follow clubs, neither able to beat a trump with
+  one. The trick was unloseable. `trickSecurity` rated it 0.05.
+- The consequence was a card, not a number. Reading the trick as 95% lost, the
+  defender skipped the schmear branch entirely and fell through to "if you can
+  win it, win it", spending the Jack of hearts to overtake his own side. The
+  right card was the King of hearts: four points onto a trick the defense
+  already owned, keeping both trump, and the King was his deadest card anyway —
+  eleven unseen cards beat it and it takes no later trick.
+- `trickSecurity` counts unseen cards that outrank what is down, with no notion
+  that a seat yet to act may be pinned to a suit. It now asks first. Two rules
+  do the pinning, both live only on the FIRST lead of the called suit: the
+  partner must play the called card, and the picker must still be *holding* a
+  called-suit card, because `legalPlays` forbids discarding the last one until
+  the suit has been led. Both are rules, not reads — no belief model involved.
+- Forced is not the same as harmless, and the rule prices both directions: a
+  seat pinned to a card that TAKES the trick sends security to zero rather than
+  one. That sign error is the one this could most easily have made.
+- Worth **+0.0021/seat/hand, ahead in 8 of 8 seeds** at 20,000 hands per split
+  (`scripts/abtest.mjs`), with the harness null-testing to exactly +0.0000 on
+  the same run. Aggregate self-play moves the way you would expect for a fix
+  that helps the defense: picker win rate 68.5% → 66.9%.
+- **The other half of the diagnosis measured as a loss and did not ship.** The
+  same hand showed the engine ignoring a deduction it had already made: with the
+  leader having played a low club instead of the ace, and the next seat trumping
+  in and therefore void, only one seat could still hold the called ace.
+  `calledCardCandidates` knew this; the play code asked `partnerRevealed`
+  instead. Wiring the deduction in (`provenSide`, `knownPartner`, both new and
+  both correct — `belieftest` holds them to ground truth) measures at
+  **-0.0049/seat/hand, ahead in 0 of 5 seeds**, and either half of it alone
+  costs -0.0006.
+- That result is worth more than the change would have been. The engine's
+  defense is tuned around `knowsTeammate`'s optimistic default, where an
+  unrevealed seat is a friend; being *right* about who the opponent is makes a
+  defender count more opponents, price tricks lower, and schmear less. Better
+  information, played by a policy calibrated for worse information, loses. It is
+  left switchable and off (`DEDUCE_PARTNER`, with `deduceOpponents` /
+  `deduceOwner` sub-flags) with the numbers recorded at the flag, because acting
+  on it wants the schmear and overtake thresholds re-tuned around it — a bigger
+  change than the hand that prompted this one. `knownPartner` ships regardless:
+  the forcing rule above depends on it.
+- Hand 27 is pinned in `scripts/aiskilltest.mjs` with four negative controls —
+  the deduction must not fire a trick early, forcing must not fire when the
+  called suit was not led, a forced seat that can still win must not read as
+  safe, and the old engine must still be shown making the reported mistake.
+
+## [0.35.0] - 2026-07-29
+- **You can now remove a teammate who walked away from their computer.** You
+  could not before, and the reason was that an open tab counted as a person.
+  The presence poll fires every 20s for as long as the tab is mounted — a phone
+  asleep in a pocket, a laptop lid shut on a browser that keeps its timers — and
+  the idle threshold for freeing a seat is 90s, so the clock was reset four
+  times over before it could ever expire. The seat modal sat on "you can free
+  this seat once they've been away for a while" forever, and the idle counter
+  visibly ran *backwards*.
+- **The same clock is what the AI uses to cover a seat the table is waiting on**
+  (`coverIdleSeats`), so this was never only about booting: a table stalled on
+  somebody who had gone could not un-stick itself either, for exactly as long as
+  their tab stayed open. That matters more than the boot button does.
+- The poll now says whether it speaks for a person or is merely a keep-alive.
+  The test is a real interaction — pointer, key, touch, wheel — within
+  `ACTIVITY_WINDOW_MS` (2 minutes). Coming back, by any input or by the page
+  becoming visible again, pings immediately rather than up to 20s late, because
+  the seat may be seconds from being covered.
+- **`document.visibilityState` is deliberately not part of that test**, though it
+  looks like the obvious signal for a phone going to sleep. A page can report
+  `hidden` while somebody is sitting in front of it — embedded webviews do, and
+  it was measured while building this: a fronted tab in the tool browser reports
+  `hidden` with the game plainly on screen. Vetoing presence on that would hand
+  an attentive player's seat to the AI mid-hand. Visibility is therefore only
+  ever used to *add* presence, never to withdraw it, and nothing is lost by that:
+  a tab nobody can see receives no input either.
+- The window is deliberately generous, several times longer than a turn. Reading
+  the hand-end summary can take a minute with no input at all, and the expensive
+  mistake is declaring an attentive player absent: their seat gets played by the
+  AI or handed to somebody else. Being slow to release a seat only costs
+  patience. A locked phone releases it sooner anyway, on the visibility signal.
+- A poll that sends no flag still stamps presence, so an older cached bundle
+  behaves exactly as it used to rather than having its seat quietly reclaimed.
 
 ## [0.34.0] - 2026-07-29
 - **Nobody waits on the host between hands any more.** Dealing was host-only,

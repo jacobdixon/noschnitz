@@ -56,6 +56,33 @@ const IDLE_HINT_MS = 45_000;
 // tunnel — don't hand the seat to the AI.
 const PRESENCE_PING_MS = 20_000;
 
+// How long after somebody last touched the page we still call them present.
+//
+// The ping alone was never evidence of a person: it fires for as long as the
+// tab is mounted, so at 20s against a 90s idle threshold a seat could never go
+// idle. Someone who walked away from their computer held their seat forever —
+// unbootable, and un-coverable by the AI if the table was waiting on them,
+// since both read the same clock. So the ping now carries a judgement, and this
+// is the window it is made against: a real interaction within this long.
+//
+// Deliberately several times a turn: watching a hand means tapping a card most
+// tricks, but reading the hand-end summary can genuinely take a minute with no
+// input at all, and the expensive mistake is declaring an attentive player
+// absent — their seat can then be covered by the AI or taken by somebody else.
+// Being slow to release a seat costs nothing but patience.
+//
+// `document.visibilityState` is deliberately NOT part of this test, which is a
+// decision rather than an omission. It looks like the ideal signal — a locked
+// phone would release its seat at once — but a page can report `hidden` while
+// somebody is sitting right in front of it. Embedded webviews do it, and it was
+// measured here: a fronted tab in the tool browser reports `hidden` with the
+// game plainly on screen. Vetoing presence on that would hand an attentive
+// player's seat to the AI mid-hand, the one failure worth engineering against.
+// Input is unambiguous evidence of a person; visibility is not. So visibility is
+// used below only to ADD presence, never to withdraw it — and nothing is lost by
+// that, because a tab nobody can see receives no input either way.
+const ACTIVITY_WINDOW_MS = 120_000;
+
 // Re-renders once a second so idle counters advance. Only mounted while a table
 // is on screen.
 function useTick(ms = 1000) {
@@ -505,20 +532,60 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // state; this exists purely so the server has an inbound request to date the
   // seat by. Fires immediately on mount so a returning player is current at
   // once rather than up to a ping late.
+  //
+  // The ping still goes out on its interval whatever happens — it is what keeps
+  // the table's TTL alive — but it now says whether it is speaking for a person
+  // or just for a tab that nobody has closed. `active: false` is a keep-alive
+  // the server will not date the seat by, which is what finally lets an
+  // abandoned seat go idle. See ACTIVITY_WINDOW_MS.
   useEffect(() => {
     if (!tableId || !playerId) return;
     let stopped = false;
+    // Assume a person at mount: opening the table IS an interaction.
+    let lastInput = Date.now();
+
+    const someoneIsHere = () => Date.now() - lastInput < ACTIVITY_WINDOW_MS;
+
     const ping = () => {
       if (stopped) return;
       // Logged because this is the other half of staying at the table: the
       // stream is how you SEE the game, this is how the server knows you are
       // still here. A run of failures here is what precedes the AI quietly
       // taking your seat, and it is invisible in the UI until it has.
-      api.getState(tableId, playerId).catch((e) => logStream("ping-failed", { err: e?.code || "?" }));
+      api.getState(tableId, playerId, { active: someoneIsHere() })
+        .catch((e) => logStream("ping-failed", { err: e?.code || "?" }));
     };
+
+    // Coming back has to register at once rather than up to a ping late: the
+    // seat may be seconds from being covered, and the player is right there.
+    const onInput = () => {
+      const wasGone = !someoneIsHere();
+      lastInput = Date.now();
+      if (wasGone) ping();
+    };
+    // Coming back to look at the page counts as arriving. This only ever grants
+    // presence — a page going hidden is ignored, for the reason set out at
+    // ACTIVITY_WINDOW_MS.
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      lastInput = Date.now();
+      ping();
+    };
+
+    // Passive: none of these ever calls preventDefault, and a non-passive
+    // listener on wheel/touchstart makes the whole page feel worse to scroll.
+    const INPUT_EVENTS = ["pointerdown", "keydown", "touchstart", "wheel"];
+    INPUT_EVENTS.forEach((e) => window.addEventListener(e, onInput, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+
     ping();
     const t = setInterval(ping, PRESENCE_PING_MS);
-    return () => { stopped = true; clearInterval(t); };
+    return () => {
+      stopped = true;
+      clearInterval(t);
+      INPUT_EVENTS.forEach((e) => window.removeEventListener(e, onInput));
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [tableId, playerId]);
 
   // Retire the stand-in once the genuine card has been REVEALED (not merely
@@ -1032,7 +1099,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
             table={table}
             mySeat={mySeat}
             busy={busy}
-            onRename={(name) => { setModal(null); act(() => api.renameSeat(tableId, playerId, name)); }}
+            onRename={(name) => { setModal(null); act(() => api.setName(tableId, playerId, name)); }}
             onAway={() => { setModal(null); act(() => api.stepAway(tableId, playerId)); }}
             onBack={() => { setModal(null); act(() => api.takeSeatBack(tableId, playerId)); }}
           />

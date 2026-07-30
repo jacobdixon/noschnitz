@@ -79,12 +79,20 @@ The two branches, and the thing that surprises everyone:
   game: 1 human + 4 AI, no network calls, works offline.
 - **`beta` = a BRANCH** (not an environment name), built **flag-on** →
   beta.noschnitz.com. This is the only place multiplayer exists.
-- **Merging a PR to `master` does NOT update `beta`.** They are separate deploys off
-  the same commit with different flags. Fast-forward beta as its own step:
+- **`beta` is fast-forwarded automatically — do NOT do it by hand.**
+  `.github/workflows/release.yml` moves beta to master and requests its build on every
+  green CI run on master. This section used to tell you to push the refspec yourself;
+  that instruction is historical, and following it today is at best a no-op. If beta
+  really is behind, the question is never "did somebody forget to push" — it is
+  **"why did the Release job not run"**, and the answer is almost always that CI on
+  master went red.
 
-      git push origin origin/master:beta
-
-  Push refspecs rather than checking out — `master` may be held by another worktree.
+**The failure mode that follows from that, and it has bitten:** `Release` is gated on
+CI *succeeding*. A test that is marginal rather than deterministic can pass on a pull
+request and fail on `master` for the identical commit — and when it does, it does not
+merely fail a check. It **silently withholds the deploy**: beta stays where it was and
+production is never content-verified. A flaky assertion in this repo is a deploy
+outage with extra steps. Fix marginal tests, do not re-run them.
 
 Consequences that look like bugs and are not:
 
@@ -94,15 +102,25 @@ Consequences that look like bugs and are not:
   non-deterministic — identical content can produce different hashes.)
 - **Vercel appears to deduplicate builds of the same commit SHA.** Pushing `beta` to
   the same SHA `master` just merged, while that commit's Production build is still in
-  flight, can silently skip the beta build. Leave a gap between the merge and the beta
-  push, or trigger it explicitly with the **Deploy Hook** for branch `beta`
-  (Settings → Git → Deploy Hooks). That hook URL is a credential: it lives in the
-  dashboard, never in the repo, and never in a chat transcript.
+  flight, can silently skip the beta build. `release.yml` handles both halves of this
+  already: it triggers on CI *completing* rather than on the push, which is the gap,
+  and it then requests the build through the **Deploy Hook** by name instead of relying
+  on the push webhook. That hook URL is a credential: it lives in the dashboard and in
+  Actions secrets, never in the repo, and never in a chat transcript.
+- **A green commit status on `master` does not mean production shipped.** Vercel
+  attributes the *beta* build to the same commit, because beta points at it. The only
+  trustworthy check is the one `release.yml` does: fetch what www.noschnitz.com is
+  actually serving and grep the bundle for this commit's version string. Do that before
+  telling anyone a version is live.
 
 Unchanged rules:
 
 - **Never run `vercel --prod`.** Not from a terminal, not from an agent session.
   Production deploys happen exactly one way: merging a PR into `master`.
+- **A stale local `master` is a real hazard here.** `git checkout master` can land you
+  dozens of commits behind without complaint, and the working tree then looks like a
+  much older engine. Prefer `git fetch origin master && git checkout -B <branch>
+  origin/master`, and check `git log --oneline -1` before believing anything you read.
 - **`master` is protected by a ruleset**: no direct pushes, PR required at 0 approvals
   (a non-zero requirement locks a solo developer out of merging their own PRs).
 - **If prod ever breaks**, don't debug forward — use Vercel's Instant Rollback to the
@@ -132,6 +150,27 @@ Unchanged rules:
   Read the sign and the seed count, not one number — a change worth keeping is
   consistent across seeds. It null-tests to exactly `+0.0000`, which is what makes a
   small result trustworthy.
+- **`scripts/coalitiontest.mjs` is the second harness, and you need it for any rule
+  about co-operating with teammates.** A one-seat A/B structurally cannot see those:
+  one defender can stand down while the other two still contest the trick, so that seat
+  banks the saving and somebody else pays for it. Coalitiontest deals identical hands
+  to both arms and applies the variant to EVERY DEFENDER, scoring the side. It also
+  null-tests to exactly zero, and `npm test` asserts that.
+  In 0.38.0 the two harnesses genuinely disagreed — abtest said +0.0128/seat/hand
+  ahead in 8 of 8 while an unpaired `simulate` run said the defence lost 0.6pp — and
+  the coalition test settled it. **Do not settle a disagreement like that by preferring
+  a harness; build the one that answers the actual question.**
+- **One `simulate` run is not evidence.** It is unpaired and uses fresh deals, so at
+  3,000 hands the standard error on a win-rate difference is around a point. A 0.6pp
+  "result" from it is noise, and it read as the exact opposite of the truth in 0.38.0.
+  CLAUDE.md has said "aggregate simulation is the safety net, not the detector" for a
+  long time; this is what that costs when ignored.
+- **The AI now carries a belief, not just deductions.** `teammateProbability` is a
+  calibrated distribution over who the partner is, `scripts/belieftest.mjs` checks it
+  against ground truth per reliability bucket, and constants like `TRUMP_LEAD_ODDS` are
+  **calibrated by sweeping them in that harness** rather than chosen. If you add a new
+  piece of evidence, add it as a weight in `partnerWeight` and sweep it the same way —
+  a belief that is not calibrated is a lie the play code will act on.
 - **Aggregate simulation is the safety net, not the detector.** Every AI fix that has
   actually landed started from ONE hand a human flagged, was reproduced against the
   engine *before* anything changed, and was then pinned as a constructed assertion

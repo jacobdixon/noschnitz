@@ -19,7 +19,9 @@
 import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
   cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
-  SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN, SCHMEAR_KEEP_EQUITY,
+  unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN, SCHMEAR_KEEP_EQUITY,
+  freshHand, assignPartner, resolveTrick, sortHand,
+  calledCardCandidates, knownPartner, provenSide, teammateProbability,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -37,7 +39,7 @@ const C = (rank, suit) => ({ rank, suit });
 function position({
   hands, trick = [], picker, partner = null, partnerRevealed = false,
   calledSuit = null, calledAcePlayed = true, tricksDone = 0, leader = 0,
-  played = [], turn = 0,
+  played = [], turn = 0, buried = [],
 }) {
   return {
     phase: "playing",
@@ -45,7 +47,7 @@ function position({
     dealer: 0,
     hands,
     blind: [],
-    buried: [],
+    buried,
     picker,
     partner,
     partnerRevealed,
@@ -985,6 +987,485 @@ const trick2 = [
     `equity=${cardEquity(g, 4, C("A", "H"))}`);
   check("so the fattest card still goes, rule or no rule",
     cid(aiChooseCard(g, 4)) === "AH", `played ${cid(aiChooseCard(g, 4))}`);
+}
+
+/* ============================================================================
+   Hand 27, trick 2 — deducing the partnership, and pricing a forced trick.
+
+   Reported 2026-07-30. Clubs called. Seats: 0 You, 1 Fonzie, 2 Leon,
+   3 Gus (picker), 4 Kopps (partner). You led 7-clubs, Fonzie trumped with
+   9-diamonds, and Leon overtook his own side with J-hearts.
+
+   Two separate defects met on that card, which is why they get separate flags
+   and separate assertions:
+
+     1. Leon could PROVE Kopps was the partner. You led a low club instead of
+        the ace, so You is not the partner; Fonzie trumped in and is therefore
+        void in clubs, so nor is Fonzie; Gus is the picker; Leon holds no club.
+        One seat left. calledCardCandidates already knew this and the play code
+        never asked. -> deducePartner
+
+     2. The trick could not be lost. Gus must follow clubs (legalPlays makes
+        the picker retain a called-suit card until the suit is led) and Kopps
+        must lay the called ace, and neither can beat a trump with a club.
+        trickSecurity priced it at 0.05. -> forcedFollow
+
+   The right card is K-hearts: 4 points onto a trick the defense already owns,
+   keeping BOTH trump. It is also Leon's deadest card — eleven unseen cards
+   beat it, and it takes no later trick.
+   ========================================================================= */
+{
+  // Built by playing the real hand rather than hand-writing the state, so
+  // calledSuitLed / calledAcePlayed / trickHistory are whatever the engine
+  // actually derives. The deduction reads trickHistory; a hand-built fixture
+  // would have quietly asserted nothing.
+  const deal = [
+    [C("J", "D"), C("7", "C"), C("7", "H"), C("7", "D"), C("K", "D"), C("9", "C")],
+    [C("A", "S"), C("9", "D"), C("A", "H"), C("J", "S"), C("8", "S"), C("Q", "S")],
+    [C("7", "S"), C("J", "H"), C("9", "H"), C("8", "D"), C("8", "H"), C("K", "H")],
+    [C("10", "D"), C("8", "C"), C("A", "D"), C("Q", "H"), C("Q", "D"), C("J", "C")],
+    [C("9", "S"), C("A", "C"), C("10", "H"), C("Q", "C"), C("10", "S"), C("K", "C")],
+  ];
+  let g = assignPartner({
+    ...freshHand(0, [0, 0, 0, 0, 0], 27),
+    phase: "playing", hands: deal.map(sortHand), blind: [],
+    buried: [C("10", "C"), C("K", "S")],
+    picker: 3, calledSuit: "C", calledRank: "A", leader: 1, turn: 1,
+  });
+  check("hand 27 reconstructs: Kopps holds the called ace", g.partner === 4, `partner=${g.partner}`);
+
+  // Trick 1: Fonzie leads A-spades, You take it with J-diamonds.
+  for (const [p, c] of [[1, C("A", "S")], [2, C("7", "S")], [3, C("10", "D")],
+                        [4, C("9", "S")], [0, C("J", "D")]]) g = applyPlay(g, p, c);
+  g = resolveTrick(g);
+  // Trick 2: You lead 7-clubs — the called suit, for the first time.
+  g = applyPlay(g, 0, C("7", "C"));
+  g = applyPlay(g, 1, C("9", "D"));
+
+  const LEON = 2;
+  // What ships is the forcing rule alone. `deducePartner` measured as a
+  // consistent loss (see its comment in engine.js) and is asserted here only
+  // where it is the thing under test.
+  const ON = { forcedFollow: true, deducePartner: true };
+  // Every flag added after this hand has to be pinned off too, or "what the old
+  // engine did" quietly becomes "what the current engine does minus one thing".
+  const OFF = { forcedFollow: false, deducePartner: false, overtakeBeliefFloor: 1.01 };
+
+  /* ---- the deduction itself ---- */
+  check("hand 27: only one seat can still hold the called ace",
+    calledCardCandidates(g, LEON).length === 1, `cands=${calledCardCandidates(g, LEON)}`);
+  check("hand 27: Leon can name the partner before the ace is played",
+    knownPartner(g, LEON) === 4 && !g.partnerRevealed, `knownPartner=${knownPartner(g, LEON)}`);
+  check("hand 27: Fonzie is provably Leon's side", provenSide(g, LEON, 1) === true);
+  check("hand 27: Kopps is provably NOT Leon's side", provenSide(g, LEON, 4) === false);
+  check("knowsTeammate still calls the partner a teammate — the bug this replaces",
+    knowsTeammate(g, LEON, 4) === true);
+
+  /* ---- negative control: the deduction must not fire a trick earlier ---- */
+  {
+    // Same hand, rewound to trick 1. Nothing has narrowed the field yet, so
+    // anything that claims certainty here is claiming it from thin air.
+    let t = assignPartner({
+      ...freshHand(0, [0, 0, 0, 0, 0], 27),
+      phase: "playing", hands: deal.map(sortHand), blind: [],
+      buried: [C("10", "C"), C("K", "S")],
+      picker: 3, calledSuit: "C", calledRank: "A", leader: 1, turn: 1,
+    });
+    t = applyPlay(t, 1, C("A", "S"));
+    check("control: with nothing led, Leon cannot name the partner",
+      knownPartner(t, LEON) === null, `knownPartner=${knownPartner(t, LEON)}`);
+    check("control: and provenSide admits it does not know",
+      provenSide(t, LEON, 4) === null);
+    check("control: the partner still knows themselves",
+      knownPartner(t, 4) === 4);
+    check("control: no called suit led, so nobody is forced",
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF),
+      `${trickSecurity(t, LEON, ON)} vs ${trickSecurity(t, LEON, OFF)}`);
+  }
+
+  /* ---- the trick is unloseable, and the engine should say so ---- */
+  check("hand 27: Gus is forced to follow clubs",
+    legalPlays(applyPlay(g, LEON, C("8", "H")), 3).every((c) => c.suit === "C" && !isTrump(c)));
+  check("hand 27: Kopps is forced to lay the called ace",
+    (() => {
+      let t = applyPlay(g, LEON, C("8", "H"));
+      t = applyPlay(t, 3, C("8", "C"));
+      const l = legalPlays(t, 4);
+      return l.length === 1 && cid(l[0]) === "AC";
+    })());
+  check("hand 27: the trick prices as certain by default now",
+    trickSecurity(g, LEON) === 1, `security=${trickSecurity(g, LEON)}`);
+  check("hand 27: and did not, before", trickSecurity(g, LEON, OFF) < 0.1,
+    `security=${trickSecurity(g, LEON, OFF)}`);
+
+  /* ---- the card ---- */
+  check("hand 27 (bug): the old engine overtakes its own side with the Jack",
+    cid(aiChooseCard(g, LEON, OFF)) === "JH", `played ${cid(aiChooseCard(g, LEON, OFF))}`);
+  // No opts — this is the shipped default, which is the thing that matters.
+  const fixed = aiChooseCard(g, LEON);
+  check("hand 27: Leon schmears the King instead", cid(fixed) === "KH", `played ${cid(fixed)}`);
+  check("hand 27: and keeps both trump", !isTrump(fixed));
+
+  // The halves separately, so a future regression says WHICH one broke.
+  check("hand 27: the forcing rule is what gets the card",
+    cid(aiChooseCard(g, LEON, { forcedFollow: true, deducePartner: false })) === "KH",
+    `played ${cid(aiChooseCard(g, LEON, { forcedFollow: true, deducePartner: false }))}`);
+  check("hand 27: deducing the partner alone would only stop the overtake",
+    cid(aiChooseCard(g, LEON, { forcedFollow: false, deducePartner: true })) === "8H",
+    `played ${cid(aiChooseCard(g, LEON, { forcedFollow: false, deducePartner: true }))}`);
+
+  /* ---- negative control: forcing must not manufacture safety ---- */
+  {
+    // The picker sits behind Leon holding trump, and the called suit is NOT
+    // what was led — so nothing forces anyone and the trick is genuinely at
+    // risk. If this reads as certain, the rule is firing on the wrong tricks.
+    let t = assignPartner({
+      ...freshHand(0, [0, 0, 0, 0, 0], 27),
+      phase: "playing", hands: deal.map(sortHand), blind: [],
+      buried: [C("10", "C"), C("K", "S")],
+      picker: 3, calledSuit: "C", calledRank: "A", leader: 0, turn: 0,
+    });
+    t = applyPlay(t, 0, C("7", "H"));   // hearts led, not the called suit
+    t = applyPlay(t, 1, C("A", "H"));
+    check("control: a trick with nobody forced is not certain",
+      trickSecurity(t, LEON, ON) < 1, `security=${trickSecurity(t, LEON, ON)}`);
+    check("control: forcing changes nothing when the called suit is not led",
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF));
+  }
+
+  /* ---- negative control: a forced seat that CAN still take the trick ---- */
+  {
+    // Clubs led and NOT trumped, so the called ace is still the best card out.
+    // The partner is pinned to it exactly as in hand 27 — but here that pin
+    // hands them the trick. "Forced" must never be read as "harmless"; this is
+    // the sign error the rule is most likely to make.
+    const t = position({
+      hands: withHand(2, [C("K", "H"), C("9", "H"), C("8", "H")]),
+      trick: [{ player: 0, card: C("7", "C") }, { player: 1, card: C("9", "C") }],
+      picker: 3, partner: 4, calledSuit: "C", calledAcePlayed: false,
+      tricksDone: 0, leader: 0, turn: 2,
+    });
+    check("control: this seat can name the partner too", knownPartner(t, 2) === 4);
+    check("control: a forced ace that WINS the trick prices it at zero, not one",
+      trickSecurity(t, 2, ON) === 0, `security=${trickSecurity(t, 2, ON)}`);
+    check("control: the picker is forced but NOT harmless — a club can still win here",
+      trickSecurity(t, 2, { forcedFollow: true }) < 1);
+  }
+}
+
+
+/* ============================================================================
+   Hand 1 — reading the partnership off how a seat has PLAYED.
+
+   Reported 2026-07-30, a hand that finished 120-0. Seats: 0 You (partner),
+   1 Bernie, 2 Patty (picker), 3 Fonzie, 4 Kopps. Hearts called. You won trick 1
+   with Q-clubs and led Q-hearts into trick 2 — pulling trump, which is the
+   picker's side's plan and nobody else's. Both remaining defenders read that
+   seat as a teammate and schmeared an Ace onto it: 22 points handed to the
+   picker's partner on one trick.
+
+   Nothing here is deducible. Hearts has not been led, so calledCardCandidates
+   still holds three live seats and no amount of deduction narrows it. What is
+   available is INFERENCE: this engine's leading branch has the picker's team
+   lead trump whenever it holds any, while defenders lead fail and touch trump
+   only holding nothing else, weakest-first. A Queen on lead is the picker's
+   book. `belieftest` puts that read at ~98% against ground truth.
+
+   The fix is deliberately NOT "stop schmearing speculatively" — that measured
+   -0.0028 (see BELIEF_SCHMEAR). It is a floor the belief must clear, which the
+   uninformed two-in-three clears and a seat marked by the read does not.
+   ========================================================================= */
+{
+  const deal = [
+    [C("Q", "C"), C("Q", "H"), C("8", "S"), C("K", "C"), C("8", "H"), C("A", "H")],
+    [C("7", "D"), C("A", "D"), C("K", "D"), C("J", "D"), C("K", "H"), C("8", "C")],
+    [C("Q", "S"), C("9", "D"), C("J", "H"), C("Q", "D"), C("J", "C"), C("10", "H")],
+    [C("8", "D"), C("A", "C"), C("9", "S"), C("9", "H"), C("K", "S"), C("10", "S")],
+    [C("10", "D"), C("J", "S"), C("7", "H"), C("7", "C"), C("9", "C"), C("10", "C")],
+  ];
+  const start = () => assignPartner({
+    ...freshHand(1, [0, 0, 0, 0, 0], 1),
+    phase: "playing", hands: deal.map(sortHand), blind: [],
+    buried: [C("A", "S"), C("7", "S")],
+    picker: 2, calledSuit: "H", calledRank: "A", leader: 2, turn: 2,
+  });
+  const OFF = { trumpLeadRead: false, beliefFloor: 0 };
+
+  let g = start();
+  check("hand 1 reconstructs: You hold the called ace", g.partner === 0, `partner=${g.partner}`);
+
+  // Trick 1: Patty leads Q-spades, You take it with Q-clubs.
+  for (const [p, c] of [[2, C("Q", "S")], [3, C("8", "D")], [4, C("10", "D")],
+                        [0, C("Q", "C")], [1, C("7", "D")]]) g = applyPlay(g, p, c);
+  g = resolveTrick(g);
+  // Trick 2: You lead Q-hearts — a power trump, and the whole signal.
+  g = applyPlay(g, 0, C("Q", "H"));
+  const gFonzie = applyPlay(applyPlay(g, 1, C("A", "D")), 2, C("9", "D"));
+
+  check("hand 1: nothing is deducible — three seats could still hold the ace",
+    calledCardCandidates(g, 1).length === 3, `cands=${calledCardCandidates(g, 1)}`);
+  check("hand 1: and the deduction layer correctly declines to guess",
+    knownPartner(g, 1) === null && provenSide(g, 1, 0) === null);
+
+  /* ---- the read ---- */
+  check("hand 1: without the read a defender believes the trump-leader is a friend",
+    Math.abs(teammateProbability(g, 1, 0, OFF) - 2 / 3) < 1e-9,
+    `p=${teammateProbability(g, 1, 0, OFF)}`);
+  check("hand 1: the read flips that to almost certainly an opponent",
+    teammateProbability(g, 1, 0) < 0.1, `p=${teammateProbability(g, 1, 0)}`);
+  check("hand 1: knowsTeammate still says friend — the belief this replaces",
+    knowsTeammate(g, 1, 0) === true);
+
+  /* ---- the cards ---- */
+  check("hand 1 (bug): the old engine schmears Bernie's Ace of trump",
+    cid(aiChooseCard(g, 1, OFF)) === "AD", `played ${cid(aiChooseCard(g, 1, OFF))}`);
+  check("hand 1 (bug): and Fonzie's Ace of clubs",
+    cid(aiChooseCard(gFonzie, 3, OFF)) === "AC", `played ${cid(aiChooseCard(gFonzie, 3, OFF))}`);
+
+  const bernie = aiChooseCard(g, 1);
+  const fonzie = aiChooseCard(gFonzie, 3);
+  check("hand 1: Bernie no longer donates the Ace", cid(bernie) !== "AD", `played ${cid(bernie)}`);
+  check("hand 1: Fonzie no longer donates the Ace", cid(fonzie) !== "AC", `played ${cid(fonzie)}`);
+  check("hand 1: and Fonzie, free to choose, gives up nothing at all",
+    cardPts(fonzie) === 0, `played ${cid(fonzie)} worth ${cardPts(fonzie)}`);
+  check("hand 1: the trick costs the defence 20 points less",
+    cardPts(bernie) + cardPts(fonzie) <= 2,
+    `${cardPts(bernie)} + ${cardPts(fonzie)}`);
+
+  /* ---- CONTROL: speculative schmearing must SURVIVE ---- */
+  {
+    // The thing that separates this from the version that measured -0.0028.
+    // A fail lead, no power trump played by anyone, partnership unknown: the
+    // defender's belief is the uninformed two-in-three, which is exactly the
+    // case the 2:1 asymmetry says to schmear into. It must still fire.
+    const g2 = position({
+      hands: withHand(4, [C("K", "C"), C("9", "C"), C("8", "C")]),
+      trick: [
+        { player: 0, card: C("7", "H") },
+        { player: 1, card: C("8", "H") },
+        { player: 2, card: C("A", "H") },
+        { player: 3, card: C("9", "H") },
+      ],
+      picker: 0, partner: 3, partnerRevealed: false,
+      calledSuit: "S", calledAcePlayed: false, tricksDone: 2, leader: 0, turn: 4,
+    });
+    check("control: nobody led a power trump, so the read stays silent",
+      Math.abs(teammateProbability(g2, 4, 2) - teammateProbability(g2, 4, 2, OFF)) < 1e-9);
+    check("control: the uninformed belief is two-in-three, above the floor",
+      teammateProbability(g2, 4, 2) > 0.6, `p=${teammateProbability(g2, 4, 2)}`);
+    check("control: so a speculative schmear STILL happens",
+      cid(aiChooseCard(g2, 4)) === "KC", `played ${cid(aiChooseCard(g2, 4))}`);
+  }
+
+  /* ---- CONTROL: the read must not fire on a low-trump lead ---- */
+  {
+    // A defender out of fail leads its WEAKEST trump. That is the one defender
+    // path to a trump lead, and reading it as the picker's book would invert
+    // the inference on exactly the seat it is meant to protect.
+    const g3 = position({
+      hands: withHand(2, [C("K", "C"), C("9", "C")]),
+      trick: [{ player: 0, card: C("7", "D") }],
+      picker: 4, partner: 1, partnerRevealed: false,
+      calledSuit: "S", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 2,
+    });
+    check("control: a low-diamond lead is not read as the picker's book",
+      Math.abs(teammateProbability(g3, 2, 0) - teammateProbability(g3, 2, 0, OFF)) < 1e-9,
+      `${teammateProbability(g3, 2, 0)} vs ${teammateProbability(g3, 2, 0, OFF)}`);
+  }
+}
+
+
+/* ============================================================================
+   Standing down from a teammate's trick on a BELIEF, not only on proof.
+
+   The overtake brake — "taking a trick off our own side has to buy something"
+   — was gated on the partnership being certain. Everywhere else, a seat that
+   could win simply won, which meant defenders routinely spent a card taking a
+   trick another defender already had.
+
+   Opening that gate to a strong belief is worth more than anything else
+   measured this week, and it needed a second harness to see honestly: abtest
+   said +0.0128/seat/hand ahead in 8 of 8, while an unpaired simulate run looked
+   like the 0.6pp defensive LOSS this branch's own comment records. The paired
+   coalition test (scripts/coalitiontest.mjs), which applies the variant to
+   every defender on identical deals, settles it — defenders gain 0.74pp, ahead
+   in 5 of 5, and the simulate reading was noise.
+   ========================================================================= */
+{
+  // Seat 0 leads a fail heart, seat 1 trumps in with the 9 of diamonds. Seat 1
+  // is winning but did NOT lead, so the trump-lead read has nothing to say and
+  // the belief is the uninformed two-in-three — the case under test.
+  const board = (mine, winCard) => position({
+    hands: [
+      [C("7", "S")], [C("8", "S"), C("9", "S")],
+      [mine, C("8", "C"), C("7", "C")],
+      [C("K", "S"), C("10", "S"), C("9", "C")],
+      [C("A", "S"), C("10", "C"), C("K", "C")],
+    ],
+    trick: [{ player: 0, card: C("9", "H") }, { player: 1, card: winCard }],
+    picker: 4, partner: 3, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 2, leader: 0, turn: 2,
+  });
+  const NOBRAKE = { overtakeBeliefFloor: 1.01 };
+
+  const g = board(C("10", "D"), C("9", "D"));
+  check("brake: the partnership is genuinely unproven here",
+    knownPartner(g, 2) === null && !g.partnerRevealed);
+  check("brake: but believed two-in-three a teammate",
+    teammateProbability(g, 2, 1) > 0.6, `p=${teammateProbability(g, 2, 1)}`);
+  check("brake: the 10 of trump would take the trick",
+    legalPlays(g, 2).some((c) => cid(c) === "10D"));
+  check("brake: and taking it buys almost nothing",
+    securityAfterPlay(g, 2, C("10", "D")) - trickSecurity(g, 2) < 0.1,
+    `gain=${(securityAfterPlay(g, 2, C("10", "D")) - trickSecurity(g, 2)).toFixed(3)}`);
+
+  check("brake (old): the engine spent the 10 to take it anyway",
+    cid(aiChooseCard(g, 2, NOBRAKE)) === "10D", `played ${cid(aiChooseCard(g, 2, NOBRAKE))}`);
+  const kept = aiChooseCard(g, 2);
+  check("brake: now stands down from a believed teammate's trick",
+    cid(kept) !== "10D", `played ${cid(kept)}`);
+  check("brake: and keeps the ten points rather than donating them",
+    cardPts(kept) === 0, `played ${cid(kept)} worth ${cardPts(kept)}`);
+
+  /* ---- CONTROL: a price, not a prohibition ---- */
+  {
+    // Q-spades over K-diamonds genuinely secures the trick — beaten by one
+    // outstanding card instead of nine. "Never overtake your own side" would be
+    // the wrong rule, and the gain here pays for the card.
+    const g2 = board(C("Q", "S"), C("K", "D"));
+    check("control: this overtake really does secure the trick",
+      securityAfterPlay(g2, 2, C("Q", "S")) - trickSecurity(g2, 2) > 0.5);
+    check("control: so it still happens, brake or no brake",
+      cid(aiChooseCard(g2, 2)) === "QS", `played ${cid(aiChooseCard(g2, 2))}`);
+  }
+
+  /* ---- CONTROL: the read must be able to switch the brake back off ---- */
+  {
+    // The seat winning LED a power trump earlier in the hand, so the read marks
+    // it as the picker's. Standing down for the picker's partner is precisely
+    // the mistake the floor exists to avoid.
+    const g3 = board(C("10", "D"), C("9", "D"));
+    g3.trickHistory = [{ trick: [
+      { player: 1, card: C("Q", "D") }, { player: 2, card: C("8", "S") },
+      { player: 3, card: C("9", "S") }, { player: 4, card: C("K", "S") },
+      { player: 0, card: C("7", "S") },
+    ] }];
+    check("control: the read marks the earlier trump-leader as the picker's",
+      teammateProbability(g3, 2, 1) < 0.6, `p=${teammateProbability(g3, 2, 1)}`);
+    check("control: so the brake stands aside and the trick is contested",
+      cid(aiChooseCard(g3, 2)) === "10D", `played ${cid(aiChooseCard(g3, 2))}`);
+  }
+}
+
+/* ------- The fat-trump lead (reported twice; corpus hand 9, 2026-07-29) ---- */
+// Trick 4, and this is a real hand out of the collected corpus, not a
+// construction: You are the picker holding K-D, A-D and 10-D. Both jacks of
+// trump are still out, so every one of those three cards loses to the same two
+// cards — they are equal in power and differ only in what they pay.
+//
+// The engine led A-D. The branch responsible is "opponents nearly tapped out,
+// press now", which leads the TOP trump; with two higher trumps outstanding
+// that is not pressure, it is eleven points handed to whoever holds a jack. The
+// defense has to follow trump either way, so the bleed is identical and the
+// only variable is the price. The human led K-D.
+//
+// Measured the way a rare rule has to be — every firing finished twice from
+// identical state, engine driving all five seats, over 100,000 deals across 5
+// seeds: fires on 0.5% of hands, worth +5.34 picking-team points per firing,
+// ahead in 5 of 5 seeds, and it moves the schneider multiplier on 10% of
+// firings (picker win rate 85.7% against 84.3%). The whole-hand aggregate is
+// the wrong instrument at this firing rate and would have called it noise.
+{
+  const g = position({
+    hands: [
+      [C("K", "D"), C("A", "D"), C("10", "D")],   // You — picker, on lead
+      [C("J", "S"), C("9", "C"), C("9", "H")],    // Gus holds a jack
+      [C("J", "D"), C("8", "H"), C("A", "H")],    // Bunny (partner) holds the other
+      [C("10", "S"), C("7", "H"), C("10", "H")],
+      [C("10", "C"), C("K", "C"), C("K", "H")],
+    ],
+    played: [
+      C("9", "S"), C("K", "S"), C("8", "S"), C("A", "S"), C("7", "S"),
+      C("J", "C"), C("Q", "D"), C("Q", "S"), C("Q", "C"), C("8", "D"),
+      C("Q", "H"), C("J", "H"), C("7", "D"), C("9", "D"), C("7", "C"),
+    ],
+    buried: [C("A", "C"), C("8", "C")],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 3, leader: 0, turn: 0,
+  });
+
+  check("two trump are still outstanding, which is what opens the press branch",
+    unseenTrumpCount(g, g.hands[0]) === 2);
+  check("all three trump in hand are equally beatable — the choice is price only",
+    legalPlays(g, 0).every((c) => cardEquity(g, 0, c) === 2));
+  check("and A-D is the dearest of them",
+    cardPts(C("A", "D")) === 11 && cardPts(C("K", "D")) === 4);
+
+  // NEGATIVE CONTROL. If this ever passes alongside the assertion below, the
+  // position has stopped reproducing the bug and the case is worthless.
+  check("with the guard disabled it still leads the fat ace, as it used to",
+    cid(aiChooseCard(g, 0, { guardFatTrumpLead: false })) === "AD",
+    `led ${cid(aiChooseCard(g, 0, { guardFatTrumpLead: false }))}`);
+
+  const pick = aiChooseCard(g, 0);
+  check("bleeds with the cheap trump instead of donating eleven points",
+    cid(pick) === "KD", `led ${cid(pick)}`);
+}
+
+{
+  // The other half: a fat trump that nothing can beat is a perfectly good
+  // press, and must stay one. Every Queen and Jack is gone, so A-D is boss and
+  // the two unseen trump are both below it.
+  const g = position({
+    hands: [
+      [C("A", "D"), C("K", "D"), C("8", "S")],
+      [C("9", "C"), C("9", "H"), C("A", "H")],
+      [C("8", "H"), C("A", "C"), C("K", "C")],
+      [C("10", "S"), C("7", "H"), C("10", "H")],
+      [C("10", "C"), C("K", "H"), C("9", "S")],
+    ],
+    played: [
+      C("Q", "C"), C("Q", "S"), C("Q", "H"), C("Q", "D"), C("J", "C"),
+      C("J", "S"), C("J", "H"), C("J", "D"), C("10", "D"), C("9", "D"),
+    ],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "C", calledAcePlayed: true, tricksDone: 2, leader: 0, turn: 0,
+  });
+  check("the press branch is live — two trump unseen, two in hand",
+    unseenTrumpCount(g, g.hands[0]) === 2 && g.hands[0].filter(isTrump).length === 2);
+  check("A-D is boss of everything left",
+    cardEquity(g, 0, C("A", "D")) === 0);
+  const pick = aiChooseCard(g, 0);
+  check("still presses with the fat ace when nothing can beat it",
+    cid(pick) === "AD", `led ${cid(pick)}`);
+}
+
+{
+  // And the guard must not leak into the measured trump-lead rule. A lone fat
+  // trump is still led — pulling trump is worth more than the points it risks,
+  // which is the +0.019/seat/hand result the leading block documents. This
+  // shape appeared twice in the same corpus and is NOT the bug.
+  const g = position({
+    hands: [
+      [C("10", "D"), C("8", "S"), C("7", "H")],
+      [C("J", "S"), C("9", "C"), C("9", "H")],
+      [C("J", "D"), C("8", "H"), C("A", "H")],
+      [C("10", "S"), C("Q", "D"), C("10", "H")],
+      [C("10", "C"), C("K", "C"), C("K", "H")],
+    ],
+    played: [
+      C("9", "S"), C("K", "S"), C("8", "S"), C("A", "S"), C("7", "S"),
+      C("J", "C"), C("Q", "S"), C("Q", "C"), C("8", "D"), C("Q", "H"),
+      C("J", "H"), C("7", "D"), C("9", "D"), C("7", "C"), C("A", "D"),
+    ],
+    picker: 0, partner: 2, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 3, leader: 0, turn: 0,
+  });
+  check("only one trump in hand, so the press branch cannot be the one deciding",
+    g.hands[0].filter(isTrump).length === 1);
+  const pick = aiChooseCard(g, 0);
+  check("leads the lone fat trump anyway — pulling trump is the measured rule",
+    cid(pick) === "10D", `led ${cid(pick)}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
