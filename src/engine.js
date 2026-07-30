@@ -507,6 +507,46 @@ export const DEDUCE_PARTNER = false;
 // goes through trickSecurity, not only the branch the hand came from.
 export const FORCED_FOLLOW = true;
 
+// Read a power-trump lead as evidence the seat is on the picker's team, and let
+// teammateProbability reweight its candidates by it. See partnerWeight.
+//
+// Worth nothing on its own (+0.0000, ahead in 0 of 5 seeds) because no branch
+// consulted the belief. It is BELIEF_FLOOR below that spends it.
+export const TRUMP_LEAD_READ = true;
+
+// Gate the schmear on the PROBABILITY the trick is ours, not on the certainty
+// knowsTeammate invents. See the call site in heuristicCard.
+//
+// MEASURED AND NOT SHIPPED: -0.0028/seat/hand, ahead in 1 of 5 seeds at 20,000
+// hands per split. It bans speculative schmearing outright, because with no
+// evidence the best a defender can believe is 1 - 1/n and that never reaches
+// SCHMEAR_CONFIDENCE. That is the 0.6pp the overtake branch already documents,
+// paid again. Kept switchable as the control BELIEF_FLOOR is measured against.
+export const BELIEF_SCHMEAR = false;
+
+// Minimum believed chance the trick is ours before points may be paid into it.
+// Zero leaves the gate exactly as it was. Unlike BELIEF_SCHMEAR this does not
+// touch the uninformed case — 1 - 1/n sits at 0.5 to 0.75 and clears any floor
+// worth setting — so it fires only when the read has actual evidence.
+//
+// +0.0018/seat/hand, ahead in 8 of 8 seeds at 20,000 hands per split. The
+// control that makes it readable: this floor with the read TURNED OFF measures
+// +0.0000, ahead in 0 of 5 — nothing in the mechanism earns anything, the whole
+// gain is the inference. Swept 0.3 / 0.5 / 0.6 at +0.0012 / +0.0017 / +0.0015,
+// all ahead in 5 of 5, so the peak is broad and 0.5 is not a knife edge.
+export const BELIEF_FLOOR = 0.5;
+
+// Most this seat will pay into a trick whose owner is not proven. `Infinity`
+// leaves speculative schmearing exactly as it was; 4 permits a King but not a
+// Ten or an Ace. Reported from hand 1: two defenders each spent an eleven on a
+// two-in-three guess and both guessed wrong.
+//
+// MEASURED AND NOT SHIPPED at 4: -0.0022/seat/hand, ahead in 0 of 5. Capping by
+// the CARD is the wrong axis — it gives up the fat schmears that pay whenever
+// the trick really is ours, to avoid the ones that do not, without ever asking
+// which case this is. BELIEF_FLOOR asks. Left switchable, default off.
+export const SPECULATIVE_SCHMEAR_MAX = Infinity;
+
 // Which seats could still be holding the called card, as far as `viewer` can
 // tell. Deduction only — every exclusion below is a fact, not a read.
 //
@@ -599,21 +639,87 @@ export function provenSide(g, viewer, target) {
   return onPickerTeam(viewer) === onPickerTeam(target);
 }
 
+/* ------------- Behavioural evidence about who the partner is -------------- */
+// Everything above this line is deduction — each exclusion is a fact. This is
+// inference: what a seat's CHOICES say about which side they are on, given that
+// the whole table is running one book and that book splits hard on side.
+//
+// The signal worth acting on is the trump lead. heuristicCard's leading branch:
+//
+//   picker's team   leads trump whenever it holds ANY, top-first when the top
+//                   can plausibly hold the trick. Pulling trump is the plan —
+//                   0.20.0 measured that rule as right much further down into
+//                   weak holdings than the engine used to believe.
+//   defenders       lead fail: an off-ace first, then the cheapest non-called
+//                   fail. They reach for trump ONLY holding nothing else, and
+//                   then the WEAKEST trump they have.
+//
+// So a seat that opens a trick with a Queen or a Jack is playing the picker's
+// book almost by construction — the only defender path to a trump lead plays
+// the weakest trump held, and a Queen is the weakest trump held only on a hand
+// of nothing but Queens.
+//
+// Reported from hand 1: a defender won trick 1 with Q-clubs and led Q-hearts
+// into trick 2, and BOTH remaining defenders read that seat as a teammate and
+// schmeared an Ace onto it — 22 points handed to the picker's partner on one
+// trick, in a hand that finished 120-0.
+// CALIBRATED, not guessed. `belieftest` buckets every judgement by what the
+// belief predicted and checks it against ground truth, so this constant is
+// swept until the buckets come out honest. At 1,500 hands per point, the
+// error on the two buckets the read actually moves:
+//
+//    8   4.4pp / 8.1pp        25   1.8pp / 3.8pp
+//   12   3.6pp / 6.1pp        32   0.9pp / 1.9pp
+//   16   2.5pp / 5.5pp        40   0.7pp / 1.4pp
+//   20   2.1pp / 4.4pp        64   0.2pp / 0.5pp
+//
+// Monotonic all the way up, which is the finding: a seat that opens with a
+// Queen or a Jack is on the picker's team about 98% of the time, so the honest
+// number here is "nearly certain" rather than "somewhat more likely".
+//
+// Set at 40 rather than the flattest point on purpose. The calibration is
+// measured in SELF-PLAY, where every seat runs this file's own book, and it is
+// that book that makes a defender's power-trump lead nearly impossible. A human
+// defender is off-book and will do it more often than an AI one, so the extra
+// certainty at 64+ is buying accuracy against opponents this engine will not
+// always face. 40 clears every gate that reads it with room to spare.
+export const TRUMP_LEAD_ODDS = 40;
+
+function ledPowerTrump(g, seat) {
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+  return tricks.some((t) => t?.length && t[0].player === seat && isPowerTrump(t[0].card));
+}
+
+// How much more likely this seat is to be the partner than a seat we know
+// nothing about. A weight, not a probability — normalised across candidates
+// below, which is what keeps the result a distribution and therefore testable
+// against ground truth (`belieftest` asserts calibration per bucket).
+function partnerWeight(g, seat, opts = {}) {
+  const odds = opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
+  if ((opts.trumpLeadRead ?? TRUMP_LEAD_READ) && ledPowerTrump(g, seat)) return odds;
+  return 1;
+}
+
 // How likely `target` is on `viewer`'s side, in [0,1].
 //
 // This is the calibrated version of knowsTeammate(), which answers the same
 // question with a hard 1 or 0 and is wrong in both directions by construction:
 // it tells a defender every unrevealed seat is a teammate (really about two in
 // three) and tells the picker no seat is (really about one in four, since the
-// partner is one of the four other seats). Both reported hands this week were
-// the picker being certain about a trick its own partner was holding.
-//
-// Deliberately NOT wired into play here. A belief is worth having as a
-// measured quantity before anything acts on it — see belieftest, which checks
-// it against ground truth in self-play. Wiring it into trickSecurity and the
-// duck rule is a separate change with its own measurement.
-export function teammateProbability(g, viewer, target) {
+// partner is one of the four other seats).
+export function teammateProbability(g, viewer, target, opts = {}) {
   if (viewer === target) return 1;
+
+  // Once the partnership is revealed it is public, so answer from it and skip
+  // the inference entirely. In real play this agrees with the deduction below
+  // by construction — partnerRevealed is set only when the partner plays the
+  // called card — but it is cheaper, and it keeps the answer anchored to the
+  // state's own account of who the partner is rather than re-deriving it.
+  if (g.partnerRevealed && g.partner !== null) {
+    const onTeam = (p) => p === g.picker || p === g.partner;
+    return onTeam(viewer) === onTeam(target) ? 1 : 0;
+  }
+
   const cands = calledCardCandidates(g, viewer);
 
   // Alone, declared or deduced: the picker stands by itself.
@@ -628,7 +734,13 @@ export function teammateProbability(g, viewer, target) {
     return onPickerTeam(viewer) === onPickerTeam(target) ? 1 : 0;
   }
 
-  const pPartner = cands.includes(target) ? 1 / cands.length : 0;
+  // Uniform over the candidates, then reweighted by how each of them has
+  // PLAYED. With no evidence every weight is 1 and this is the old 1/n.
+  const weights = cands.map((p) => partnerWeight(g, p, opts));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const at = cands.indexOf(target);
+  const pPartner = at === -1 ? 0 : weights[at] / total;
+
   if (viewer === g.picker) return pPartner;   // the picker's only teammate IS the partner
   if (target === g.picker) return 0;          // and a defender knows the picker
   return 1 - pPartner;                        // otherwise a teammate unless they are the partner
@@ -1220,7 +1332,33 @@ export function heuristicCard(g, idx, opts = {}) {
   // which minimises points. The ownership was computed and then discarded one
   // branch later.
   const asIs = mateWinning ? trickSecurity(g, idx, opts) : 0;
-  const trickLooksSafe = asIs >= SCHMEAR_CONFIDENCE;
+
+  // `trickSecurity` answers "will whoever is winning still have this at the
+  // end". The schmear branch has always read it as "will MY SIDE still have
+  // this at the end", and those are the same question only when the trick's
+  // owner is known. Reported from hand 1: a defender led Q-hearts into trick 2
+  // holding a trick already won with Q-clubs, nothing outstanding could beat
+  // it, and security came back a perfectly correct 1.0 — for a trick belonging
+  // to the picker's partner. Both defenders schmeared an Ace onto it.
+  //
+  // So the gate multiplies by how likely the trick is ACTUALLY ours. With the
+  // flag off this is 1 whenever mateWinning, which is exactly the old test.
+  // Two ways to read the belief, and they are not the same idea:
+  //
+  //   beliefSchmear  multiply security by it. Blunt — with no evidence at all
+  //                  the best a defender can believe is 1 - 1/n, which never
+  //                  reaches 0.85, so this bans speculative schmearing outright.
+  //
+  //   beliefFloor    keep the old gate and add a floor the belief must clear.
+  //                  The uninformed two-in-three clears it; a seat the read has
+  //                  marked as the picker's does not. It therefore bites only
+  //                  where there is actual EVIDENCE, and leaves the uninformed
+  //                  case — where the 2:1 asymmetry says schmearing pays — as
+  //                  it was. That distinction is the whole design.
+  const useBelief = (opts.beliefSchmear ?? BELIEF_SCHMEAR) || (opts.beliefFloor ?? BELIEF_FLOOR) > 0;
+  const ownership = useBelief && mateWinning ? teammateProbability(g, idx, winnerSoFar, opts) : 1;
+  const scaled = (opts.beliefSchmear ?? BELIEF_SCHMEAR) ? asIs * ownership : asIs;
+  const trickLooksSafe = scaled >= SCHMEAR_CONFIDENCE && ownership >= (opts.beliefFloor ?? BELIEF_FLOOR);
 
   // Until the called ace falls, a defender's "teammate" is a guess — the seat
   // winning may well be the picker's partner, and paying points to the wrong
@@ -1270,7 +1408,12 @@ export function heuristicCard(g, idx, opts = {}) {
       // led, the "schmear" threw the strongest card in the game away for one
       // extra point. Reported from a real hand where two seats each dumped a
       // Queen behind an already-unbeatable Q-clubs.
-      const schmearable = legal.filter((c) => !isTrump(c) && cardPts(c) > 0);
+      // What may be spent when the trick's owner is a guess rather than a fact.
+      // Paying an Ace on a two-in-three read costs eleven when it is wrong, and
+      // the 2:1 odds do not cover an eleven the way they cover a King.
+      const cap = teammateIsCertain ? Infinity : (opts.speculativeSchmearMax ?? SPECULATIVE_SCHMEAR_MAX);
+
+      const schmearable = legal.filter((c) => !isTrump(c) && cardPts(c) > 0 && cardPts(c) <= cap);
       if (schmearable.length) {
         return schmearable.sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
       }
@@ -1283,8 +1426,13 @@ export function heuristicCard(g, idx, opts = {}) {
       // the fat diamond instead is better on both counts at once: seven more
       // points banked AND the stronger card kept. Queens and Jacks are only
       // parted with when they're all that's left, and then the weakest one.
+      //
+      // The cap applies here too, and this is the branch hand 1 actually took:
+      // Bernie held J/A/K of diamonds behind a led Q-hearts, none of which
+      // could win, and "spend the fattest non-power trump" handed over the Ace.
+      // Correct when the trick is ours; an eleven-point donation when it isn't.
       if (legal.every(isTrump)) {
-        const fat = legal.filter((c) => !isPowerTrump(c));
+        const fat = legal.filter((c) => !isPowerTrump(c) && cardPts(c) <= cap);
         if (fat.length) {
           return fat.sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
         }

@@ -21,7 +21,7 @@ import {
   cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
   SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
   freshHand, assignPartner, resolveTrick, sortHand,
-  calledCardCandidates, knownPartner, provenSide,
+  calledCardCandidates, knownPartner, provenSide, teammateProbability,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -1017,6 +1017,127 @@ const trick2 = [
       trickSecurity(t, 2, ON) === 0, `security=${trickSecurity(t, 2, ON)}`);
     check("control: the picker is forced but NOT harmless — a club can still win here",
       trickSecurity(t, 2, { forcedFollow: true }) < 1);
+  }
+}
+
+
+/* ============================================================================
+   Hand 1 — reading the partnership off how a seat has PLAYED.
+
+   Reported 2026-07-30, a hand that finished 120-0. Seats: 0 You (partner),
+   1 Bernie, 2 Patty (picker), 3 Fonzie, 4 Kopps. Hearts called. You won trick 1
+   with Q-clubs and led Q-hearts into trick 2 — pulling trump, which is the
+   picker's side's plan and nobody else's. Both remaining defenders read that
+   seat as a teammate and schmeared an Ace onto it: 22 points handed to the
+   picker's partner on one trick.
+
+   Nothing here is deducible. Hearts has not been led, so calledCardCandidates
+   still holds three live seats and no amount of deduction narrows it. What is
+   available is INFERENCE: this engine's leading branch has the picker's team
+   lead trump whenever it holds any, while defenders lead fail and touch trump
+   only holding nothing else, weakest-first. A Queen on lead is the picker's
+   book. `belieftest` puts that read at ~98% against ground truth.
+
+   The fix is deliberately NOT "stop schmearing speculatively" — that measured
+   -0.0028 (see BELIEF_SCHMEAR). It is a floor the belief must clear, which the
+   uninformed two-in-three clears and a seat marked by the read does not.
+   ========================================================================= */
+{
+  const deal = [
+    [C("Q", "C"), C("Q", "H"), C("8", "S"), C("K", "C"), C("8", "H"), C("A", "H")],
+    [C("7", "D"), C("A", "D"), C("K", "D"), C("J", "D"), C("K", "H"), C("8", "C")],
+    [C("Q", "S"), C("9", "D"), C("J", "H"), C("Q", "D"), C("J", "C"), C("10", "H")],
+    [C("8", "D"), C("A", "C"), C("9", "S"), C("9", "H"), C("K", "S"), C("10", "S")],
+    [C("10", "D"), C("J", "S"), C("7", "H"), C("7", "C"), C("9", "C"), C("10", "C")],
+  ];
+  const start = () => assignPartner({
+    ...freshHand(1, [0, 0, 0, 0, 0], 1),
+    phase: "playing", hands: deal.map(sortHand), blind: [],
+    buried: [C("A", "S"), C("7", "S")],
+    picker: 2, calledSuit: "H", calledRank: "A", leader: 2, turn: 2,
+  });
+  const OFF = { trumpLeadRead: false, beliefFloor: 0 };
+
+  let g = start();
+  check("hand 1 reconstructs: You hold the called ace", g.partner === 0, `partner=${g.partner}`);
+
+  // Trick 1: Patty leads Q-spades, You take it with Q-clubs.
+  for (const [p, c] of [[2, C("Q", "S")], [3, C("8", "D")], [4, C("10", "D")],
+                        [0, C("Q", "C")], [1, C("7", "D")]]) g = applyPlay(g, p, c);
+  g = resolveTrick(g);
+  // Trick 2: You lead Q-hearts — a power trump, and the whole signal.
+  g = applyPlay(g, 0, C("Q", "H"));
+  const gFonzie = applyPlay(applyPlay(g, 1, C("A", "D")), 2, C("9", "D"));
+
+  check("hand 1: nothing is deducible — three seats could still hold the ace",
+    calledCardCandidates(g, 1).length === 3, `cands=${calledCardCandidates(g, 1)}`);
+  check("hand 1: and the deduction layer correctly declines to guess",
+    knownPartner(g, 1) === null && provenSide(g, 1, 0) === null);
+
+  /* ---- the read ---- */
+  check("hand 1: without the read a defender believes the trump-leader is a friend",
+    Math.abs(teammateProbability(g, 1, 0, OFF) - 2 / 3) < 1e-9,
+    `p=${teammateProbability(g, 1, 0, OFF)}`);
+  check("hand 1: the read flips that to almost certainly an opponent",
+    teammateProbability(g, 1, 0) < 0.1, `p=${teammateProbability(g, 1, 0)}`);
+  check("hand 1: knowsTeammate still says friend — the belief this replaces",
+    knowsTeammate(g, 1, 0) === true);
+
+  /* ---- the cards ---- */
+  check("hand 1 (bug): the old engine schmears Bernie's Ace of trump",
+    cid(aiChooseCard(g, 1, OFF)) === "AD", `played ${cid(aiChooseCard(g, 1, OFF))}`);
+  check("hand 1 (bug): and Fonzie's Ace of clubs",
+    cid(aiChooseCard(gFonzie, 3, OFF)) === "AC", `played ${cid(aiChooseCard(gFonzie, 3, OFF))}`);
+
+  const bernie = aiChooseCard(g, 1);
+  const fonzie = aiChooseCard(gFonzie, 3);
+  check("hand 1: Bernie no longer donates the Ace", cid(bernie) !== "AD", `played ${cid(bernie)}`);
+  check("hand 1: Fonzie no longer donates the Ace", cid(fonzie) !== "AC", `played ${cid(fonzie)}`);
+  check("hand 1: and Fonzie, free to choose, gives up nothing at all",
+    cardPts(fonzie) === 0, `played ${cid(fonzie)} worth ${cardPts(fonzie)}`);
+  check("hand 1: the trick costs the defence 20 points less",
+    cardPts(bernie) + cardPts(fonzie) <= 2,
+    `${cardPts(bernie)} + ${cardPts(fonzie)}`);
+
+  /* ---- CONTROL: speculative schmearing must SURVIVE ---- */
+  {
+    // The thing that separates this from the version that measured -0.0028.
+    // A fail lead, no power trump played by anyone, partnership unknown: the
+    // defender's belief is the uninformed two-in-three, which is exactly the
+    // case the 2:1 asymmetry says to schmear into. It must still fire.
+    const g2 = position({
+      hands: withHand(4, [C("K", "C"), C("9", "C"), C("8", "C")]),
+      trick: [
+        { player: 0, card: C("7", "H") },
+        { player: 1, card: C("8", "H") },
+        { player: 2, card: C("A", "H") },
+        { player: 3, card: C("9", "H") },
+      ],
+      picker: 0, partner: 3, partnerRevealed: false,
+      calledSuit: "S", calledAcePlayed: false, tricksDone: 2, leader: 0, turn: 4,
+    });
+    check("control: nobody led a power trump, so the read stays silent",
+      Math.abs(teammateProbability(g2, 4, 2) - teammateProbability(g2, 4, 2, OFF)) < 1e-9);
+    check("control: the uninformed belief is two-in-three, above the floor",
+      teammateProbability(g2, 4, 2) > 0.6, `p=${teammateProbability(g2, 4, 2)}`);
+    check("control: so a speculative schmear STILL happens",
+      cid(aiChooseCard(g2, 4)) === "KC", `played ${cid(aiChooseCard(g2, 4))}`);
+  }
+
+  /* ---- CONTROL: the read must not fire on a low-trump lead ---- */
+  {
+    // A defender out of fail leads its WEAKEST trump. That is the one defender
+    // path to a trump lead, and reading it as the picker's book would invert
+    // the inference on exactly the seat it is meant to protect.
+    const g3 = position({
+      hands: withHand(2, [C("K", "C"), C("9", "C")]),
+      trick: [{ player: 0, card: C("7", "D") }],
+      picker: 4, partner: 1, partnerRevealed: false,
+      calledSuit: "S", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 2,
+    });
+    check("control: a low-diamond lead is not read as the picker's book",
+      Math.abs(teammateProbability(g3, 2, 0) - teammateProbability(g3, 2, 0, OFF)) < 1e-9,
+      `${teammateProbability(g3, 2, 0)} vs ${teammateProbability(g3, 2, 0, OFF)}`);
   }
 }
 
