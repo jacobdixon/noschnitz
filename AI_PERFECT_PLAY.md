@@ -70,6 +70,18 @@ no-schmear tells, bury tendencies. Uses:
 - Testable in isolation: deal hands, replay, score the belief model's
   calibration against the true layout (Brier score per card-location claim).
 
+**A concrete decision waiting on this, measured 2026-07-30.** Corpus hand 1,
+trick 1: a defender holding Q-clubs (boss) and Q-hearts plays the cheaper Queen
+and the picker takes it with Q-spades. Q-clubs is genuinely right — +2.8 points
+to the defense and 81.3% against 75.4% over 3,000 consistent deals — but no
+card-shape rule can find it. What makes it right is that **the one card beating
+Q-hearts is likelier to be in the picker's hand**, and the picker is behind us.
+Every attempt to trigger on the cards instead measured badly: see the long
+MEASURED AND NOT SHIPPED note above `cheapest(winners)` in `heuristicCard`.
+The prior needed is the cheapest thing in this section — pickers pick because
+they hold trump, so unseen power trump is not uniform over the seats — and this
+position is a ready-made test case for it.
+
 ### C. Push the exact-solve boundary earlier
 
 Cheapest incremental win: `solveEndgameCard` presumably kicks in when the

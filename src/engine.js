@@ -1793,6 +1793,45 @@ export function heuristicCard(g, idx, opts = {}) {
     // certify the Jack because `trickSecurity` counts beaters the one seat
     // left to act could not legally play — it was following a fail suit — so
     // the code fell through to strength and burned a Queen for nothing.
+    //
+    // MEASURED AND NOT SHIPPED, 2026-07-30 — a third attempt, from the other
+    // direction, and the most tempting one yet. Written up here because the
+    // hand that prompts it is genuinely misplayed, so it WILL be noticed again.
+    //
+    // Corpus hand 1, trick 1, and the largest single error in the collected
+    // corpus: a defender holds Q-clubs (boss) and Q-hearts behind the partner's
+    // J-clubs lead, plays Q-hearts — the cheaper Queen, identical 3 points —
+    // and the picker, last to act and KNOWN to be an opponent, takes it with
+    // Q-spades. Double-dummy 43 points, and it flips the hand.
+    //
+    // The play really is wrong, which is the part worth knowing: over 3,000
+    // deals of the unseen cards consistent with what that seat can actually see
+    // (clubs called, so the ace is with one of the three seats that are not the
+    // picker), Q-clubs is worth +2.8 points to the defense and wins 81.3% of
+    // the hands against 75.4%. So this is not double-dummy hindsight — it is
+    // only much smaller than 43.
+    //
+    // The rule that fixes it does not survive contact with the rest of the
+    // game. "Upgrade to a boss winner when the cheap winner has a live beater
+    // and `securityAfterPlay` says the trick is not already certain" — the
+    // legality-aware test, which is what the 0.18.0 filter lacked — measured
+    // -7.37 per firing over 2,929 firings in 24,000 deals, 0 of 3 seeds, acting
+    // side's win rate 62.5% against 75.1%. It fires on ~12% of hands, mostly
+    // the picking team, and every slice of it is negative.
+    //
+    // Narrowing to the reported shape exactly — defenders only, power trump for
+    // power trump at identical points, a known opponent still to act — reads
+    // +1.25 per firing in-sample and **-0.61 on fresh seeds** (557 firings,
+    // ahead in 3 of 5, win rate 49.9% against 49.7%). That is noise, and the
+    // in-sample number was the best of twenty slices. Note it was worth +0.10
+    // at trick 1 even in-sample, i.e. nothing at the very trick it came from.
+    //
+    // Why no card-shape rule can work here: what makes Q-clubs right is not
+    // anything about the holding, it is that Q-spades — the one card that beats
+    // Q-hearts — is likelier to sit with the PICKER, who is behind us. Pickers
+    // pick because they hold trump. Nothing in this engine models that prior,
+    // and until something does, this position is not decidable from the cards.
+    // That is the fix, and it belongs with the belief layer, not here.
     const cheapest = (cards) => [...cards].sort((a, b) => power(a) - power(b))[0];
     return cheapest(winners);
   }
