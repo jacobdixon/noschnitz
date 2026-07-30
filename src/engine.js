@@ -1259,6 +1259,58 @@ export const OVERTAKE_BELIEF_FLOOR = 0.6;
 // either side of it were inside the noise on 3x9,000 duplicate deals.
 export const DUCK_MAX_TRICK_POINTS = 12;
 
+// When a schmear may spend the second-fattest card instead of the fattest.
+//
+// Reported from a real hand (2026-07-29, hand 6). A defender void in trump sat
+// behind her partner's winning Q-diamonds holding A-clubs, 10-hearts, 10-spades
+// and 9-clubs, with hearts the called suit and the called A-hearts therefore
+// known to sit in the picker's partner's hand. Sorting by card points alone
+// schmeared the Ace for being one point fatter — but the Ace was boss of clubs
+// with a single trump outstanding, a trick she still owned, while the ten of
+// the called suit was a guaranteed donation the moment hearts was led. Which
+// is what happened on the very next trick. It cost 4 points, double-dummy.
+//
+// The obvious generalisation is wrong, and was measured to be wrong before
+// this narrower one was written. Discounting each candidate's points by its
+// `cardEquity` and schmearing the largest product costs -0.0005/seat/hand
+// (ahead in 1 of 5 seeds, 10,000 hands per split, against the pre-0.36 engine)
+// and loses 0.311 points per disagreeing decision against the exact solver on
+// the same baseline. The reason is visible in the
+// hands it changes: a product lets a cheap exposed card outrank a fat safe one
+// — it threw a King (4 points, equity 3) over an Ace (11 points, equity 1),
+// because 12 > 11 — and a certain eleven now beats a speculative eleven later
+// by more than the risk model gives back. Points-first is right; it is the
+// near-tie at the top that it gets wrong.
+//
+// So the correction only fires where the measurement says it belongs: the
+// fattest card must be nearly boss, meaning it genuinely expects to take a
+// trick of its own rather than being trumped out of one, and the substitute
+// must be within SCHMEAR_POINT_SLACK of it. In practice that is the Ace-versus-
+// Ten choice with the trump nearly spent, and nothing else.
+//
+// Measured against 0.39.1, which is not the engine it was originally tuned on
+// — and that matters enough to record. On the pre-0.36 engine this was
+// +0.0003/seat/hand ahead in 7 of 8 seeds. The belief work in 0.36-0.39 put a
+// probability gate in front of the whole schmear branch, and re-measuring
+// afterwards halves it: +0.0001 ahead in 7 of 10 seeds at 60,000 hands per
+// split, with the mirrored run (old rule in one seat against four new) at
+// -0.0001, behind in 10 of 10. Both directions still lean the same way, and
+// the null test resolves to exactly +0.0000, which is what makes a number this
+// small readable at all — but it is now a sign, not a magnitude, and a future
+// change to the gating could take it to zero. Re-measure rather than trusting
+// this line.
+//
+// This pair is still the best of the four alternatives swept beside it, at
+// 25,000 hands x 8 seeds each: keep-equity 0 is +0.0001 in 5 of 8, keep-equity
+// 2 is -0.0000 in 3 of 8, point-slack 2 is +0.0001 in 6 of 8, point-slack 4 is
+// +0.0001 in 5 of 8. The margins between them are thin.
+//
+// It fires about once in 120 hands. The case for keeping it rests as much on
+// the pinned hand in scripts/aiskilltest.mjs — a demonstrated 4-point
+// double-dummy error — as on the aggregate.
+export const SCHMEAR_KEEP_EQUITY = 1;
+export const SCHMEAR_POINT_SLACK = 1;
+
 // The picker, sitting last, holding trump nothing can beat, looking at a thin
 // trick already won by a trump — and a card worth nothing she could throw
 // instead. See the call site in heuristicCard for why ducking wins here.
@@ -1535,7 +1587,26 @@ export function heuristicCard(g, idx, opts = {}) {
 
       const schmearable = legal.filter((c) => !isTrump(c) && cardPts(c) > 0 && cardPts(c) <= cap);
       if (schmearable.length) {
-        return schmearable.sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b))[0];
+        const byPoints = schmearable.sort((a, b) => cardPts(b) - cardPts(a) || power(a) - power(b));
+        const fattest = byPoints[0];
+
+        // Don't spend a fail card that is still boss of what's left when a
+        // card barely lighter is already doomed — see SCHMEAR_KEEP_EQUITY.
+        // Deliberately narrow: it costs one point of schmear at most, and only
+        // buys anything when the fat card can really still take a trick.
+        const keepEquity = opts.schmearKeepEquity ?? SCHMEAR_KEEP_EQUITY;
+        if (keepEquity >= 0 && byPoints.length > 1) {
+          const unseen = unaccountedFor(g, idx);
+          const fatRisk = cardEquity(g, idx, fattest, unseen);
+          if (fatRisk <= keepEquity) {
+            const slack = opts.schmearPointSlack ?? SCHMEAR_POINT_SLACK;
+            const doomed = byPoints.filter(
+              (c) => cardPts(c) >= cardPts(fattest) - slack && cardEquity(g, idx, c, unseen) > fatRisk,
+            );
+            if (doomed.length) return doomed[0];
+          }
+        }
+        return fattest;
       }
 
       // No free choice: trump was led, so a trump is going regardless. "Never

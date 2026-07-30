@@ -6,6 +6,49 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.40.0] - 2026-07-30
+- **The AI stops schmearing a boss fail card over a dead one.** Reported from a
+  real hand: a defender void in trump sat behind her partner's winning
+  Q-diamonds holding A-clubs, 10-hearts, 9-clubs and 10-spades, with hearts the
+  called suit and the called A-hearts therefore known to be in the picker's
+  partner's hand. She threw the Ace. The schmear branch sorted candidates by
+  card points alone, so eleven beat ten and that was the whole decision — but
+  the Ace was boss of clubs with a single trump left in the game, a trick she
+  still owned, while the ten of the called suit was a guaranteed donation the
+  moment hearts was led. It was led on the very next trick, and the ten fell
+  under the called Ace. Four points, double-dummy.
+  - The rule now declines to spend a fail card that is still boss of what
+    remains when a card within one point of it is already doomed. Deliberately
+    narrow: it costs a point of schmear at most, and only fires when the fat
+    card genuinely expects to take a trick of its own — in practice the
+    Ace-versus-Ten choice with the trump nearly spent, about one hand in 120.
+  - The obvious general version is wrong, and was measured to be wrong before
+    the narrow one was written. Discounting every candidate's points by its
+    exposure and schmearing the largest product costs -0.0005/seat/hand, ahead
+    in 1 of 5 seeds at 10,000 hands per split, and loses 0.311 points per
+    disagreeing decision against the exact solver. It lets a cheap exposed card
+    outrank a fat safe one — it threw a King (4 points) over an Ace (11) — and
+    a certain eleven now beats a speculative eleven later by more than any risk
+    model gives back. Points-first was right all along; it is only the near-tie
+    at the top that it got wrong. Both the rejected rule and the reasoning are
+    kept in `engine.js` so nobody has to rebuild them to re-check.
+  - Measured at +0.0001/seat/hand, ahead in 7 of 10 seeds over 60,000 hands per
+    split, with the mirrored run (old rule in one seat against four new) agreeing
+    at -0.0001, behind in 10 of 10. The null test resolves to exactly +0.0000,
+    which is what makes a number this small readable at all.
+  - Worth recording that this was tuned before 0.36-0.39 and re-measured after.
+    On the pre-0.36 engine it was +0.0003, ahead in 7 of 8 — the belief gate
+    those versions put in front of the schmear branch halves it. Both directions
+    still lean the same way and nothing regressed, but the honest claim is now
+    a sign rather than a magnitude, and the case for the change rests as much on
+    the pinned hand as on the aggregate. The knobs were re-swept on the current
+    engine and this pair is still the best of them, thinly.
+  - `npm run simulate` unmoved; full suite green.
+  - Pinned in `scripts/aiskilltest.mjs` from the real deal rather than a
+    constructed one — every card of that hand is visible in the recap, so the
+    position is exactly as it stood — with a negative control that brings the
+    Ace back when the rule is switched off, and two cases guarding the failure
+    mode above.
 ## [0.39.2] - 2026-07-30
 - **No behaviour change — a measurement written down where it will be found.**
   The largest single error in the collected corpus is a defender playing the

@@ -19,7 +19,7 @@
 import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
   cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
-  unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
+  unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN, SCHMEAR_KEEP_EQUITY,
   freshHand, assignPartner, resolveTrick, sortHand,
   calledCardCandidates, knownPartner, provenSide, teammateProbability,
 } from "../src/engine.js";
@@ -856,6 +856,137 @@ const trick2 = [
   const pick = aiChooseCard(g, 4);
   check("takes the trick when ducking would cost points",
     cid(pick) === "QC", `played ${cid(pick)}`);
+}
+
+/* ------------- Don't schmear a boss fail card over a doomed one ------------ */
+// Reported 2026-07-29, hand 6, and pinned from the real deal rather than a
+// constructed one: every card of that hand is visible in the recap grid, so
+// this is the position exactly as it stood.
+//
+// Leon (1) picked and called hearts; Kopps (3) holds the A-hearts and is his
+// partner, not yet revealed — the ace does not fall until the next trick, so
+// `partnerRevealed` is false here, as it was in the game. Kopps led J-spades
+// into trick 3, Bunny (4) took it with Q-diamonds, and Patty (2) is last to
+// play, void in trump, holding A-clubs, 10-hearts, 9-clubs and 10-spades.
+//
+// Bunny is a defender like Patty, so the trick is hers to schmear into. The old
+// rule sorted by card points and dropped the Ace for its single extra point.
+// The Ace was boss of clubs with one trump left in the game; the 10-hearts was
+// dead the moment hearts was led, which is precisely what happened on the very
+// next trick — it fell under Kopps's called A-hearts, 10 points to the picker.
+{
+  const g = {
+    ...position({
+      hands: [
+        [C("9", "H"), C("8", "S"), C("K", "S")],                    // You
+        [C("7", "H"), C("8", "D"), C("8", "H")],                    // Leon (picker)
+        [C("A", "C"), C("10", "H"), C("9", "C"), C("10", "S")],     // Patty
+        [C("A", "H"), C("8", "C"), C("9", "S")],                    // Kopps (partner)
+        [C("K", "H"), C("10", "C"), C("7", "S")],                   // Bunny
+      ],
+      played: [
+        C("Q", "C"), C("Q", "S"), C("10", "D"), C("9", "D"), C("J", "H"),
+        C("J", "D"), C("7", "C"), C("Q", "H"), C("A", "D"), C("K", "D"),
+      ],
+      trick: [
+        { player: 3, card: C("J", "S") },
+        { player: 4, card: C("Q", "D") },
+        { player: 0, card: C("J", "C") },
+        { player: 1, card: C("7", "D") },
+      ],
+      picker: 1, partner: 3, partnerRevealed: false, calledSuit: "H",
+      calledAcePlayed: false, tricksDone: 2, leader: 3, turn: 2,
+    }),
+    calledRank: "A",
+    buried: [C("A", "S"), C("K", "C")],
+  };
+
+  const legal = legalPlays(g, 2);
+  check("Patty is void in trump, so all four of her cards are legal",
+    legal.length === 4 && !legal.some(isTrump), `legal=${legal.map(cid).join(",")}`);
+  check("she cannot win the trick — Q-diamonds is trump and she has none",
+    !legal.some((c) => trickWinner([...g.trick, { player: 2, card: c }]) === 2));
+  check("the trick reads as her own side's, which is what opens the schmear",
+    knowsTeammate(g, 2, 4) && trickSecurity(g, 2) >= SCHMEAR_CONFIDENCE,
+    `security=${trickSecurity(g, 2)}`);
+  check("A-clubs is all but boss — one outstanding card beats it",
+    cardEquity(g, 2, C("A", "C")) === 1, `equity=${cardEquity(g, 2, C("A", "C"))}`);
+  check("10-hearts is strictly more exposed — the called Ace also beats it",
+    cardEquity(g, 2, C("10", "H")) === 2, `equity=${cardEquity(g, 2, C("10", "H"))}`);
+  check("and it is only one card point lighter, which is what makes it a swap",
+    cardPts(C("A", "C")) - cardPts(C("10", "H")) === 1);
+
+  // This is a real mistake, not a tie the tie-break happens to settle: the
+  // exact solver separates the two cards by four points.
+  const dd = (card) => solveHandValue(applyPlay(g, 2, card), new Map(), { n: 0 });
+  check("double-dummy, the ten really is four points better than the Ace",
+    dd(C("A", "C")) - dd(C("10", "H")) === 4,
+    `AC=${dd(C("A", "C"))} 10H=${dd(C("10", "H"))}`);
+
+  // NEGATIVE CONTROL. The position only tests something if the old rule was
+  // genuinely tempted. Turning the rule off has to bring the Ace back.
+  check("with the rule disabled she schmears the Ace, as she used to",
+    cid(aiChooseCard(g, 2, { schmearKeepEquity: -1 })) === "AC",
+    `played ${cid(aiChooseCard(g, 2, { schmearKeepEquity: -1 }))}`);
+
+  const pick = aiChooseCard(g, 2);
+  check("keeps the boss Ace and schmears the doomed ten instead",
+    cid(pick) !== "AC", `played ${cid(pick)}`);
+  check("and the card it picks is double-dummy optimal",
+    dd(pick) === Math.min(...legal.map(dd)), `played ${cid(pick)}, dd=${dd(pick)}`);
+}
+
+{
+  // The other half of the rule, and the failure mode that killed the first
+  // attempt at it. Discounting points by exposure across the board schmears a
+  // King over an Ace whenever the King is deader — 4 points banked instead of
+  // 11, for a risk saving that never repays the seven. The rule must only ever
+  // reach for a card within SCHMEAR_POINT_SLACK of the fattest.
+  const hand = [C("A", "H"), C("K", "S"), C("8", "H")];
+  const g = position({
+    hands: withHand(4, hand),
+    trick: [
+      { player: 0, card: C("A", "C") },
+      { player: 1, card: C("K", "C") },
+      { player: 2, card: C("9", "C") },
+      { player: 3, card: C("7", "C") },
+    ],
+    picker: 0, partner: 4, partnerRevealed: true, tricksDone: 2, leader: 0,
+    // All the trump but the 7 of diamonds is gone, so the Ace of hearts is
+    // as close to boss as the reported hand's Ace of clubs was.
+    played: [
+      C("Q", "C"), C("Q", "S"), C("Q", "H"), C("Q", "D"), C("J", "C"), C("J", "S"),
+      C("J", "H"), C("J", "D"), C("A", "D"), C("10", "D"), C("K", "D"), C("9", "D"), C("8", "D"),
+    ],
+  });
+  check("the King is the more exposed card of the two",
+    cardEquity(g, 4, C("K", "S")) > cardEquity(g, 4, C("A", "H")),
+    `KS=${cardEquity(g, 4, C("K", "S"))} AH=${cardEquity(g, 4, C("A", "H"))}`);
+  check("but it is seven points lighter, so the Ace still goes",
+    cid(aiChooseCard(g, 4)) === "AH", `played ${cid(aiChooseCard(g, 4))}`);
+}
+
+{
+  // And it must stay off when the fat card is not boss. With trump still out
+  // in quantity the Ace is going to be trumped anyway, so banking eleven now
+  // beats keeping a card that cannot be defended — the rule's whole premise is
+  // that the fat card genuinely expects to take a trick of its own.
+  const hand = [C("A", "H"), C("10", "S"), C("8", "H")];
+  const g = position({
+    hands: withHand(4, hand),
+    trick: [
+      { player: 0, card: C("A", "C") },
+      { player: 1, card: C("K", "C") },
+      { player: 2, card: C("9", "C") },
+      { player: 3, card: C("7", "C") },
+    ],
+    picker: 0, partner: 4, partnerRevealed: true, tricksDone: 1, leader: 0,
+  });
+  check("with the trump barely touched the Ace is not remotely boss",
+    cardEquity(g, 4, C("A", "H")) > SCHMEAR_KEEP_EQUITY,
+    `equity=${cardEquity(g, 4, C("A", "H"))}`);
+  check("so the fattest card still goes, rule or no rule",
+    cid(aiChooseCard(g, 4)) === "AH", `played ${cid(aiChooseCard(g, 4))}`);
 }
 
 /* ============================================================================
