@@ -6,6 +6,47 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.42.0] - 2026-07-30 (`ce9fc11`)
+- **Every modal's buttons are right-aligned now, primary on the right.** The
+  game is played one-handed on a phone, and the buttons were laid out
+  left-to-right with the primary first — which put "Deal next hand", the button
+  pressed every single hand, at the furthest point on the screen from a right
+  thumb. The rule is now one row per modal, pinned to the trailing edge, with
+  the primary action last in it and the secondary ones flowing back to the
+  left: Recap/**Deal next hand**, Back/**Deal next hand**, Close/**Stop sending
+  my hands**, Clear/Close/**Copy**, Close/**Remove <name>**.
+  - Lives as `ModalActions` in `src/ui.jsx` rather than a `justifyContent` on
+    each row, so the next modal gets it for free — this was seven hand-rolled
+    flex rows that had already drifted in three directions (one stacked, one
+    full-width, one plain row).
+  - Children are written in visual order rather than the row being reversed in
+    CSS, so tab order and screen-reader order still agree with the screen.
+    Wrapping is on and stays right-aligned: three sentence-length labels do not
+    fit across a 390px phone, and the overflow lands bottom-right, which is
+    still the closest point to the thumb.
+- **The Scores modal's own controls join that row, and "Change my name" is a
+  button again.** It was a `btnGhost` — 13px text in 4px of padding, about half
+  the height of the "Step away" button stacked directly under it — so the one
+  control on that screen that changes something about *you* read as a link that
+  had wandered in. It is now `btnPlain`, the same shape and height as the
+  controls beside it, which is what it always was in weight.
+  - The explanatory notes move above the row rather than sitting under their
+    own buttons, since the buttons are no longer stacked. Same text, one place.
+  - The one modal where Close is *not* the primary: if you have stepped away,
+    "Take my seat back" is what you opened Scores for, so it takes the
+    right-hand slot and Close moves left of it.
+  - `SeatControls` became `TableScoresModal` and now owns the modal instead of
+    being passed into it as children. Its controls belong in the footer row and
+    its explanations above it — two slots decided by one piece of state
+    (whether the name is being edited), so the component holding that state has
+    to be the one filling both. `ScoresModal` takes the whole row as `actions`
+    rather than a Close button plus extras, because only the caller knows which
+    of its controls is primary, and the primary is the one that has to be on
+    the right.
+  - Checked by screenshotting all eleven modal states through a real browser at
+    390px, including the rename-in-progress and stepped-away variants, rather
+    than by reading the flex rules back.
+
 ## [0.41.0] - 2026-07-30
 - **The AI never takes over the last human's seat.** Reported from a real table:
   a player alone with the four AI put their phone down between tricks, came back

@@ -140,6 +140,32 @@ export function Modal({ children, onClose, maxWidth = 380 }) {
   );
 }
 
+/**
+ * A modal's footer row of buttons.
+ *
+ * Right-aligned, because this game is played one-handed on a phone: the
+ * trailing edge is where a right thumb already is, and every modal in the app
+ * ends in a decision. So the PRIMARY action goes LAST in the row — rightmost,
+ * under the thumb — and the secondary ones flow back to the left of it, in
+ * decreasing order of importance.
+ *
+ * Write the children in that visual order rather than reversing the row with
+ * CSS: DOM order is then also tab order and reading order, so the keyboard and
+ * a screen reader agree with what's on screen.
+ *
+ * Wrapping is on because labels here are sentences ("Take my seat back"), and
+ * three of them do not fit across 300px. With flex-end the overflow lands on a
+ * second line still pinned right, which keeps the primary at the bottom-right
+ * — still the closest point to the thumb — instead of stranding it mid-row.
+ */
+export function ModalActions({ children }) {
+  return (
+    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+      {children}
+    </div>
+  );
+}
+
 export const btnGold = {
   background: felt.brass, color: "#241C06", border: "none", borderRadius: 8,
   padding: "9px 18px", fontSize: 17, fontWeight: 800, letterSpacing: ".03em",

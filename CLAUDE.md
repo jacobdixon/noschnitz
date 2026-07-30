@@ -137,19 +137,21 @@ Unchanged rules:
 - **Env vars are scoped Preview vs. Production separately.** Beta tables and any live
   tables must never share a state store.
 - **`gh pr merge --delete-branch` silently fails in this repo** (a worktree error
-  swallows it), so merged branches accumulate. Check
-  `git branch -r --merged origin/master` now and then rather than trusting the flag.
+  swallows it), so merged branches accumulate. Do NOT audit them with
+  `git branch -r --merged origin/master` — it under-reports badly, for the reason
+  given under "Things a session will try and cannot do" below.
   `v2` is kept deliberately as a landmark; do not delete it in a tidy-up.
 
 ## Conventions established this session (keep following them)
-- **Watch every PR you open on this repo, without being asked.** Standing instruction
-  from the owner, 2026-07-30. Subscribe to the PR's activity as soon as it exists, drive
-  it to green, and answer review comments — a PR opened and abandoned is worse than not
-  opening one, because the deploy pipeline treats a red `master` as a reason to withhold
-  the beta build silently. Schedule a check-in alongside the subscription rather than
-  relying on it: webhooks do not reliably deliver CI *success*, new pushes, or
-  merge-conflict transitions. Stop when the PR merges or closes, or when told to.
-  Merging is still the owner's call — it is the only path to a production deploy.
+- **Watch every PR you open, without being asked.** Subscribe to its activity as
+  soon as it exists, and stay subscribed until it is merged or closed. A PR here is
+  not finished when it is opened: CI going red on `master` is what silently withholds
+  the beta deploy (see the deploy section), so a failure nobody is watching for is a
+  deploy outage that looks like nothing happening. Webhooks do not reliably deliver
+  CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
+  with a self check-in about an hour out and re-arm it quietly while the PR is open.
+  Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
+  what is broken and why it is not yours to fix — never in silence.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
