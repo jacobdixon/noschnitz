@@ -6,6 +6,56 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.37.0] - 2026-07-30
+- **The AI now reads the partnership off how a seat has PLAYED**, not only off
+  what the cards have proven. Reported from hand 1, which finished 120-0: a
+  defender won trick 1 with Q-clubs and led Q-hearts into trick 2, and both
+  remaining defenders read that seat as a teammate and schmeared an Ace onto it.
+  22 points to the picker's partner on a single trick.
+- Nothing there was deducible. Hearts had not been led, so three seats could
+  still hold the called ace and no amount of deduction narrows that — the
+  machinery added in 0.36.0 correctly declines to guess. What was available is
+  inference: this engine's leading branch has the picker's team lead trump
+  whenever it holds any, while defenders lead fail and reach for trump only
+  holding nothing else, weakest-first. **A Queen or a Jack on lead is the
+  picker's book.**
+- `teammateProbability` is no longer uniform over the candidate seats. It
+  reweights them by `partnerWeight`, and a seat that has opened a trick with a
+  power trump carries `TRUMP_LEAD_ODDS`. In the reported hand that moves a
+  defender's read of the trump-leader from "two-in-three my friend" to 0.048.
+- **`TRUMP_LEAD_ODDS` was calibrated, not guessed.** `belieftest` buckets every
+  judgement by what the belief predicted and checks it against ground truth, so
+  the constant was swept until the buckets came out honest: at 8 the read was
+  under-confident by 4.4pp and 8.1pp on the two buckets it moves, improving
+  monotonically to 0.2pp / 0.5pp at 64. The finding behind that curve is the
+  interesting part — **a seat that leads a Queen or a Jack is on the picker's
+  team about 98% of the time.** Shipped at 40 rather than the flattest point,
+  because the calibration is measured in self-play where every seat runs this
+  file's book, and a human defender is off-book and will lead trump more often
+  than an AI one.
+- The belief is now spent, by a floor the schmear gate must clear
+  (`BELIEF_FLOOR`, 0.5). **Worth +0.0018/seat/hand, ahead in 8 of 8 seeds** at
+  20,000 hands per split. The control that makes that readable: the identical
+  floor with the read turned OFF measures +0.0000, ahead in 0 of 5 — the
+  mechanism earns nothing, the entire gain is the inference.
+- **Two blunter fixes measured worse and did not ship**, and the reason is the
+  same in both. Gating the schmear on the probability directly (`BELIEF_SCHMEAR`)
+  is -0.0028, ahead in 1 of 5: with no evidence at all the best a defender can
+  believe is 1 - 1/n, which never reaches `SCHMEAR_CONFIDENCE`, so it bans
+  speculative schmearing outright and pays the 0.6pp the overtake branch already
+  documents. Capping what may be spent by the card's points
+  (`SPECULATIVE_SCHMEAR_MAX` at 4) is -0.0022, ahead in 0 of 5 — the card is the
+  wrong axis, since it gives up the fat schmears that pay whenever the trick
+  really is ours without ever asking which case this is. A floor that bites only
+  where there is evidence is the version that works.
+- `teammateProbability` now short-circuits on a revealed partnership rather than
+  re-deriving it. Same answer in real play by construction, and it keeps the
+  result anchored to the state's own account of who the partner is.
+- Hand 1 is pinned in `scripts/aiskilltest.mjs`. The load-bearing control is not
+  that the bug is fixed but that **speculative schmearing still happens**: a fail
+  lead with no power trump played and the partnership unknown must still pay its
+  King, which is precisely what the two rejected variants broke.
+
 ## [0.36.0] - 2026-07-30
 - **A trick that cannot be lost is now priced as one.** Reported from hand 27:
   clubs called, clubs led for the first time, a defender's partner winning it
