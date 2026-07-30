@@ -1,0 +1,130 @@
+# Verify beta — what is beta.noschnitz.com actually serving?
+#
+# The gap this fills: Release fast-forwards beta and POSTs its deploy hook, but
+# it does NOT wait for that build. It cannot — Vercel builds beta asynchronously
+# and Release's job is already holding a slot waiting on production. So the last
+# thing Release can honestly say is "requested", and it says so; its summary
+# prints a curl for a human to run later. Which nobody runs.
+#
+# Two things can be wrong with beta, and they look identical from the outside:
+#
+#   1. It is STALE — the deploy hook fired but the build failed, or was
+#      deduplicated, or is still queued. Same class of failure that left
+#      production on v0.23.0 while master was on v0.24.0; see release.yml.
+#
+#   2. It was built FLAG-OFF — the build succeeded, the version string matches,
+#      and beta is serving the solo game. This one is nastier, because every
+#      signal says green: the commit status, the version, the deployment. The
+#      only symptom is that the multiplayer nobody can find is the entire reason
+#      beta exists.
+#
+# So this checks both, and reports which failed rather than a single red X.
+# `/api/tables/` is the discriminator for the second: it is the multiplayer API
+# surface, and the flag-off build eliminates every call site (measured at
+# v0.44.0: 0 occurrences flag-off, 8 flag-on). It is a structural string rather
+# than a UI label on purpose — a label can be reworded by someone who has no
+# idea this file depends on it.
+#
+# NOT verified by bundle hash, ever. Vercel's minifier is non-deterministic, so
+# identical content can hash differently, and a multiplayer-only change leaves
+# the *production* bundle byte-identical because the code was eliminated from
+# that build. Content is the only thing that cannot lie.
+name: Verify beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to expect (default: whatever package.json on beta says)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Two of these racing would just double the requests to the same host for the
+# same answer. Not cancel-in-progress: a half-finished check reports nothing.
+concurrency:
+  group: verify-beta
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: check what beta.noschnitz.com serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # beta, not master. They are usually the same commit, but the whole point
+      # of this workflow is the window where they are not.
+      - uses: actions/checkout@v4
+        with:
+          ref: beta
+
+      - name: Check the served bundle
+        env:
+          WANT_INPUT: ${{ inputs.version }}
+        run: |
+          set -uo pipefail
+
+          want="${WANT_INPUT:-}"
+          if [ -n "$want" ]; then
+            echo "checking beta for v$want (given explicitly)"
+          else
+            want="$(node -p "require('./package.json').version")"
+            echo "beta branch is v$want per package.json — checking what the site serves"
+          fi
+
+          # Whatever bundle the live page references, not a path we guessed.
+          # The filename is content-hashed and changes every build.
+          fetch_bundle() {
+            local html asset
+            html="$(curl -sL --max-time 20 https://beta.noschnitz.com/ || true)"
+            asset="$(printf '%s' "$html" | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)"
+            [ -n "$asset" ] || return 1
+            printf '%s' "$asset" > bundle.name
+            curl -sL --max-time 20 "https://beta.noschnitz.com$asset" -o bundle.js || return 1
+            [ -s bundle.js ]
+          }
+
+          # Dispatched right after a merge, the build may still be queued. Two
+          # minutes is the same patience release.yml gives production.
+          fresh=0
+          for i in 1 2 3 4 5 6; do
+            if fetch_bundle && grep -q "$want" bundle.js; then
+              fresh=1
+              break
+            fi
+            echo "  attempt $i: not serving v$want yet"
+            sleep 20
+          done
+
+          asset="$(cat bundle.name 2>/dev/null || echo '(none)')"
+          size="$(wc -c < bundle.js 2>/dev/null || echo 0)"
+          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l)"
+
+          {
+            echo "### beta.noschnitz.com"
+            echo ""
+            echo "- expected version: \`$want\`"
+            echo "- bundle: \`$asset\` ($size bytes)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$fresh" != "1" ]; then
+            echo "- **stale** — the bundle does not contain \`$want\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::beta is NOT serving v$want after two minutes. The deploy hook fired but the build did not land — check the Vercel dashboard for the beta project, and confirm the beta branch is at the commit you expect."
+            exit 1
+          fi
+          echo "beta is serving v$want"
+
+          # Right version, wrong build. Everything else would report green.
+          if [ "$mp" -eq 0 ]; then
+            echo "- version OK, but **built flag-off** — no multiplayer" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::beta is serving v$want but the bundle contains no multiplayer code (0 occurrences of /api/tables/). It was built without VITE_MULTIPLAYER=1, so beta is serving the solo game. Fix the environment variable on the beta branch in the Vercel dashboard and redeploy."
+            exit 1
+          fi
+
+          echo "multiplayer is present ($mp references to the tables API)"
+          {
+            echo "- version verified by bundle content"
+            echo "- multiplayer present ($mp references to \`/api/tables/\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
