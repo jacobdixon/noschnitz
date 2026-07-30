@@ -685,9 +685,59 @@ export function provenSide(g, viewer, target) {
 // always face. 40 clears every gate that reads it with room to spare.
 export const TRUMP_LEAD_ODDS = 40;
 
-function ledPowerTrump(g, seat) {
+// The same read for a trump that is NOT a Queen or a Jack. Weaker on purpose:
+// a defender's one legitimate route to leading trump is dumping its weakest
+// trump, and that is usually a low diamond, so this is the muddy case the
+// power-trump rule deliberately stayed out of.
+//
+// It is not mud, though. Measured over 6,000 self-play hands, of every trick
+// opened by a NON-PICKER:
+//
+//   power trump (Q/J)   2908 leads   the partner 75.2% of the time
+//   plain trump         1279 leads   the partner 60.4%
+//   fail                13538 leads  the partner 12.8%
+//                                    (base rate for "is the partner" is 25%)
+//
+// So a plain trump lead is real evidence — about 4.6:1 against the base rate,
+// where a power lead is about 9:1 — and shipping it at 1 was leaving it on the
+// floor. Reported by beta testers, who described the rule as "a non-picker
+// leading TRUMP is almost certainly the partner" and were describing something
+// broader than what 0.37.0 actually implemented.
+//
+// MEASURED AND NOT SHIPPED, default 1 (off). Swept at 2 / 3 / 5 / 8, every one
+// of them +0.0000 to +0.0001 per seat per hand, ahead in 0 to 1 of 5 seeds. The
+// inference is real; it is simply almost never ACTIONABLE. The gate it feeds is
+// the schmear, which only exists as a decision when the leader is still holding
+// the trick, and:
+//
+//   power trump lead   still won the trick 41.1%   (n=2989)
+//   plain trump lead   still won the trick  9.4%   (n=1254)
+//
+// A low trump lead gets overtrumped nine times in ten, so there is no trick of
+// the leader's to schmear into and nothing for the read to change. It also cost
+// a calibration bucket at every weight above 1. Left switchable for the day
+// something else consults the belief in a spot a losing lead still matters.
+export const PLAIN_TRUMP_LEAD_ODDS = 1;
+
+// The strongest trump lead this seat has opened a trick with: "power" for a
+// Queen or a Jack, "plain" for any other trump, null for neither.
+//
+// Strongest, not a product. Repeat leads from one seat are not independent
+// evidence — it is the same seat with the same hand and the same plan — and
+// multiplying would put a three-time leader past any odds this can be
+// calibrated to. The under card is recorded by its FACE (the 6 of the called
+// suit, a fail card), so an under lead cannot be misread as trump here.
+function trumpLeadKind(g, seat) {
   const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
-  return tricks.some((t) => t?.length && t[0].player === seat && isPowerTrump(t[0].card));
+  let kind = null;
+  for (const t of tricks) {
+    if (!t?.length || t[0].player !== seat) continue;
+    const c = t[0].card;
+    if (!isTrump(c)) continue;
+    if (isPowerTrump(c)) return "power";
+    kind = "plain";
+  }
+  return kind;
 }
 
 // How much more likely this seat is to be the partner than a seat we know
@@ -695,8 +745,10 @@ function ledPowerTrump(g, seat) {
 // below, which is what keeps the result a distribution and therefore testable
 // against ground truth (`belieftest` asserts calibration per bucket).
 function partnerWeight(g, seat, opts = {}) {
-  const odds = opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
-  if ((opts.trumpLeadRead ?? TRUMP_LEAD_READ) && ledPowerTrump(g, seat)) return odds;
+  if (!(opts.trumpLeadRead ?? TRUMP_LEAD_READ)) return 1;
+  const kind = trumpLeadKind(g, seat);
+  if (kind === "power") return opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
+  if (kind === "plain") return opts.plainTrumpLeadOdds ?? PLAIN_TRUMP_LEAD_ODDS;
   return 1;
 }
 
@@ -1158,6 +1210,44 @@ export const SCHMEAR_CONFIDENCE = 0.85;
 // his partner's third-best trump onto his own second-best, and lost both.
 export const OVERTAKE_MIN_GAIN = 0.15;
 
+// Minimum believed chance the trick is already ours before the overtake brake
+// above applies WITHOUT proof. Above 1 disables it.
+//
+// This is the largest single AI gain measured in a while, and it took two
+// harnesses to see it honestly, because they disagreed:
+//
+//   abtest (variant in ONE seat, four unchanged)   +0.0128/seat/hand, 8 of 8
+//   simulate (all five seats, UNPAIRED)            looked like -0.6pp for the
+//                                                  defence, matching the note
+//                                                  in the branch below
+//
+// The comment in that branch records exactly that 0.6pp, from a 3x200,000-hand
+// run, as the reason this brake was gated on certainty in the first place. So
+// the disagreement had to be settled rather than voted on: scripts/coalitiontest
+// deals identical hands to both arms and applies the variant to EVERY DEFENDER,
+// which is the only way to ask whether the SIDE gains. Paired, 12,000 hands x 5
+// seeds, as a change in the picker's win rate on partnered hands:
+//
+//   null control            0.00pp   defenders better in 0 of 5
+//   floor 0.0 (no belief)  -0.53pp   defenders better in 5 of 5
+//   floor 0.6              -0.74pp   defenders better in 5 of 5
+//   floor 0.66             -0.87pp   defenders better in 5 of 5
+//
+// Defenders GAIN, consistently, and the unpaired simulate reading was noise —
+// 3,000 unpaired hands against a ~1pp standard error on the difference. Worth
+// remembering the next time a single simulate run seems to say something.
+//
+// The floor earns its place here in a way abtest could barely see (+0.0122 at
+// 0.0 against +0.0128 at 0.3): standing down for a seat that is actually the
+// picker's partner is exactly the mistake, and only the belief knows which
+// "teammate" that is. The gain from consulting it is about half again as much.
+//
+// 0.6 rather than 0.66 purely to keep off the boundary — the uninformed value
+// with three candidates is 1 - 1/3, and a threshold sitting on it is a rounding
+// accident waiting to happen. Both accept three-or-more candidates and reject
+// the two-candidate coin flip, which is the behaviour intended.
+export const OVERTAKE_BELIEF_FLOOR = 0.6;
+
 // How fat a trick the picker will hand over rather than spend boss trump on
 // it. Above this she takes it; at or below, a free duck is the better card.
 //
@@ -1478,7 +1568,16 @@ export function heuristicCard(g, idx, opts = {}) {
     // table can beat. Note this is a price, not a prohibition — "never overtake
     // your own side" would be the wrong rule, since holding the lead is
     // sometimes the entire plan.
-    if (winners.length && teammateIsCertain) {
+    // The brake is worth applying on a strong BELIEF, not only on proof —
+    // that is the question this floor exists to answer. 0.36.0 measured
+    // applying it on the deduction alone at -0.0006/seat/hand, so the bar is
+    // not "is the belief right" but "is it right enough to beat the cost of
+    // standing down". Above 1 by default, i.e. off. Note the uninformed 2/3
+    // never clears a floor worth setting, so like BELIEF_FLOOR this bites only
+    // where the read has actually fired.
+    const overtakeBrake = teammateIsCertain ||
+      (mateWinning && ownership >= (opts.overtakeBeliefFloor ?? OVERTAKE_BELIEF_FLOOR));
+    if (winners.length && overtakeBrake) {
       const unseen = unaccountedFor(g, idx);
       const priceOf = (c) => {
         const beaters = cardEquity(g, idx, c, unseen);
