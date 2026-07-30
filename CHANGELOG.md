@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.43.0] - 2026-07-30 (`PENDING`)
+## [0.43.0] - 2026-07-30 (`0276266`)
 - **The picker can go alone even when a partner is available.** "Go alone" only
   appeared when `callOptions()` came back empty — i.e. when there was nothing to
   decide — so the human could only ever be alone by accident of the deal. The
