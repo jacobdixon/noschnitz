@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.42.0] - 2026-07-30
+## [0.42.0] - 2026-07-30 (`ce9fc11`)
 - **Every modal's buttons are right-aligned now, primary on the right.** The
   game is played one-handed on a phone, and the buttons were laid out
   left-to-right with the primary first — which put "Deal next hand", the button
