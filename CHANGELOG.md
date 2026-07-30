@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.44.0] - 2026-07-30 (`PENDING`)
+## [0.44.0] - 2026-07-30 (`3944da3`)
 - **The "Go alone" button is gated on the hand now — `ALONE_OFFER_STRENGTH`.**
   0.43.0 offered it on every hand, which made a losing move available on most of
   them. When it is worth offering was measured rather than guessed, with a
