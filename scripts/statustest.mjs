@@ -54,7 +54,7 @@ const line = (g, over = {}) =>
   // announced "Someone's play…" while you were choosing an ace.
   const opts = [{ kind: "ace", suit: "C" }];
   const mine = line({ phase: "call", picker: 0, turn: -1 }, { options: opts });
-  check("your call is a prompt about calling", mine === "Call an ace — your partner holds it.", mine);
+  check("your call is a prompt about calling", mine === "Call an ace, or go it alone.", mine);
   check("...and never mentions whose play it is", !/play/i.test(mine), mine);
 
   const none = line({ phase: "call", picker: 0, turn: -1 }, { options: [] });
@@ -138,8 +138,16 @@ const line = (g, over = {}) =>
     callLabel({ kind: "under", suit: "H" }));
 
   check("a mixed set gets a prompt that doesn't say 'ace'",
-    callPrompt([{ kind: "ten", suit: "S" }]) === "Call your partner.",
+    callPrompt([{ kind: "ten", suit: "S" }]) === "Call your partner, or go it alone.",
     callPrompt([{ kind: "ten", suit: "S" }]));
+
+  // Going alone is a choice on every hand, so every prompt that offers a call
+  // has to offer it too — otherwise the line contradicts the button under it.
+  check("an all-ace prompt offers the alone option",
+    /go it alone/.test(callPrompt([{ kind: "ace", suit: "C" }])),
+    callPrompt([{ kind: "ace", suit: "C" }]));
+  check("...and so does a prompt with no options, in the other voice",
+    callPrompt([]) === "No callable suit. You're going alone.", callPrompt([]));
 
   // The rule itself, which lived in two screens and no engine.
   const hand = [

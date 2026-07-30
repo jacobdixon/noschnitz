@@ -29,7 +29,7 @@ process.env.KV_REST_API_TOKEN ||= "test";
 import { call } from "./_mockhttp.mjs";
 import { _resetStore } from "../api/_lib/store.js";
 import { createMemoryStore } from "../src/store/memory.js";
-import { cid, legalPlays } from "../src/engine.js";
+import { cid, legalPlays, freshHand, ALL_CARDS } from "../src/engine.js";
 import { seatOf, isBootable } from "../src/table.js";
 
 import createTableRoute from "../api/tables/index.js";
@@ -413,6 +413,82 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
     `sizes=${after.g.hands.map((h) => (h ? h.length : "null")).join(",")}`);
   check("the redealt hand starts from a clean pass count", after.g.passes < 5);
   assertNoLeak("fifth pass", res.body, after, hostSeat, HOST, ALL_IDS);
+}
+
+// --- going alone by choice, with a partner on offer -----------------------
+{
+  // The picker may decline a perfectly good call and take the 4x. The route
+  // used to refuse that: a null calledSuit with a non-empty option list fell
+  // past the `no-callable-suit` branch into `bad-call` and came back 400, so
+  // the only picker who could go alone was one with nobody to call.
+  //
+  // Rigged rather than driven, for the same reason the all-pass case above is:
+  // reaching a HUMAN bury with something callable depends on which seat the AI
+  // let pick, so driving it would silently skip on most runs.
+  await call(startRoute, { method: "POST", query: { id: tableId }, body: { playerId: HOST } });
+
+  const live = await store.get(tableId);
+  const hostSeat = seatOf(live, HOST);
+  // Eight cards holding two clubs and no club ace: clubs is callable, so going
+  // alone here is a choice and not the absence of one.
+  const hand = [
+    { rank: "Q", suit: "C" }, { rank: "Q", suit: "S" }, { rank: "J", suit: "D" },
+    { rank: "A", suit: "D" }, { rank: "10", suit: "D" }, { rank: "K", suit: "C" },
+    { rank: "9", suit: "C" }, { rank: "8", suit: "H" },
+  ];
+  // The whole table is dealt, not just the picker's seat. Handing one seat a
+  // hand cut from the same deck the others already hold would put duplicate
+  // cards on the table, and the leak sweep — which decides ownership by card
+  // id — would then read the picker's own cards as somebody else's.
+  const mine = new Set(hand.map(cid));
+  const others = ALL_CARDS.filter((c) => !mine.has(cid(c)));
+  const dealt = freshHand(live.g.dealer, live.g.scores, live.g.handNum);
+  let d = 0;
+  const rigged = {
+    ...live,
+    version: live.version + 1,
+    // Redealing the same hand number by hand leaves the AI log describing cards
+    // that now belong to somebody else, and the leak sweep reads that — rightly
+    // — as a seat's card appearing in a payload it has no business being in.
+    aiLog: [],
+    aiLogHand: live.g.handNum,
+    g: {
+      ...dealt,
+      phase: "bury",
+      picker: hostSeat,
+      leader: hostSeat,
+      turn: hostSeat,
+      pickTurn: hostSeat,
+      // The picker already holds the blind; six of the eight stay.
+      blind: [],
+      hands: dealt.hands.map((_, i) => (i === hostSeat ? hand : others.slice(d, (d += 6)))),
+    },
+  };
+  await store.put(rigged, live.version);
+
+  const buried = hand.slice(0, 2);
+  const kept = hand.slice(2);
+  check("rigged a bury with a partner genuinely available",
+    callableSuits(kept, buried).length > 0,
+    JSON.stringify(callableSuits(kept, buried)));
+
+  const solo = await call(buryRoute, {
+    method: "POST", query: { id: tableId },
+    body: { playerId: HOST, cards: buried, calledSuit: null, calledRank: "A" },
+  });
+  check("going alone is accepted with a suit still callable",
+    solo.status === 200, `got ${solo.status} ${solo.body?.error?.code || ""}`);
+
+  const soloState = await store.get(tableId);
+  check("no suit was called", soloState.g?.calledSuit === null, `got ${soloState.g?.calledSuit}`);
+  check("the picker has no partner", soloState.g?.partner === null, `got ${soloState.g?.partner}`);
+  check("and the hand is scored as an alone hand", soloState.g?.alone === true);
+  assertNoLeak("go alone", solo.body, soloState, hostSeat, HOST, ALL_IDS);
+  // Declaring alone is public — it is announced at the table — so unlike an
+  // orphaned called ace, the redacted view is entitled to say so. leaktest
+  // owns the per-seat proof of that; this only checks the route ships it.
+  check("the view reports the picker as alone",
+    solo.body?.table?.g?.alone === true, JSON.stringify(solo.body?.table?.g?.alone));
 }
 
 // --- naming: set at the door, changeable afterwards -----------------------

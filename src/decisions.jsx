@@ -14,10 +14,19 @@
    Kept as buttons that wrap rather than a row that scrolls, because six of
    them is the realistic upper bound once ten-calling lands and a horizontal
    scroller hides choices you did not know you had.
+
+   Going alone is offered here ALWAYS, not only when the option list comes back
+   empty. Those are two different things that happened to render the same:
+   "nobody is callable, so you are alone" is an announcement, and "I would
+   rather have the 4x than a partner" is a decision. The AI has been allowed to
+   make that decision since ALONE_HANDSTRENGTH landed — `aiBuryAndCall` declines
+   a perfectly good call on a strong enough hand — and the human simply had no
+   button for it. The engine and the scoring never needed anything: a null call
+   is a null call however it arose.
    ========================================================================= */
 import React from "react";
 import { SUIT_SYM, SUIT_NAME } from "./engine.js";
-import { btnGold } from "./ui.jsx";
+import { btnGold, btnPlain, felt } from "./ui.jsx";
 
 // Hearts is the only callable red suit — diamonds are trump — and the gold
 // button is light, so the glyph takes the dark red that reads on it rather
@@ -32,6 +41,15 @@ const glyph = (suit) => (
  * @param {boolean}  disabled
  */
 export function CallButtons({ options = [], onCall, disabled }) {
+  // Armed only in the case where going alone is a choice. Nothing about the
+  // call step is undoable — the next thing that happens is the opening lead —
+  // and the difference between a called partner and no partner is the whole
+  // hand: 2x/1x across two people becomes 4x against four. A stray tap on a
+  // 12-point hand is a worse outcome than an extra tap on a 20-point one.
+  const [armed, setArmed] = React.useState(false);
+
+  // Forced, not chosen: no partner exists to give up, so there is nothing to
+  // confirm and a confirmation would just be a step in the way.
   if (options.length === 0) {
     return (
       <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -43,19 +61,36 @@ export function CallButtons({ options = [], onCall, disabled }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-      {options.map((opt) => (
-        <button
-          key={`${opt.kind}-${opt.suit}`}
-          style={btnGold}
-          disabled={disabled}
-          onClick={() => onCall(opt)}
-        >
-          {opt.kind === "ten" ? "Call the " : "Call "}
-          {glyph(opt.suit)} {SUIT_NAME[opt.suit]}
-          {opt.kind === "ten" ? " ten" : opt.kind === "under" ? " under" : ""}
-        </button>
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        {options.map((opt) => (
+          <button
+            key={`${opt.kind}-${opt.suit}`}
+            style={btnGold}
+            disabled={disabled}
+            // Choosing a partner is also how you back out of an armed alone —
+            // there is no separate cancel to find.
+            onClick={() => onCall(opt)}
+          >
+            {opt.kind === "ten" ? "Call the " : "Call "}
+            {glyph(opt.suit)} {SUIT_NAME[opt.suit]}
+            {opt.kind === "ten" ? " ten" : opt.kind === "under" ? " under" : ""}
+          </button>
+        ))}
+      </div>
+
+      {/* Plain rather than gold, and on its own row: calling a partner is the
+          ordinary move and should still look like it. This is the one you
+          reach past the others for. */}
+      <button
+        style={armed
+          ? { ...btnPlain, background: "#B3392F33", borderColor: felt.red, color: felt.cream }
+          : btnPlain}
+        disabled={disabled}
+        onClick={() => (armed ? onCall(null) : setArmed(true))}
+      >
+        {armed ? "Tap again — no partner, 4×" : "Go alone"}
+      </button>
     </div>
   );
 }

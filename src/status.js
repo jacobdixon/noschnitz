@@ -29,11 +29,17 @@ export function callLabel({ kind, suit }) {
   return `Call ${suited}`;
 }
 
-/** The prompt above the call buttons. */
+/** The prompt above the call buttons.
+ *
+ * The two branches with options both name the alternative now, because there
+ * is one: going alone is a choice on every hand, not just the leftover when
+ * nothing is callable. A prompt that says only "Call an ace" while a "Go
+ * alone" button sits underneath it is telling the player the screen is wrong.
+ */
 export function callPrompt(options) {
   if (!options || options.length === 0) return "No callable suit. You're going alone.";
-  if (options.some((o) => o.kind !== "ace")) return "Call your partner.";
-  return "Call an ace — your partner holds it.";
+  if (options.some((o) => o.kind !== "ace")) return "Call your partner, or go it alone.";
+  return "Call an ace, or go it alone.";
 }
 
 /**

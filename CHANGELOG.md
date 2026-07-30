@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.43.0] - 2026-07-30 (`PENDING`)
+- **The picker can go alone even when a partner is available.** "Go alone" only
+  appeared when `callOptions()` came back empty — i.e. when there was nothing to
+  decide — so the human could only ever be alone by accident of the deal. The
+  AI has been allowed to make this decision since `ALONE_HANDSTRENGTH` landed:
+  `aiBuryAndCall` declines a perfectly good call on a strong enough hand and
+  takes the 4×. The engine, `assignPartner`, `viewFor` and the scoring all
+  already handled a chosen null call identically to a forced one; what was
+  missing was a button and a server that would accept it.
+  - `api/tables/[id]/bury.js` used to reject it. A null `calledSuit` with a
+    non-empty option list fell past the `no-callable-suit` branch into
+    `bad-call` and came back 400 — "You can't call that suit", about a suit the
+    picker had deliberately not called. Declining to call is now always legal;
+    the remaining checks are only about naming a partner you aren't entitled to
+    name.
+  - The button is deliberately not gold and sits on its own row under the call
+    buttons: calling a partner is the ordinary move and should still look like
+    it. When it is a genuine choice it arms on the first tap and commits on the
+    second ("Tap again — no partner, 4×"), because nothing in the call step is
+    undoable and a stray tap turns a 2×/1× hand across two people into a 4×
+    against four. When no suit is callable it stays a single unconfirmed tap —
+    there is no partner being given up, so there is nothing to confirm.
+  - `status.callPrompt()` names the alternative in both branches that offer a
+    call ("Call an ace, or go it alone."). A prompt saying only "Call an ace"
+    over a "Go alone" button tells the player the screen is wrong.
+  - Covered end to end in `scripts/e2etest.mjs`: the table is rigged into a
+    human bury with clubs genuinely callable, and the route is asked to go
+    alone anyway. Rigged rather than driven for the same reason the all-pass
+    case is — reaching a *human* bury with something callable depends on which
+    seat the AI let pick, so driving it would silently skip on most runs. The
+    rig deals all five hands from `ALL_CARDS` and clears `aiLog`, since handing
+    one seat cards the others already hold makes the leak sweep read the
+    picker's own hand as somebody else's.
+
 ## [0.42.0] - 2026-07-30 (`ce9fc11`)
 - **Every modal's buttons are right-aligned now, primary on the right.** The
   game is played one-handed on a phone, and the buttons were laid out

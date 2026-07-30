@@ -27,6 +27,13 @@
 
    If no suit qualifies, the picker is genuinely alone and calledSuit must be
    null — a client claiming a suit anyway is rejected.
+
+   The reverse is NOT a rejection: a null calledSuit is always legal, whether
+   or not something was callable. Going alone for the 4x is a decision the
+   picker is entitled to make on any hand, and this endpoint used to be the
+   thing stopping them — `opts.length > 0` with a null call fell through to
+   `bad-call`, which read as "you can't call that suit" about a suit the
+   player had deliberately not called.
    ========================================================================= */
 import { seatOf, commit, markSeen } from "../../../src/table.js";
 import { cid, assignPartner, callOptions } from "../../../src/engine.js";
@@ -107,11 +114,14 @@ export default async function handler(req, res) {
     const hand = g.hands[seat].filter((c) => !wanted.includes(cid(c)));
     const opts = callableSuits(hand, held);
 
-    const chosen = opts.find((o) => o.suit === calledSuit && o.rank === calledRank);
-    if (opts.length === 0) {
-      if (calledSuit !== null) return { table, denied: "no-callable-suit", seat };
-    } else if (!chosen) {
-      return { table, denied: "bad-call", seat };
+    // Declining to call is always allowed; the checks below are about naming a
+    // partner you are not entitled to name.
+    const chosen = calledSuit === null
+      ? null
+      : opts.find((o) => o.suit === calledSuit && o.rank === calledRank);
+    if (calledSuit !== null) {
+      if (opts.length === 0) return { table, denied: "no-callable-suit", seat };
+      if (!chosen) return { table, denied: "bad-call", seat };
     }
 
     // Under is only a call once a card carries it. Reject the call outright
