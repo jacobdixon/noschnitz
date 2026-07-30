@@ -712,15 +712,17 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // once so the two cannot disagree — and so your own score is held back by
   // the same rule as everyone else's.
   const view = displayState(g, frame, optimistic, caughtUp, !narration.done);
+  // The six that would be left once these two go down. The call options and
+  // the "go alone" offer are both judged on it, so it is derived once rather
+  // than twice — solo gets it for free because its bury has already happened
+  // by the time the call step renders, and the table's has not.
+  const myKept =
+    g.phase === "bury" && g.picker === mySeat && selected.length === 2
+      ? (g.hands[mySeat] || []).filter((c) => !selected.some((x) => cid(x) === cid(c)))
+      : null;
   // Recomputed here only to draw buttons — api/tables/[id]/bury.js recomputes
   // it server-side and is the authority, so a tampered client gets a 400.
-  const myCallOptions =
-    g.phase === "bury" && g.picker === mySeat && selected.length === 2
-      ? callOptions(
-          (g.hands[mySeat] || []).filter((c) => !selected.some((x) => cid(x) === cid(c))),
-          selected
-        )
-      : [];
+  const myCallOptions = myKept ? callOptions(myKept, selected) : [];
   const legal = isMyTurn ? legalPlays(g, mySeat).map(cid) : [];
 
   const onCardClick = (card) => {
@@ -951,6 +953,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
                 isMyTurn,
                 selected: selected.length,
                 options: myCallOptions,
+                keptHand: myKept,
                 narrating: narration.done ? null : narration.shown[narration.shown.length - 1],
                 dealing: !narration.done,
               })
@@ -991,6 +994,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
       {g.phase === "bury" && g.picker === mySeat && callStep && !underOpt && (
         <CallButtons
           options={myCallOptions}
+          hand={myKept}
           disabled={busy}
           onCall={(opt) => {
             if (opt && opt.kind === "under") {

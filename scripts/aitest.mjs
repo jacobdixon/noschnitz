@@ -21,7 +21,7 @@
 import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
   isTrump, cid, freshHand, aiChooseCard, trickSecurity,
-  callOptions, cardPts, ALONE_HANDSTRENGTH,
+  callOptions, cardPts, ALONE_HANDSTRENGTH, ALONE_OFFER_STRENGTH, mayGoAlone,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
 import { advanceAI } from "../src/ai-runner.js";
@@ -868,6 +868,51 @@ for (let humans = 0; humans <= 5; humans++) {
     strong.buried.map(cid).sort().join(" ") === "10S AH", strong.buried.map(cid).join(" "));
   check("...and goes alone deliberately", strong.call === null &&
     handStrength(strong.hand) >= ALONE_HANDSTRENGTH, `${handStrength(strong.hand)}`);
+}
+
+/* ------------- when the "go alone" button is worth offering --------------- */
+{
+  const C = (x) => ({ rank: x.slice(0, -1), suit: x.slice(-1) });
+  const H = (a) => a.map(C);
+
+  // A separate bar from the AI's, and deliberately one point higher — see
+  // ALONE_OFFER_STRENGTH in engine.js for the measurement. The AI decides on
+  // all eight and buries to match the plan; a human decides after the bury is
+  // already spent, and at 17 that costs about two points a hand against just
+  // calling somebody, in 4 of 4 seeds.
+  check("the offer bar sits above the AI's own", ALONE_OFFER_STRENGTH > ALONE_HANDSTRENGTH,
+    `${ALONE_OFFER_STRENGTH} vs ${ALONE_HANDSTRENGTH}`);
+
+  // The reported case: five trump and an ace, the shape that used to be forced
+  // alone and now gets an under call offered instead. Plain trump reads 10 —
+  // nowhere near — and going alone there measured 11 points a hand worse than
+  // calling, so the button stays off.
+  const fiveAndAnAce = H(["AD", "10D", "KD", "9D", "8D", "AC"]);
+  check("five plain trump and an ace is not offered the button",
+    !mayGoAlone(fiveAndAnAce), `strength ${handStrength(fiveAndAnAce)}`);
+
+  // The same shape in POWER trump is a different hand entirely, and that one
+  // is offered it: five trump that are three Queens and two Jacks reads
+  // 10 + 6 + 2 = 18. Which is the honest answer to "five trump and an ace" —
+  // it depends entirely on which five, and the bar is where it starts to.
+  const fivePowerAndAnAce = H(["QC", "QS", "QH", "JD", "JC", "AC"]);
+  check("...but the same shape in Queens and Jacks is",
+    mayGoAlone(fivePowerAndAnAce), `strength ${handStrength(fivePowerAndAnAce)}`);
+  // One notch weaker — a Jack swapped for a plain diamond — and it is not.
+  const oneShort = H(["QC", "QS", "QH", "JD", "AD", "AC"]);
+  check("...and one power trump short of the bar is not",
+    !mayGoAlone(oneShort), `strength ${handStrength(oneShort)}`);
+
+  // Exactly at the bar counts — 18 is where alone stops losing, not where it
+  // starts winning big.
+  const atBar = H(["QC", "QS", "JD", "JC", "AD", "10D"]);
+  check("the bar itself is inside the offer", handStrength(atBar) === ALONE_OFFER_STRENGTH &&
+    mayGoAlone(atBar), `strength ${handStrength(atBar)}`);
+
+  // And the guard that keeps a missing hand from reading as a strong one. The
+  // component renders before a bury is chosen on the table screen, and a
+  // crash-free `undefined` there has to mean "don't offer", not "offer".
+  check("no hand is not an offer", !mayGoAlone(undefined) && !mayGoAlone(null) && !mayGoAlone([]));
 }
 
 /* ------------------------------- Report --------------------------------- */

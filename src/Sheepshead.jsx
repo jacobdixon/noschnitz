@@ -227,7 +227,7 @@ export default function Sheepshead({ onPlayWithFriends }) {
       {/* Status + actions */}
       <div style={{ flexShrink: 0, padding: "7px 12px", textAlign: "center", minHeight: 84 }}>
         <div style={{ fontSize: 16, marginBottom: 7, color: felt.creamDim, fontStyle: "italic" }}>
-          {statusLine({ g, names, mySeat: 0, isMyTurn: g.turn === 0, selected: g.selected.length, options: g.callOptions })}
+          {statusLine({ g, names, mySeat: 0, isMyTurn: g.turn === 0, selected: g.selected.length, options: g.callOptions, keptHand: g.hands[0] })}
         </div>
 
         {g.phase === "picking" && g.pickTurn === 0 && g.passes < 5 && (
@@ -243,8 +243,10 @@ export default function Sheepshead({ onPlayWithFriends }) {
           </button>
         )}
 
+        {/* The bury has already happened by this phase, so hands[0] IS the six
+            the alone offer is judged on. */}
         {g.phase === "call" && (
-          <CallButtons options={g.callOptions} onCall={callAce} />
+          <CallButtons options={g.callOptions} hand={g.hands[0]} onCall={callAce} />
         )}
 
         {g.phase === "under" && (

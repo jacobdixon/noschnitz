@@ -12,7 +12,7 @@
    Solo's copy wins throughout. It is the one that reads like a person talking
    about a card game rather than a state machine reporting its state.
    ========================================================================= */
-import { SUIT_SYM, SUIT_NAME, trickWinner } from "./engine.js";
+import { SUIT_SYM, SUIT_NAME, trickWinner, mayGoAlone } from "./engine.js";
 
 // Seat 0 in solo is literally called "You", and a table has to derive it.
 // Getting this wrong reads as a stranger sitting in your chair — or, worse,
@@ -29,11 +29,21 @@ export function callLabel({ kind, suit }) {
   return `Call ${suited}`;
 }
 
-/** The prompt above the call buttons. */
-export function callPrompt(options) {
+/** The prompt above the call buttons.
+ *
+ * Takes the six kept as well as the options, because the alone offer is gated
+ * on the hand — a prompt that says "or go it alone" over a screen with no such
+ * button is telling the player the screen is wrong, and so is one that omits
+ * it when the button is right there. Reads the gate from the engine rather
+ * than a second copy of the threshold.
+ */
+export function callPrompt(options, hand) {
   if (!options || options.length === 0) return "No callable suit. You're going alone.";
-  if (options.some((o) => o.kind !== "ace")) return "Call your partner.";
-  return "Call an ace — your partner holds it.";
+  const alone = mayGoAlone(hand);
+  if (options.some((o) => o.kind !== "ace")) {
+    return alone ? "Call your partner, or go it alone." : "Call your partner.";
+  }
+  return alone ? "Call an ace, or go it alone." : "Call an ace — your partner holds it.";
 }
 
 /**
@@ -43,11 +53,13 @@ export function callPrompt(options) {
  * @param {boolean}  isMyTurn     already accounts for the paced reveal
  * @param {number}   selected     cards picked for the bury so far
  * @param {object[]} options      call options, when it is your call
+ * @param {object[]} keptHand     the six kept after the bury, when it is your
+ *                                call — what the "go alone" offer is judged on
  * @param {object}   narrating    the opening beat being shown right now, if the
  *                                table is still replaying the start of a hand
  * @param {boolean}  dealing      the opening is still to come, or in progress
  */
-export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options, narrating, dealing }) {
+export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, options, keptHand, narrating, dealing }) {
   if (!g) return "";
   const name = (seat) => who(names, mySeat, seat);
 
@@ -104,7 +116,7 @@ export function statusLine({ g, names, mySeat = 0, isMyTurn, selected = 0, optio
   }
 
   if (g.phase === "call") {
-    return g.picker === mySeat ? callPrompt(options) : `${name(g.picker)} is calling…`;
+    return g.picker === mySeat ? callPrompt(options, keptHand) : `${name(g.picker)} is calling…`;
   }
 
   if (g.phase === "playing") {

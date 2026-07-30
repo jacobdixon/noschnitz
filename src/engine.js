@@ -315,6 +315,40 @@ export function chooseUnderCard(hand) {
 // accident to a hand this far below the bar.
 export const ALONE_HANDSTRENGTH = 17;
 
+// When the "Go alone" button is worth putting in front of a human, which is a
+// DIFFERENT question from the one above and measured to a different answer.
+//
+// `ALONE_HANDSTRENGTH` decides what the AI does with a hand it is still holding
+// all eight of: it picks the bury to match the plan, banking points instead of
+// protecting a call. By the time a human sees the button the bury is already
+// spent, so the only thing left to choose is the call — and that is what this
+// was measured on. Both arms got the identical deal AND the identical bury,
+// differing in nothing but the call, with every seat on the unchanged engine;
+// the metric is the picker's own handDelta, which already carries the 4x.
+//
+// Over 20,239 pickers who had a partner available (6,000 hands x 4 seeds),
+// alone minus calling, in points per hand to the picker:
+//
+//     strength 15   -5.9      alone better on 18.0% of hands
+//     strength 16   -4.0                      24.5%
+//     strength 17   -1.9                      31.7%     negative in 4 of 4 seeds
+//     strength 18   +0.3                      49.7%     positive in 3 of 4 seeds
+//     strength 19   +2.5                      68.7%     positive in 4 of 4 seeds
+//     strength 20   +4.3                      91.1%
+//
+// So 18, not 17. At the AI's bar the picker is still giving up about two points
+// a hand by declining the partner, consistently across every seed — offering it
+// there would be offering a losing move. This is a UI affordance and not a
+// rule: the server deliberately does not enforce it, because going alone is
+// legal at any strength and a client that wants to do it anyway is only hurting
+// itself.
+export const ALONE_OFFER_STRENGTH = 18;
+
+// Tolerant of a missing hand on purpose — it answers "should we offer this?",
+// and the safe answer when we do not know is no.
+export const mayGoAlone = (hand) =>
+  Array.isArray(hand) && handStrength(hand) >= ALONE_OFFER_STRENGTH;
+
 // The trump the bury falls back on when the hand holds no fail card at all: a
 // diamond below the King, so 7, 8 or 9 — no points, and beaten by every other
 // trump in the deck. Buying a partner spends a trump too, but by a different
