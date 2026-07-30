@@ -140,7 +140,8 @@ const midTrick3 = (() => {
   }
   return applyPlay(g, 1, C("8C")); // Gus leads the club; Bunny (seat 2) to play
 })();
-const bunnyOptions = legalPlays(midTrick3, 2).map((card) => ({
+const bunnyLegal = legalPlays(midTrick3, 2);
+const bunnyOptions = bunnyLegal.map((card) => ({
   card, value: solveHandValue(applyPlay(midTrick3, 2, card), new Map(), { n: 0 }) + 22,
 }));
 check("every one of Bunny's trick-3 options is worth the same",
@@ -151,14 +152,52 @@ for (const th of REPORTED_TRICKS) {
   for (const [p, c] of th) reported = applyPlay(reported, p, C(c));
   reported = resolveTrick(reported);
 }
-const t0 = Date.now();
+// Cost, measured against this machine rather than against a stopwatch.
+//
+// This used to assert a flat `gradeMs < 1000`, and it was wrong twice over.
+// The label claimed grading "renders synchronously", which stopped being true
+// when it moved into grader.worker.js — that file documents the solve as a
+// median of ~800ms and up to ~8s precisely because it is NOT on the render
+// path any more. And an absolute millisecond budget measures the runner, not
+// the code: on a slow container the identical commit failed on master having
+// passed on its own pull request, which skipped the Release job and quietly
+// left beta two versions behind.
+//
+// So the budget is now a RATIO against a reference solve on the same machine
+// and the same hand. Machine speed divides out, and what is left is the thing
+// actually worth guarding: grading a whole hand must not become dramatically
+// more expensive per solve than solving one position. A real regression — an
+// exponential blowup, a lost transposition table — moves this by an order of
+// magnitude, which is what the bound is set to catch. Observed at 55-75x on the
+// container this was written on; 150 leaves better than twice that headroom.
+// The ratio is printed on every run, so if it drifts the number is visible long
+// before the bound is reached.
+const solveOnce = () => bunnyLegal.map((card) =>
+  solveHandValue(applyPlay(midTrick3, 2, card), new Map(), { n: 0 }));
+
+solveOnce();                      // warm: first call pays for JIT, not for work
+gradeHandPlays(reported);
+// Averaged over several runs. One reference solve is ~15ms, small enough that
+// timer granularity and scheduling noise show up in the ratio; averaging pulls
+// the denominator's spread well under the numerator's.
+const REF_RUNS = 5;
+const r0 = process.hrtime.bigint();
+for (let i = 0; i < REF_RUNS; i++) solveOnce();
+const refMs = Number(process.hrtime.bigint() - r0) / 1e6 / REF_RUNS;
+const t0 = process.hrtime.bigint();
 const grade = gradeHandPlays(reported);
-const gradeMs = Date.now() - t0;
+const gradeMs = Number(process.hrtime.bigint() - t0) / 1e6;
+
 check("no worst play is invented on a hand the defence could not affect",
   grade.worst === null,
   grade.worst ? `flagged ${NAMES[grade.worst.player]} ${cid(grade.worst.card)}` : "");
-check("grading a hand stays interactive (both call sites render synchronously)",
-  gradeMs < 1000, `${gradeMs}ms`);
+check("the reference solve is big enough to time against", refMs > 1,
+  `reference took ${refMs.toFixed(1)}ms`);
+console.log(`\n  grading cost: ${gradeMs.toFixed(0)}ms against a ${refMs.toFixed(1)}ms reference solve ` +
+  `= ${(gradeMs / refMs).toFixed(0)}x (bound 150x)`);
+check("grading a hand costs no more than 150 reference solves",
+  gradeMs / refMs < 150,
+  `grade ${gradeMs.toFixed(0)}ms / reference ${refMs.toFixed(1)}ms = ${(gradeMs / refMs).toFixed(1)}x`);
 
 /* ---------- 3. an all-forced hand yields no grade at all ---------- */
 // gradeHandPlays skips decisions with one legal card; a hand where nothing is

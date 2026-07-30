@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.38.2] - 2026-07-30
+- **The grading cost test measured the machine, not the code.** It asserted a flat
+  `gradeMs < 1000` under a label claiming grading "renders synchronously" — and that
+  stopped being true when the solve moved into `grader.worker.js`, which documents it
+  as a median of ~800ms and up to ~8s precisely *because* it is off the render path.
+  The test was enforcing a contract the design had deliberately abandoned.
+- It is now a RATIO against a reference solve on the same machine and the same hand,
+  so machine speed divides out. What is left is the thing worth guarding: grading a
+  whole hand must not become dramatically more expensive per solve than solving one
+  position. Observed at roughly 50-70x, bounded at 150x, and the ratio is printed on
+  every run so drift is visible long before the bound is reached. The reference is
+  averaged over five runs because a single ~15ms solve is small enough for timer noise
+  to show up in the quotient.
+- **`CLAUDE.md`'s deploy section told you to fast-forward `beta` by hand.**
+  `.github/workflows/release.yml` has done that automatically for some time, so
+  following the doc was at best a no-op. Rewritten: if beta is behind, the question is
+  never "did somebody forget to push" but "why did the Release job not run".
+- The same section now records the failure mode that cost a deploy today. `Release` is
+  gated on CI *succeeding*, so a marginal test can pass on a pull request, fail on
+  `master` for the identical commit, and **silently withhold the deploy** — beta stays
+  put and production is never content-verified. A flaky assertion in this repo is a
+  deploy outage with extra steps.
+- Also added there: a green commit status on `master` does not mean production shipped,
+  because Vercel attributes the *beta* build to the same commit; and a stale local
+  `master` can leave the working tree dozens of commits behind without complaining,
+  which is worth a `git log --oneline -1` before believing anything you read.
+- **The tuning conventions now describe both harnesses.** `scripts/coalitiontest.mjs`
+  is required for any rule about co-operating with teammates, because a one-seat A/B
+  structurally cannot see them. 0.38.0 is written up there as the worked example: the
+  harnesses disagreed, and the answer was to build the one that asked the real question
+  rather than to prefer whichever agreed. Two matching notes: one `simulate` run is not
+  evidence at 3,000 unpaired hands, and any new piece of partnership evidence belongs
+  in `partnerWeight`, calibrated by sweeping it in `belieftest` rather than chosen.
+
 ## [0.38.1] - 2026-07-30
 - **Fixes a flaky assertion that turned master red and stranded beta.** The
   belief calibration test asserted a flat 2pp error bar on every bucket. The
