@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.38.1] - 2026-07-30
+- **Fixes a flaky assertion that turned master red and stranded beta.** The
+  belief calibration test asserted a flat 2pp error bar on every bucket. The
+  trump-lead read's confident bucket sits at 1.8-2.2pp, so the test passed on
+  the pull request and failed on master for the identical commit — and because
+  `Release` fires only on CI *succeeding*, beta was never fast-forwarded and
+  production was never content-verified.
+- The bar is now direction-aware, which is a design decision rather than a
+  convenience. `TRUMP_LEAD_ODDS` is deliberately set below its best-calibrated
+  value (40 against 64) so the read stays honest against off-book human
+  opponents it was never calibrated on, and the price of that choice is exactly
+  this: the read predicts 97% where the truth is 99%. **Under-confidence is the
+  intended error**; over-confidence is the one that makes the play code act on a
+  lie. So the conservative direction gets 5pp and the dangerous one keeps 2pp.
+  Verified still strict enough to fail the 8.6pp that odds of 8 produce.
+- Worth recording that the failure was NOT sampling noise, which was the first
+  guess. With n=4178 in that bucket the standard error is about 0.27pp, so 2.2pp
+  is roughly eight sigma — a real, small, deliberate miscalibration. The test was
+  wrong about what it should be asserting, not unlucky.
+
 ## [0.38.0] - 2026-07-30
 - **Defenders stop taking tricks off each other on a hunch.** The overtake brake
   — "taking a trick off our own side has to buy something" — was gated on the
