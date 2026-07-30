@@ -15,17 +15,25 @@
    them is the realistic upper bound once ten-calling lands and a horizontal
    scroller hides choices you did not know you had.
 
-   Going alone is offered here ALWAYS, not only when the option list comes back
-   empty. Those are two different things that happened to render the same:
-   "nobody is callable, so you are alone" is an announcement, and "I would
-   rather have the 4x than a partner" is a decision. The AI has been allowed to
-   make that decision since ALONE_HANDSTRENGTH landed — `aiBuryAndCall` declines
-   a perfectly good call on a strong enough hand — and the human simply had no
-   button for it. The engine and the scoring never needed anything: a null call
-   is a null call however it arose.
+   Going alone is offered here whether or not the option list is empty, which
+   it was not before. Those are two different things that happened to render
+   the same: "nobody is callable, so you are alone" is an announcement, and "I
+   would rather have the 4x than a partner" is a decision. The AI has been
+   allowed to make that decision since ALONE_HANDSTRENGTH landed —
+   `aiBuryAndCall` declines a perfectly good call on a strong enough hand — and
+   the human simply had no button for it. The engine and the scoring never
+   needed anything: a null call is a null call however it arose.
+
+   It is GATED on `mayGoAlone`, though, because "always available" and "always
+   worth showing" are not the same either. Measured, declining a partner is
+   worth about -4 points a hand at strength 16 and -2 at 17; it only turns
+   positive at 18, which is where the bar sits. See ALONE_OFFER_STRENGTH in
+   engine.js for the numbers. The rule lives there rather than here so the solo
+   screen and the table screen cannot end up disagreeing about it — the same
+   reason this file renders options instead of suits.
    ========================================================================= */
 import React from "react";
-import { SUIT_SYM, SUIT_NAME } from "./engine.js";
+import { SUIT_SYM, SUIT_NAME, mayGoAlone } from "./engine.js";
 import { btnGold, btnPlain, felt } from "./ui.jsx";
 
 // Hearts is the only callable red suit — diamonds are trump — and the gold
@@ -37,10 +45,12 @@ const glyph = (suit) => (
 
 /**
  * @param {object[]} options   from engine.callOptions()
+ * @param {object[]} hand      the six kept after the bury — what the alone
+ *                             offer is judged on. Omitted means "don't offer".
  * @param {Function} onCall    (option | null) => void; null means going alone
  * @param {boolean}  disabled
  */
-export function CallButtons({ options = [], onCall, disabled }) {
+export function CallButtons({ options = [], hand, onCall, disabled }) {
   // Armed only in the case where going alone is a choice. Nothing about the
   // call step is undoable — the next thing that happens is the opening lead —
   // and the difference between a called partner and no partner is the whole
@@ -59,6 +69,10 @@ export function CallButtons({ options = [], onCall, disabled }) {
       </div>
     );
   }
+
+  // Below the bar there is nothing to offer, so this collapses back to exactly
+  // the row of call buttons it has always been.
+  const offerAlone = mayGoAlone(hand);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
@@ -82,15 +96,17 @@ export function CallButtons({ options = [], onCall, disabled }) {
       {/* Plain rather than gold, and on its own row: calling a partner is the
           ordinary move and should still look like it. This is the one you
           reach past the others for. */}
-      <button
-        style={armed
-          ? { ...btnPlain, background: "#B3392F33", borderColor: felt.red, color: felt.cream }
-          : btnPlain}
-        disabled={disabled}
-        onClick={() => (armed ? onCall(null) : setArmed(true))}
-      >
-        {armed ? "Tap again — no partner, 4×" : "Go alone"}
-      </button>
+      {offerAlone && (
+        <button
+          style={armed
+            ? { ...btnPlain, background: "#B3392F33", borderColor: felt.red, color: felt.cream }
+            : btnPlain}
+          disabled={disabled}
+          onClick={() => (armed ? onCall(null) : setArmed(true))}
+        >
+          {armed ? "Tap again — no partner, 4×" : "Go alone"}
+        </button>
+      )}
     </div>
   );
 }

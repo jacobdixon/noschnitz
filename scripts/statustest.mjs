@@ -48,14 +48,31 @@ const line = (g, over = {}) =>
 }
 
 /* ---------------------------------- calling ------------------------------- */
+// Six kept cards over ALONE_OFFER_STRENGTH: 6 trump, three Queens and a Jack,
+// which is 12 + 6 + 1 = 19 against a bar of 18.
+const ALONE_SIX = [
+  { rank: "Q", suit: "C" }, { rank: "Q", suit: "S" }, { rank: "Q", suit: "H" },
+  { rank: "J", suit: "D" }, { rank: "10", suit: "D" }, { rank: "A", suit: "D" },
+];
+// ...and a hand under it: 5 plain trump and an ace, which is 10.
+const ORDINARY_SIX = [
+  { rank: "A", suit: "D" }, { rank: "10", suit: "D" }, { rank: "K", suit: "D" },
+  { rank: "9", suit: "D" }, { rank: "8", suit: "D" }, { rank: "A", suit: "C" },
+];
 {
   // THE bug this file exists for. The table had no call branch, so it fell
   // through to the play branch — and with no turn set during the call it
   // announced "Someone's play…" while you were choosing an ace.
   const opts = [{ kind: "ace", suit: "C" }];
   const mine = line({ phase: "call", picker: 0, turn: -1 }, { options: opts });
-  check("your call is a prompt about calling", mine === "Call an ace, or go it alone.", mine);
+  check("your call is a prompt about calling", mine === "Call an ace — your partner holds it.", mine);
   check("...and never mentions whose play it is", !/play/i.test(mine), mine);
+
+  // The prompt has to agree with the buttons underneath it: alone is only
+  // named when the hand is strong enough for the button to be there.
+  const strong = line({ phase: "call", picker: 0, turn: -1 }, { options: opts, keptHand: ALONE_SIX });
+  check("a hand over the bar is told it may go alone",
+    strong === "Call an ace, or go it alone.", strong);
 
   const none = line({ phase: "call", picker: 0, turn: -1 }, { options: [] });
   check("no callable suit says you're alone",
@@ -137,17 +154,29 @@ const line = (g, over = {}) =>
   check("calling under says under", callLabel({ kind: "under", suit: "H" }) === "Call ♥ Hearts under",
     callLabel({ kind: "under", suit: "H" }));
 
+  const ten = [{ kind: "ten", suit: "S" }];
   check("a mixed set gets a prompt that doesn't say 'ace'",
-    callPrompt([{ kind: "ten", suit: "S" }]) === "Call your partner, or go it alone.",
-    callPrompt([{ kind: "ten", suit: "S" }]));
+    callPrompt(ten, ORDINARY_SIX) === "Call your partner.",
+    callPrompt(ten, ORDINARY_SIX));
 
-  // Going alone is a choice on every hand, so every prompt that offers a call
-  // has to offer it too — otherwise the line contradicts the button under it.
-  check("an all-ace prompt offers the alone option",
-    /go it alone/.test(callPrompt([{ kind: "ace", suit: "C" }])),
+  // The prompt tracks the gate, both ways. A line offering a choice the screen
+  // does not have is as wrong as one hiding a button that is right there.
+  check("a mixed set over the bar names the alone option",
+    callPrompt(ten, ALONE_SIX) === "Call your partner, or go it alone.",
+    callPrompt(ten, ALONE_SIX));
+  check("an all-ace prompt over the bar names it too",
+    /go it alone/.test(callPrompt([{ kind: "ace", suit: "C" }], ALONE_SIX)),
+    callPrompt([{ kind: "ace", suit: "C" }], ALONE_SIX));
+  check("an all-ace prompt under the bar does not",
+    !/go it alone/.test(callPrompt([{ kind: "ace", suit: "C" }], ORDINARY_SIX)),
+    callPrompt([{ kind: "ace", suit: "C" }], ORDINARY_SIX));
+  check("no hand at all is treated as under the bar, not over it",
+    !/go it alone/.test(callPrompt([{ kind: "ace", suit: "C" }])),
     callPrompt([{ kind: "ace", suit: "C" }]));
-  check("...and so does a prompt with no options, in the other voice",
-    callPrompt([]) === "No callable suit. You're going alone.", callPrompt([]));
+  // Forced alone is not gated — there is no partner to weigh it against.
+  check("no callable suit says you're alone whatever the hand",
+    callPrompt([], ORDINARY_SIX) === "No callable suit. You're going alone.",
+    callPrompt([], ORDINARY_SIX));
 
   // The rule itself, which lived in two screens and no engine.
   const hand = [

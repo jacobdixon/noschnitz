@@ -34,6 +34,13 @@
    thing stopping them — `opts.length > 0` with a null call fell through to
    `bad-call`, which read as "you can't call that suit" about a suit the
    player had deliberately not called.
+
+   The client only OFFERS that below-the-bar (see `ALONE_OFFER_STRENGTH` in
+   engine.js), and this endpoint deliberately does not enforce the bar. It is
+   an affordance, not a rule: alone is legal at any strength, the AI's own bar
+   sits a point lower, and a tampered client that goes alone on a weak hand is
+   only hurting itself. Validation here is for things that would corrupt the
+   hand for everyone else, which this is not.
    ========================================================================= */
 import { seatOf, commit, markSeen } from "../../../src/table.js";
 import { cid, assignPartner, callOptions } from "../../../src/engine.js";

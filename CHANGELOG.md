@@ -6,6 +6,55 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.44.0] - 2026-07-30 (`PENDING`)
+- **The "Go alone" button is gated on the hand now — `ALONE_OFFER_STRENGTH`.**
+  0.43.0 offered it on every hand, which made a losing move available on most of
+  them. When it is worth offering was measured rather than guessed, with a
+  paired harness: both arms get the identical deal AND the identical bury and
+  differ in nothing but the call, because by the time the button is on screen
+  the bury is already spent. Every seat plays the unchanged engine; the metric
+  is the picker's own `handDelta`, which already carries the 4×. Over 20,239
+  pickers who had a partner available (6,000 hands × 4 seeds), alone minus
+  calling, in points per hand to the picker:
+
+  | strength | alone − calling | alone better on | per seed |
+  |---------:|----------------:|----------------:|:---------|
+  | 15 | −5.9 | 18.0% | negative in 4 of 4 |
+  | 16 | −4.0 | 24.5% | negative in 4 of 4 |
+  | 17 | −1.9 | 31.7% | negative in 4 of 4 |
+  | 18 | +0.3 | 49.7% | positive in 3 of 4 |
+  | 19 | +2.5 | 68.7% | positive in 4 of 4 |
+  | 20 | +4.3 | 91.1% | positive in 3 of 3 |
+
+  So the bar is **18**, and it is deliberately NOT the AI's `ALONE_HANDSTRENGTH`
+  of 17. Those answer different questions: the AI decides while it still holds
+  all eight and buries to match the plan, banking points instead of protecting a
+  call; a human decides after the bury is spent. At 17 the human is giving up
+  about two points a hand by declining the partner, consistently in every seed —
+  offering it there is offering a losing move.
+  - Net effect: the button shows on **14.9%** of picked hands — 12.3% where no
+    suit is callable at all (forced, ungated, unchanged) and 2.5% where it is a
+    genuine choice.
+  - `mayGoAlone(hand)` lives in `engine.js` and is read by both the button and
+    the status prompt, so the solo screen and the table screen cannot end up
+    disagreeing about the bar — the same reason `CallButtons` renders options
+    rather than suits.
+  - The prompt tracks the gate in both directions: "Call an ace, or go it
+    alone." only when the button is there, and the original "Call an ace — your
+    partner holds it." when it is not. A line offering a choice the screen does
+    not have is as wrong as one hiding a button that is right there.
+  - `api/tables/[id]/bury.js` deliberately does **not** enforce the bar. It is an
+    affordance, not a rule: alone is legal at any strength, the AI's own bar sits
+    a point lower, and a tampered client going alone on a weak hand is only
+    hurting itself. Validation there is for things that would corrupt the hand
+    for everyone else.
+  - On the reported case — "five trump and an ace", the shape that used to be
+    forced alone and now gets an under call offered instead — the answer depends
+    on *which* five. Five plain trump reads 10 and going alone there measured 11
+    points a hand worse than calling, so the button stays off; the same shape in
+    three Queens and two Jacks reads 18 and gets it. Both are pinned in
+    `aitest.mjs`, with the one-notch-weaker hand as the negative control.
+
 ## [0.43.0] - 2026-07-30 (`0276266`)
 - **The picker can go alone even when a partner is available.** "Go alone" only
   appeared when `callOptions()` came back empty — i.e. when there was nothing to
