@@ -254,3 +254,34 @@ Genuinely open:
    early session and flagged for rotation. Assume it may no longer be valid, and note
    that making the repo private would NOT be the remediation — private does not undo
    public. Rotating the token is the fix.
+   - **The secret-scanning pass over history has never been run**, and it is the first
+     thing to do if this is picked up again: it answers the question rotation doesn't,
+     namely whether the token ever landed *in a commit* rather than only in a shell
+     invocation. It was offered twice in earlier sessions and declined both times, so
+     nobody should assume from the silence that it came back clean.
+
+## Things a session will try and cannot do
+
+Both of these were established the expensive way. They are recorded so the next session
+doesn't spend a turn rediscovering them.
+
+- **Repo visibility cannot be changed from an agent session.** The agent proxy refuses
+  repository-settings writes outright, independent of token scope:
+  `PATCH /repos/jacobdixon/noschnitz {"private": true}` →
+  `403 {"message":"Repository settings writes are not permitted through this proxy."}`.
+  The GitHub MCP server exposes no repo-settings tool either. Doing it by hand is
+  Settings → Danger Zone → Change repository visibility. **Add anyone in the group who
+  reads the issue board as a collaborator BEFORE flipping** — `ROADMAP.md`'s "Now" bucket
+  lives in GitHub Issues, and those go private with the repo, along with tags and
+  releases. Staying public was an explicit decision (2026-07-28), not an oversight.
+- **Remote branches cannot be deleted from a session either** — the git proxy accepts the
+  push and drops it, reporting `send-pack: unexpected disconnect` followed by
+  `Everything up-to-date`, which reads like success. There is no delete-branch tool in the
+  GitHub MCP set. Combined with `gh pr merge --delete-branch` silently failing (above),
+  that is two of the three cleanup routes quietly not working, which is why merged
+  branches accumulate here. Deleting them is a human action.
+  `git branch -r --merged origin/master` **under-reports badly** — it listed 2 of 14
+  genuinely-merged branches, because squash-merged tips are never ancestors of master.
+  Compare each branch tip against the head SHA its PR merged instead. On that API note:
+  every PR in this repo reports `merged: false`; `merged_at` is the field that tells the
+  truth.
