@@ -6,6 +6,31 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.39.1] - 2026-07-30
+- **Renaming yourself at a table works again.** `TableScreen` called
+  `api.renameSeat(...)`; `src/api.js` exports that function as `setName`. There
+  was never a `renameSeat`, so the Rename button in the seat controls threw
+  `TypeError: api.renameSeat is not a function` and the name never changed. Fixed
+  at the call site rather than by renaming the export — one caller was wrong, not
+  the API. The seat route itself was fine; nothing server-side changes.
+- **`npm run exporttest` — a guard for the class, not just this bug.** For every
+  `import * as NS from "./local.js"`, it loads the module and asserts every
+  `NS.member` the file reads is actually exported.
+  - This is the sibling of the gap `no-undef` exists for (see the note in
+    `eslint.config.js`): lint catches a free identifier that resolves to nothing,
+    this catches a *member* that resolves to nothing. Lint cannot see it — `api`
+    is a perfectly well-defined binding, and ESLint does not follow the import to
+    check what is on it.
+  - The build did notice, and that is the part worth remembering: Vite printed
+    `"renameSeat" is not exported by "src/api.js"` on **both** the flag-off and
+    the flag-on build, and exited 0 anyway. A warning in a passing build is a
+    thing nobody reads. It fails the test run now instead, in milliseconds and
+    without a bundler.
+  - Verified by negative control: reintroducing `api.renameSeat` makes it exit 1.
+- The bug outlived five releases (0.34.0 through 0.39.0) with the warning in
+  every build log the whole time, which is the case for the guard more than the
+  one-word fix is.
+
 ## [0.39.0] - 2026-07-30
 - **The picker no longer leads a fat trump into higher trump.** Holding K-D, A-D
   and 10-D with both jacks still out, the engine led the Ace — eleven points to
