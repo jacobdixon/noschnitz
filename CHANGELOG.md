@@ -6,6 +6,55 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.36.0] - 2026-07-30
+- **A trick that cannot be lost is now priced as one.** Reported from hand 27:
+  clubs called, clubs led for the first time, a defender's partner winning it
+  with the 9 of diamonds — and the two seats left to play were the picker and
+  the partner, both forced to follow clubs, neither able to beat a trump with
+  one. The trick was unloseable. `trickSecurity` rated it 0.05.
+- The consequence was a card, not a number. Reading the trick as 95% lost, the
+  defender skipped the schmear branch entirely and fell through to "if you can
+  win it, win it", spending the Jack of hearts to overtake his own side. The
+  right card was the King of hearts: four points onto a trick the defense
+  already owned, keeping both trump, and the King was his deadest card anyway —
+  eleven unseen cards beat it and it takes no later trick.
+- `trickSecurity` counts unseen cards that outrank what is down, with no notion
+  that a seat yet to act may be pinned to a suit. It now asks first. Two rules
+  do the pinning, both live only on the FIRST lead of the called suit: the
+  partner must play the called card, and the picker must still be *holding* a
+  called-suit card, because `legalPlays` forbids discarding the last one until
+  the suit has been led. Both are rules, not reads — no belief model involved.
+- Forced is not the same as harmless, and the rule prices both directions: a
+  seat pinned to a card that TAKES the trick sends security to zero rather than
+  one. That sign error is the one this could most easily have made.
+- Worth **+0.0021/seat/hand, ahead in 8 of 8 seeds** at 20,000 hands per split
+  (`scripts/abtest.mjs`), with the harness null-testing to exactly +0.0000 on
+  the same run. Aggregate self-play moves the way you would expect for a fix
+  that helps the defense: picker win rate 68.5% → 66.9%.
+- **The other half of the diagnosis measured as a loss and did not ship.** The
+  same hand showed the engine ignoring a deduction it had already made: with the
+  leader having played a low club instead of the ace, and the next seat trumping
+  in and therefore void, only one seat could still hold the called ace.
+  `calledCardCandidates` knew this; the play code asked `partnerRevealed`
+  instead. Wiring the deduction in (`provenSide`, `knownPartner`, both new and
+  both correct — `belieftest` holds them to ground truth) measures at
+  **-0.0049/seat/hand, ahead in 0 of 5 seeds**, and either half of it alone
+  costs -0.0006.
+- That result is worth more than the change would have been. The engine's
+  defense is tuned around `knowsTeammate`'s optimistic default, where an
+  unrevealed seat is a friend; being *right* about who the opponent is makes a
+  defender count more opponents, price tricks lower, and schmear less. Better
+  information, played by a policy calibrated for worse information, loses. It is
+  left switchable and off (`DEDUCE_PARTNER`, with `deduceOpponents` /
+  `deduceOwner` sub-flags) with the numbers recorded at the flag, because acting
+  on it wants the schmear and overtake thresholds re-tuned around it — a bigger
+  change than the hand that prompted this one. `knownPartner` ships regardless:
+  the forcing rule above depends on it.
+- Hand 27 is pinned in `scripts/aiskilltest.mjs` with four negative controls —
+  the deduction must not fire a trick early, forcing must not fire when the
+  called suit was not led, a forced seat that can still win must not read as
+  safe, and the old engine must still be shown making the reported mistake.
+
 ## [0.35.0] - 2026-07-29
 - **You can now remove a teammate who walked away from their computer.** You
   could not before, and the reason was that an open tab counted as a person.

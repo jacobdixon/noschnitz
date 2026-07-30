@@ -20,6 +20,8 @@ import {
   aiChooseCard, legalPlays, cid, isTrump, trumpPower, trickSecurity, securityAfterPlay,
   cardEquity, applyPlay, solveHandValue, cardPts, trickWinner, knowsTeammate,
   SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN,
+  freshHand, assignPartner, resolveTrick, sortHand,
+  calledCardCandidates, knownPartner, provenSide,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -854,6 +856,168 @@ const trick2 = [
   const pick = aiChooseCard(g, 4);
   check("takes the trick when ducking would cost points",
     cid(pick) === "QC", `played ${cid(pick)}`);
+}
+
+/* ============================================================================
+   Hand 27, trick 2 — deducing the partnership, and pricing a forced trick.
+
+   Reported 2026-07-30. Clubs called. Seats: 0 You, 1 Fonzie, 2 Leon,
+   3 Gus (picker), 4 Kopps (partner). You led 7-clubs, Fonzie trumped with
+   9-diamonds, and Leon overtook his own side with J-hearts.
+
+   Two separate defects met on that card, which is why they get separate flags
+   and separate assertions:
+
+     1. Leon could PROVE Kopps was the partner. You led a low club instead of
+        the ace, so You is not the partner; Fonzie trumped in and is therefore
+        void in clubs, so nor is Fonzie; Gus is the picker; Leon holds no club.
+        One seat left. calledCardCandidates already knew this and the play code
+        never asked. -> deducePartner
+
+     2. The trick could not be lost. Gus must follow clubs (legalPlays makes
+        the picker retain a called-suit card until the suit is led) and Kopps
+        must lay the called ace, and neither can beat a trump with a club.
+        trickSecurity priced it at 0.05. -> forcedFollow
+
+   The right card is K-hearts: 4 points onto a trick the defense already owns,
+   keeping BOTH trump. It is also Leon's deadest card — eleven unseen cards
+   beat it, and it takes no later trick.
+   ========================================================================= */
+{
+  // Built by playing the real hand rather than hand-writing the state, so
+  // calledSuitLed / calledAcePlayed / trickHistory are whatever the engine
+  // actually derives. The deduction reads trickHistory; a hand-built fixture
+  // would have quietly asserted nothing.
+  const deal = [
+    [C("J", "D"), C("7", "C"), C("7", "H"), C("7", "D"), C("K", "D"), C("9", "C")],
+    [C("A", "S"), C("9", "D"), C("A", "H"), C("J", "S"), C("8", "S"), C("Q", "S")],
+    [C("7", "S"), C("J", "H"), C("9", "H"), C("8", "D"), C("8", "H"), C("K", "H")],
+    [C("10", "D"), C("8", "C"), C("A", "D"), C("Q", "H"), C("Q", "D"), C("J", "C")],
+    [C("9", "S"), C("A", "C"), C("10", "H"), C("Q", "C"), C("10", "S"), C("K", "C")],
+  ];
+  let g = assignPartner({
+    ...freshHand(0, [0, 0, 0, 0, 0], 27),
+    phase: "playing", hands: deal.map(sortHand), blind: [],
+    buried: [C("10", "C"), C("K", "S")],
+    picker: 3, calledSuit: "C", calledRank: "A", leader: 1, turn: 1,
+  });
+  check("hand 27 reconstructs: Kopps holds the called ace", g.partner === 4, `partner=${g.partner}`);
+
+  // Trick 1: Fonzie leads A-spades, You take it with J-diamonds.
+  for (const [p, c] of [[1, C("A", "S")], [2, C("7", "S")], [3, C("10", "D")],
+                        [4, C("9", "S")], [0, C("J", "D")]]) g = applyPlay(g, p, c);
+  g = resolveTrick(g);
+  // Trick 2: You lead 7-clubs — the called suit, for the first time.
+  g = applyPlay(g, 0, C("7", "C"));
+  g = applyPlay(g, 1, C("9", "D"));
+
+  const LEON = 2;
+  // What ships is the forcing rule alone. `deducePartner` measured as a
+  // consistent loss (see its comment in engine.js) and is asserted here only
+  // where it is the thing under test.
+  const ON = { forcedFollow: true, deducePartner: true };
+  const OFF = { forcedFollow: false, deducePartner: false };
+
+  /* ---- the deduction itself ---- */
+  check("hand 27: only one seat can still hold the called ace",
+    calledCardCandidates(g, LEON).length === 1, `cands=${calledCardCandidates(g, LEON)}`);
+  check("hand 27: Leon can name the partner before the ace is played",
+    knownPartner(g, LEON) === 4 && !g.partnerRevealed, `knownPartner=${knownPartner(g, LEON)}`);
+  check("hand 27: Fonzie is provably Leon's side", provenSide(g, LEON, 1) === true);
+  check("hand 27: Kopps is provably NOT Leon's side", provenSide(g, LEON, 4) === false);
+  check("knowsTeammate still calls the partner a teammate — the bug this replaces",
+    knowsTeammate(g, LEON, 4) === true);
+
+  /* ---- negative control: the deduction must not fire a trick earlier ---- */
+  {
+    // Same hand, rewound to trick 1. Nothing has narrowed the field yet, so
+    // anything that claims certainty here is claiming it from thin air.
+    let t = assignPartner({
+      ...freshHand(0, [0, 0, 0, 0, 0], 27),
+      phase: "playing", hands: deal.map(sortHand), blind: [],
+      buried: [C("10", "C"), C("K", "S")],
+      picker: 3, calledSuit: "C", calledRank: "A", leader: 1, turn: 1,
+    });
+    t = applyPlay(t, 1, C("A", "S"));
+    check("control: with nothing led, Leon cannot name the partner",
+      knownPartner(t, LEON) === null, `knownPartner=${knownPartner(t, LEON)}`);
+    check("control: and provenSide admits it does not know",
+      provenSide(t, LEON, 4) === null);
+    check("control: the partner still knows themselves",
+      knownPartner(t, 4) === 4);
+    check("control: no called suit led, so nobody is forced",
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF),
+      `${trickSecurity(t, LEON, ON)} vs ${trickSecurity(t, LEON, OFF)}`);
+  }
+
+  /* ---- the trick is unloseable, and the engine should say so ---- */
+  check("hand 27: Gus is forced to follow clubs",
+    legalPlays(applyPlay(g, LEON, C("8", "H")), 3).every((c) => c.suit === "C" && !isTrump(c)));
+  check("hand 27: Kopps is forced to lay the called ace",
+    (() => {
+      let t = applyPlay(g, LEON, C("8", "H"));
+      t = applyPlay(t, 3, C("8", "C"));
+      const l = legalPlays(t, 4);
+      return l.length === 1 && cid(l[0]) === "AC";
+    })());
+  check("hand 27: the trick prices as certain by default now",
+    trickSecurity(g, LEON) === 1, `security=${trickSecurity(g, LEON)}`);
+  check("hand 27: and did not, before", trickSecurity(g, LEON, OFF) < 0.1,
+    `security=${trickSecurity(g, LEON, OFF)}`);
+
+  /* ---- the card ---- */
+  check("hand 27 (bug): the old engine overtakes its own side with the Jack",
+    cid(aiChooseCard(g, LEON, OFF)) === "JH", `played ${cid(aiChooseCard(g, LEON, OFF))}`);
+  // No opts — this is the shipped default, which is the thing that matters.
+  const fixed = aiChooseCard(g, LEON);
+  check("hand 27: Leon schmears the King instead", cid(fixed) === "KH", `played ${cid(fixed)}`);
+  check("hand 27: and keeps both trump", !isTrump(fixed));
+
+  // The halves separately, so a future regression says WHICH one broke.
+  check("hand 27: the forcing rule is what gets the card",
+    cid(aiChooseCard(g, LEON, { forcedFollow: true, deducePartner: false })) === "KH",
+    `played ${cid(aiChooseCard(g, LEON, { forcedFollow: true, deducePartner: false }))}`);
+  check("hand 27: deducing the partner alone would only stop the overtake",
+    cid(aiChooseCard(g, LEON, { forcedFollow: false, deducePartner: true })) === "8H",
+    `played ${cid(aiChooseCard(g, LEON, { forcedFollow: false, deducePartner: true }))}`);
+
+  /* ---- negative control: forcing must not manufacture safety ---- */
+  {
+    // The picker sits behind Leon holding trump, and the called suit is NOT
+    // what was led — so nothing forces anyone and the trick is genuinely at
+    // risk. If this reads as certain, the rule is firing on the wrong tricks.
+    let t = assignPartner({
+      ...freshHand(0, [0, 0, 0, 0, 0], 27),
+      phase: "playing", hands: deal.map(sortHand), blind: [],
+      buried: [C("10", "C"), C("K", "S")],
+      picker: 3, calledSuit: "C", calledRank: "A", leader: 0, turn: 0,
+    });
+    t = applyPlay(t, 0, C("7", "H"));   // hearts led, not the called suit
+    t = applyPlay(t, 1, C("A", "H"));
+    check("control: a trick with nobody forced is not certain",
+      trickSecurity(t, LEON, ON) < 1, `security=${trickSecurity(t, LEON, ON)}`);
+    check("control: forcing changes nothing when the called suit is not led",
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF));
+  }
+
+  /* ---- negative control: a forced seat that CAN still take the trick ---- */
+  {
+    // Clubs led and NOT trumped, so the called ace is still the best card out.
+    // The partner is pinned to it exactly as in hand 27 — but here that pin
+    // hands them the trick. "Forced" must never be read as "harmless"; this is
+    // the sign error the rule is most likely to make.
+    const t = position({
+      hands: withHand(2, [C("K", "H"), C("9", "H"), C("8", "H")]),
+      trick: [{ player: 0, card: C("7", "C") }, { player: 1, card: C("9", "C") }],
+      picker: 3, partner: 4, calledSuit: "C", calledAcePlayed: false,
+      tricksDone: 0, leader: 0, turn: 2,
+    });
+    check("control: this seat can name the partner too", knownPartner(t, 2) === 4);
+    check("control: a forced ace that WINS the trick prices it at zero, not one",
+      trickSecurity(t, 2, ON) === 0, `security=${trickSecurity(t, 2, ON)}`);
+    check("control: the picker is forced but NOT harmless — a club can still win here",
+      trickSecurity(t, 2, { forcedFollow: true }) < 1);
+  }
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
