@@ -463,6 +463,50 @@ export function knowsTeammate(g, viewer, target) {
 }
 
 /* --------------------- Who is my partner, probably? ---------------------- */
+
+// Use what the table has PROVEN about the partnership (provenSide) instead of
+// the three hardcoded ways of knowing it: ace played, alone, or I am the
+// partner. Reported from hand 27, where the deduction was sitting right here
+// in calledCardCandidates, unused, while a defender overtook his own side.
+//
+// MEASURED AND NOT SHIPPED. Default off, and the sub-flags are kept so nobody
+// has to rebuild this to re-check it. At 20,000 hands x 5 seeds:
+//
+//   deducePartner (both call sites)  -0.0049, ahead in 0 of 5
+//   deduceOpponents (trickSecurity)  -0.0006, ahead in 0 of 5
+//   deduceOwner (heuristicCard)      -0.0006, ahead in 0 of 5
+//
+// and on top of the forcing rule below, either half costs the same ~0.0004:
+// +0.0024 alone against +0.0020 with either, +0.0020 with both.
+//
+// Consistent losses, not noise — and the two halves together cost four times
+// what they cost apart. The reason is already written down two screens below,
+// in the overtake branch: this engine's defense is tuned around knowsTeammate's
+// optimistic default, where an unrevealed seat is a friend. Being RIGHT about
+// who the opponent is makes a defender count more opponents, price tricks
+// lower, and schmear less — and the 2:1 asymmetry that made speculative
+// schmearing worth keeping in 0.9.0 points the same way here. Better
+// information, played by a policy calibrated for worse information, loses.
+//
+// So this is not "the deduction is wrong". It is correct, `belieftest` holds
+// it to ground truth, and the forcing rule below depends on knownPartner().
+// Acting on it wants the schmear and overtake thresholds re-tuned around it,
+// which is a bigger change than the hand that prompted this one.
+export const DEDUCE_PARTNER = false;
+
+// Let trickSecurity see that a seat FORCED to follow the called suit cannot
+// trump the trick. See forcedPlay. From the same hand: a trick that could not
+// be lost priced at 0.05, which suppressed a 4-point schmear and sent a
+// defender's Jack over his own partner's winning trump instead.
+//
+// +0.0021/seat/hand, ahead in 8 of 8 seeds at 20,000 hands per split
+// (+0.0024 in 5 of 5 on the first five). The harness null-tests to exactly
+// +0.0000 on the same run, which is what makes a number this small readable.
+//
+// Wider blast radius than it looks — every security estimate in the engine
+// goes through trickSecurity, not only the branch the hand came from.
+export const FORCED_FOLLOW = true;
+
 // Which seats could still be holding the called card, as far as `viewer` can
 // tell. Deduction only — every exclusion below is a fact, not a read.
 //
@@ -509,6 +553,50 @@ export function calledCardCandidates(g, viewer) {
     cands.push(p);
   }
   return cands;
+}
+
+// The partner's seat as `viewer` can PROVE it, or null when they cannot yet.
+//
+// Three ways it is settled, in increasing order of how easy they are to miss:
+// the ace has been played and everyone saw it; the viewer holds the ace and so
+// is the partner; or `calledCardCandidates` has eliminated every seat but one.
+// The third is the interesting one, because it can settle mid-trick — before
+// the ace is on the table — and the play code used to ignore it entirely.
+//
+// Reported from a real hand (27, trick 2): clubs called, clubs led for the
+// first time, the leader played a low club rather than the ace, and the next
+// seat trumped in and was therefore void. That leaves one candidate, and the
+// deduction was already available here; nothing asked for it.
+export function knownPartner(g, viewer) {
+  if (g.partner === null || !g.calledSuit) return null;   // no partner exists
+  if (g.partnerRevealed) return g.partner;
+  if (viewer === g.partner) return viewer;
+  const cands = calledCardCandidates(g, viewer);
+  return cands.length === 1 ? cands[0] : null;
+}
+
+// Is `target` on `viewer`'s side? true / false when it is PROVEN, null when the
+// table genuinely has not settled it.
+//
+// This is the third of three answers to the same question, and the distinction
+// between them is the whole point. knowsTeammate() answers optimistically and
+// is wrong by construction (see teammateProbability's comment). This one
+// answers only when it can, which is what any branch that spends a card on a
+// teammate's trick actually needs — "should I fight this seat" and "may I pay
+// this seat" are different questions and want different defaults.
+export function provenSide(g, viewer, target) {
+  if (viewer === target) return true;
+  // Alone: the picker stands by themselves and there is nothing to deduce.
+  // Note this also swallows the case where a called ace found nobody, which
+  // is NOT public until the suit is led. Left as-is deliberately — the
+  // certainty test this replaces made the same assumption, and tightening it
+  // is a separate change wanting its own measurement.
+  if (g.partner === null) return (viewer === g.picker) === (target === g.picker);
+
+  const kp = knownPartner(g, viewer);
+  if (kp === null) return null;
+  const onPickerTeam = (p) => p === g.picker || p === kp;
+  return onPickerTeam(viewer) === onPickerTeam(target);
 }
 
 // How likely `target` is on `viewer`'s side, in [0,1].
@@ -568,12 +656,22 @@ export function teammateProbability(g, viewer, target) {
 // holding trump usually is not. Counting those anyway overstates the danger,
 // which costs a schmear that would have been fine. The opposite error pays
 // points to the picker, so the bias points the right way.
-export function opponentsYetToAct(g, viewer) {
+// Seats still to play that could take this trick off us.
+//
+// The teammate test here is the optimistic one, which means a defender counts
+// the picker's partner as a friend and reads the trick as safer than it is.
+// `deducePartner` swaps in provenSide, which keeps the same optimistic default
+// for the genuinely-unknown seats but stops calling a PROVEN opponent a
+// teammate. Without this, the forcing rule below can never see the partner at
+// all — they are not in the list it filters.
+export function opponentsYetToAct(g, viewer, opts = {}) {
   const acted = new Set(g.trick.map((t) => t.player));
+  const deduce = opts.deduceOpponents ?? opts.deducePartner ?? DEDUCE_PARTNER;
   const out = [];
   for (let p = 0; p < 5; p++) {
     if (p === viewer || acted.has(p)) continue;
-    if (!knowsTeammate(g, viewer, p)) out.push(p);
+    const proven = deduce ? provenSide(g, viewer, p) : null;
+    if (!(proven ?? knowsTeammate(g, viewer, p))) out.push(p);
   }
   return out;
 }
@@ -671,6 +769,57 @@ function shedCard(g, idx, legal, wantPoints, opts = {}) {
   return [...cls].sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
 }
 
+/**
+ * What the rules FORCE a seat yet to act to play, as far as `viewer` can prove.
+ * Returns {card} when the exact card is determined, {suit} when only the suit
+ * is, and null when the seat is free to choose.
+ *
+ * Everything here is a rule, not a read. Two of them, both live only on the
+ * FIRST lead of the called suit:
+ *
+ *   - the partner must play the called card then (legalPlays), which pins them
+ *     to one card once `knownPartner` can name them;
+ *   - the picker must still be holding a called-suit card, because legalPlays
+ *     forbids discarding the last one until the suit has been led — so they can
+ *     follow, and therefore must. This one is public from the call itself.
+ *
+ * `g.calledSuitLed` cannot answer "is this the first lead of it", because
+ * applyPlay sets it as soon as the card lands and it is already true by the
+ * time anyone follows. The resolved tricks can.
+ */
+function forcedPlay(g, viewer, seat) {
+  if (!g.calledSuit || !g.trick.length) return null;
+  if (effSuit(g.trick[0].card) !== g.calledSuit) return null;
+
+  const ledBefore = (g.trickHistory || []).some(
+    (th) => th.trick?.length && effSuit(th.trick[0].card) === g.calledSuit,
+  );
+  if (ledBefore) return null;
+
+  if (!g.calledAcePlayed && seat === knownPartner(g, viewer)) {
+    return { card: { rank: g.calledRank || "A", suit: g.calledSuit } };
+  }
+  // Called under, the picker holds no real card of the suit — the stand-in is
+  // the only thing they can follow with, so that seat is pinned exactly too.
+  if (seat === g.picker) {
+    return g.calledUnder
+      ? { card: { rank: UNDER_RANK, suit: g.calledSuit } }
+      : { suit: g.calledSuit };
+  }
+  return null;
+}
+
+// Can ANY card of this fail suit take the trick as it stands? Diamonds are all
+// trump, so a "must follow diamonds" has no fail cards to be harmless with —
+// the called suit is never diamonds, but the guard keeps that assumption local.
+function suitIsHarmless(suit, takesIt) {
+  if (suit === "D") return false;
+  return !RANKS.some((rank) => {
+    const c = { rank, suit };
+    return !isTrump(c) && takesIt(c);
+  });
+}
+
 export function trickSecurity(g, viewer, opts = {}) {
   if (!g.trick.length) return 1;
 
@@ -686,14 +835,35 @@ export function trickSecurity(g, viewer, opts = {}) {
   // returns 1.0 without ever looking at a card.
   const acePrice = opts.priceCalledAce === false ? 1 : calledAceRisk(g, viewer, takesIt, unseen);
 
-  const opps = opponentsYetToAct(g, viewer);
+  const opps = opponentsYetToAct(g, viewer, opts);
   if (!opps.length) return acePrice;
+
+  // Seats the rules have already decided for. A seat that MUST follow the
+  // called suit cannot trump, so it cannot take a trick a trump is winning —
+  // and the count below, which prices every unseen card as reachable by every
+  // seat still to act, has no way to see that. Reported from hand 27: a trick
+  // where both remaining seats were pinned (the picker forced to follow clubs,
+  // the partner forced to lay the called ace) priced at 0.05 when it was in
+  // fact unloseable, and a defender spent a Jack overtaking his own side.
+  let forcedTakes = false;
+  const free = (opts.forcedFollow ?? FORCED_FOLLOW) === false ? opps : opps.filter((p) => {
+    const f = forcedPlay(g, viewer, p);
+    if (!f) return true;
+    if (f.card) {
+      if (takesIt(f.card)) forcedTakes = true;
+      return false;
+    }
+    return !suitIsHarmless(f.suit, takesIt);
+  });
+  // Pinned to a card that beats what's down: not a probability, a certainty.
+  if (forcedTakes) return 0;
+  if (!free.length) return acePrice;
 
   const beaters = unseen.filter(takesIt).length;
   if (!beaters) return acePrice;
 
   // How many unknown cards those opponents hold between them.
-  const k = opps.reduce((s, p) => s + g.hands[p].length, 0);
+  const k = free.reduce((s, p) => s + g.hands[p].length, 0);
   if (!k) return acePrice;
   if (beaters + k > unseen.length) return 0;
 
@@ -1028,7 +1198,14 @@ export function heuristicCard(g, idx, opts = {}) {
   // Following
   const winnerSoFar = trickWinner(g.trick);
   const winningCard = g.trick.find((t) => t.player === winnerSoFar).card;
-  const mateWinning = knowsTeammate(g, idx, winnerSoFar);
+  // What this seat can prove about the trick's owner, or null when the table
+  // has not settled it. Falling back to knowsTeammate keeps the old optimistic
+  // default for "should I fight this seat" — the difference is that a PROVEN
+  // opponent is now treated as one, instead of being called a teammate because
+  // the ace has not physically landed yet.
+  const proven = (opts.deduceOwner ?? opts.deducePartner ?? DEDUCE_PARTNER)
+    ? provenSide(g, idx, winnerSoFar) : null;
+  const mateWinning = proven ?? knowsTeammate(g, idx, winnerSoFar);
   const beats = (c) => {
     const hypo = [...g.trick, { player: idx, card: c }];
     return trickWinner(hypo) === idx;
@@ -1059,7 +1236,12 @@ export function heuristicCard(g, idx, opts = {}) {
   //     mute defender schmearing exactly when pooling points matters most);
   //   - the viewer IS the partner and the picker is winning, which the
   //     partner has known since the ace was called, with no reveal needed.
+  //
+  // All three are special cases of provenSide(), which also settles the case
+  // they miss: the candidates for the called card narrowing to one seat, which
+  // can happen mid-trick and before the ace is ever played.
   const teammateIsCertain =
+    proven !== null ||
     g.partnerRevealed ||
     g.partner === null ||
     (idx === g.partner && winnerSoFar === g.picker);
