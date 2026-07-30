@@ -20,7 +20,7 @@
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { cid, legalPlays, callOptions, SUIT_NAME } from "./engine.js";
-import { felt, Badge, Modal, btnGold, btnPlain, btnGhost } from "./ui.jsx";
+import { felt, Badge, Modal, ModalActions, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
 import { useDealNarration } from "./dealNarration.js";
@@ -261,11 +261,13 @@ function DiagnosticsModal({ onClose }) {
           whiteSpace: "pre", overflow: "auto", marginBottom: 12,
         }}
       />
-      <div style={{ display: "flex", gap: 10 }}>
-        <button style={btnGold} onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+      {/* Copying the log is the whole point of the screen, so it takes the
+          right-hand slot; Clear is the one you least want a thumb to find. */}
+      <ModalActions>
         <button style={btnPlain} onClick={() => { clearStreamLog(); onClose(); }}>Clear</button>
         <button style={btnPlain} onClick={onClose}>Close</button>
-      </div>
+        <button style={btnGold} onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+      </ModalActions>
     </Modal>
   );
 }
@@ -277,19 +279,59 @@ function DiagnosticsModal({ onClose }) {
 // Opening Scores at a table threw `ReferenceError: isMe is not defined` and
 // blanked the whole app. Taking real parameters is what makes that class of
 // mistake impossible rather than merely unlikely.
-function SeatControls({ table, mySeat, busy, onRename, onAway, onBack }) {
+//
+// It also OWNS the modal rather than being handed to it as children. Its
+// controls belong in the modal's one right-aligned action row while their
+// explanations belong above it — two slots, driven by one piece of state
+// (whether the name is being edited), so the thing holding that state has to be
+// the thing filling both.
+function TableScoresModal({ table, mySeat, names, scores, handNum, busy, onClose, onRename, onAway, onBack }) {
   const seat = mySeat >= 0 ? table.seats[mySeat] : null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(seat?.name || "");
-  if (!seat) return null; // spectators have nothing to rename or step away from
+  const shared = { names, scores, handNum, mySeat, onClose };
+  // Spectators have nothing to rename or step away from — they get the same
+  // scores modal solo gets.
+  if (!seat) return <ScoresModal {...shared} />;
+
+  const away = seat.kind === "away";
+  const close = <button style={btnPlain} onClick={onClose}>Close</button>;
 
   return (
-    <>
+    <ScoresModal
+      {...shared}
+      actions={
+        <>
+          {/* Was a btnGhost: 13px text in 4px padding, roughly half the height
+              of everything it sat above, which read as a link that had wandered
+              into a stack of buttons. It is a secondary control of exactly the
+              same weight as Step away, so it is now the same shape. */}
+          {!editing && (
+            <button style={btnPlain} onClick={() => setEditing(true)}>Change my name</button>
+          )}
+          {away ? (
+            // The one case where dismissal is not what you opened this for:
+            // if the AI is covering your seat, taking it back is the primary
+            // action, so it — not Close — gets the right-hand slot.
+            <>
+              {close}
+              <button style={btnGold} disabled={busy} onClick={onBack}>Take my seat back</button>
+            </>
+          ) : (
+            <>
+              <button style={btnPlain} disabled={busy} onClick={onAway}>Step away</button>
+              {close}
+            </>
+          )}
+        </>
+      }
+    >
       {/* Changing your name lives here because this is the one screen that
           already lists everybody by name — it's where you notice yours is
           wrong. Server-side it goes through the same collision rule as
-          joining. */}
-      {editing ? (
+          joining. The input keeps its own Save: it is the field's action, not
+          the modal's, and it belongs beside what it saves. */}
+      {editing && (
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <input
             value={draft}
@@ -306,38 +348,18 @@ function SeatControls({ table, mySeat, busy, onRename, onAway, onBack }) {
             Save
           </button>
         </div>
-      ) : (
-        <button style={{ ...btnGhost, marginBottom: 14 }} onClick={() => setEditing(true)}>
-          Change my name
-        </button>
       )}
 
       {/* Stepping away has existed as a route since COM-3 but had no control
           anywhere in the UI — so the only way a seat became AI-covered was by
           going quiet, which is the accidental path rather than the deliberate
           one. */}
-      {seat.kind === "away" ? (
-        <>
-          <button style={{ ...btnGold, marginBottom: 8 }} disabled={busy} onClick={onBack}>
-            Take my seat back
-          </button>
-          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
-            Your cards were never touched — the AI was only choosing plays.
-            Control returns at your next decision.
-          </div>
-        </>
-      ) : (
-        <>
-          <button style={{ ...btnPlain, marginBottom: 8 }} disabled={busy} onClick={onAway}>
-            Step away
-          </button>
-          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
-            The AI plays your seat until you come back. The seat stays yours —
-            nobody else can take it.
-          </div>
-        </>
-      )}
-    </>
+      <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+        {away
+          ? "Your cards were never touched — the AI was only choosing plays. Control returns at your next decision."
+          : "Stepping away hands your seat to the AI until you come back. The seat stays yours — nobody else can take it."}
+      </div>
+    </ScoresModal>
   );
 }
 
@@ -354,7 +376,9 @@ function InviteModal({ table, onClose }) {
         hand in progress isn't disturbed.
       </div>
       <div style={{ marginBottom: 14 }}><ShareRow tableId={table.id} /></div>
-      <button style={btnPlain} onClick={onClose}>Close</button>
+      <ModalActions>
+        <button style={btnPlain} onClick={onClose}>Close</button>
+      </ModalActions>
     </Modal>
   );
 }
@@ -400,25 +424,25 @@ function PlayerModal({ table, seat, serverNow, onBoot, onAway, onBack, onClose, 
         }}>{err}</div>
       )}
 
+      {/* The note now sits above the row it explains rather than under its own
+          button, because the button has moved into the footer with everything
+          else — one right-aligned row per modal, not a button per paragraph. */}
       {!isMe && s.kind !== "ai" && (
-        bootable ? (
-          <>
-            <button style={{ ...btnGold, marginBottom: 8 }} disabled={busy} onClick={() => onBoot(seat)}>
-              {busy ? "Removing…" : `Remove ${s.name}`}
-            </button>
-            <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
-              Frees the seat for someone else. Not a ban — they can rejoin with
-              the table link and take any open seat.
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
-            You can free this seat once they've been away for a while.
-          </div>
-        )
+        <div style={{ fontSize: 12, color: felt.creamDim, marginBottom: 14 }}>
+          {bootable
+            ? "Removing frees the seat for someone else. Not a ban — they can rejoin with the table link and take any open seat."
+            : "You can free this seat once they've been away for a while."}
+        </div>
       )}
 
-      <button style={btnPlain} onClick={onClose}>Close</button>
+      <ModalActions>
+        <button style={btnPlain} onClick={onClose}>Close</button>
+        {!isMe && s.kind !== "ai" && bootable && (
+          <button style={btnGold} disabled={busy} onClick={() => onBoot(seat)}>
+            {busy ? "Removing…" : `Remove ${s.name}`}
+          </button>
+        )}
+      </ModalActions>
     </Modal>
   );
 }
@@ -1085,25 +1109,21 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
 
       {modal === "trump" && <TrumpModal onClose={() => setModal(null)} />}
       {modal === "diagnostics" && <DiagnosticsModal onClose={() => setModal(null)} />}
+      {/* Everything solo has no concept of — renaming yourself, stepping away —
+          lives in the table's own wrapper rather than in the shared modal. */}
       {modal === "scores" && (
-        <ScoresModal
+        <TableScoresModal
+          table={table}
+          mySeat={mySeat}
           names={table.seats.map((x) => x.name)}
           scores={table.scores}
           handNum={table.handNum}
-          mySeat={mySeat}
+          busy={busy}
           onClose={() => setModal(null)}
-        >
-          {/* Everything solo has no concept of hangs here rather than in the
-              shared component: renaming yourself, and stepping away. */}
-          <SeatControls
-            table={table}
-            mySeat={mySeat}
-            busy={busy}
-            onRename={(name) => { setModal(null); act(() => api.setName(tableId, playerId, name)); }}
-            onAway={() => { setModal(null); act(() => api.stepAway(tableId, playerId)); }}
-            onBack={() => { setModal(null); act(() => api.takeSeatBack(tableId, playerId)); }}
-          />
-        </ScoresModal>
+          onRename={(name) => { setModal(null); act(() => api.setName(tableId, playerId, name)); }}
+          onAway={() => { setModal(null); act(() => api.stepAway(tableId, playerId)); }}
+          onBack={() => { setModal(null); act(() => api.takeSeatBack(tableId, playerId)); }}
+        />
       )}
       {modal === "invite" && <InviteModal table={table} onClose={() => setModal(null)} />}
       {modal === "lastTrick" && (
