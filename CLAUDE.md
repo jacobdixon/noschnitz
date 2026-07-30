@@ -112,6 +112,14 @@ Consequences that look like bugs and are not:
   trustworthy check is the one `release.yml` does: fetch what www.noschnitz.com is
   actually serving and grep the bundle for this commit's version string. Do that before
   telling anyone a version is live.
+- **That check is also a repair, which changes what a red Release job means.** If
+  production is still stale two minutes after the merge, `release.yml` POSTs
+  `VERCEL_PROD_DEPLOY_HOOK` and waits again — so the rate-limited-deploy failure that
+  left www on v0.23.0 while master was on v0.24.0 now heals itself, and the normal case
+  still costs one deployment rather than two. The corollary is easy to get backwards:
+  a failing Release job does **not** necessarily mean beta broke. It may mean beta moved
+  and built fine and *production* never shipped. Read which step failed before
+  concluding anything about either environment.
 
 Unchanged rules:
 
