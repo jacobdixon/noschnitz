@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.39.0] - 2026-07-30
+- **The picker no longer leads a fat trump into higher trump.** Holding K-D, A-D
+  and 10-D with both jacks still out, the engine led the Ace — eleven points to
+  whoever held a jack, on a trick it could not win. The defense has to follow
+  trump whichever of the three it leads, so the bleed is identical and the only
+  variable is the price.
+- The branch responsible is "opponents nearly tapped out, press now", which
+  leads the *top* trump. Pressing is right, but it is only pressure if the top
+  trump can plausibly hold the trick; with higher trump outstanding a fat diamond
+  is a donation. It now declines and falls through to the bleed rule below it,
+  which sends the weakest trump.
+- Deliberately narrow, in three ways. A fat trump that nothing left can beat is
+  still a press. A *lone* fat trump is still led, because pulling trump is worth
+  more than the points it risks — that is the measured +0.019/seat/hand rule in
+  the leading block and this change does not touch it. And the separate
+  "which trump to lead" test one line down (`isPowerTrump || cardEquity <= 1`) is
+  left exactly as measured.
+- Needed no belief model and no inference: `cardEquity` already reported the card
+  as beatable. This is the leading counterpart to the "protect your trump power"
+  family `aiskilltest` covers when following.
+- **Found twice, the second time mechanically.** Once from a recap screenshot,
+  then again as hand 9 of the collected corpus — the first bug `minehands.mjs`
+  turned up on its own, in the first 41 hands off beta, from a position where the
+  human led K-D and the engine led A-D. The pinned assertion uses that real
+  position, with a negative control that fails if it ever stops reproducing.
+- Measured the way a rule this rare has to be, since it fires on 0.5% of hands
+  and a whole-hand aggregate would call that noise: every firing finished twice
+  from identical state, engine driving all five seats, 100,000 deals across 5
+  seeds. **+5.34 picking-team points per firing, ahead in 5 of 5 seeds**, the
+  schneider multiplier moving on 10% of firings (picker win rate 85.7% against
+  84.3%). Re-measured on top of 0.37.0-0.38.2 rather than carried over from the
+  first run: the belief layer changes how the hand plays out after the lead, so
+  the older numbers (+5.66 per firing) no longer describe this engine.
+
 ## [0.38.2] - 2026-07-30
 - **The grading cost test measured the machine, not the code.** It asserted a flat
   `gradeMs < 1000` under a label claiming grading "renders synchronously" — and that

@@ -1302,6 +1302,22 @@ function freeDuckForPicker(g, idx, legal, winners, opts = {}) {
   return ducks.sort((a, b) => power(a) - power(b))[0];
 }
 
+// Fat trump: the A and 10 of diamonds. Every point that lives in trump lives
+// in the diamonds (see isPowerTrump) and these two carry 11 and 10 of them,
+// which is why the threshold is a points test rather than a rank list — a Queen
+// is 3 and a Jack 2, so neither can reach it.
+export const FAT_TRUMP_POINTS = 10;
+
+// Is leading this card a bleed that also donates a pile of points? Asked only
+// of a lead, and only where a cheaper trump is available to bleed with instead.
+//
+// `opts.guardFatTrumpLead === false` disables it, for measurement — the same
+// shape as priceCalledAce.
+function leadDonatesPoints(g, idx, card, opts = {}) {
+  if (opts.guardFatTrumpLead === false) return false;
+  return isTrump(card) && cardPts(card) >= FAT_TRUMP_POINTS && cardEquity(g, idx, card) > 0;
+}
+
 export function aiChooseCard(g, idx, opts = {}) {
   // Last two tricks: solve exactly rather than using heuristics, and let the
   // heuristics settle any tie the solve leaves behind — see solveEndgameCard.
@@ -1339,7 +1355,21 @@ export function heuristicCard(g, idx, opts = {}) {
           return trumps[trumps.length - 1];
         }
         if (trumps[0].rank === "Q") return trumps[0]; // top trump is always a safe, pressuring lead
-        if (oppTrumpLeft <= 2 && trumps.length >= 2) return trumps[0]; // opponents nearly tapped out — press now
+        // Opponents nearly tapped out — press now. But pressing means leading
+        // the TOP trump, and that is only pressure if the top trump can
+        // plausibly hold the trick. A fat diamond with higher trump still out
+        // is not pressure, it is a donation: the defense has to follow either
+        // card, so the bleed happens regardless and the only difference is
+        // whether eleven points go with it. Declining here falls through to the
+        // bleed rule below, which sends the weakest trump instead.
+        //
+        // Reported twice, from two different hands: the picker leads A-D into
+        // two outstanding higher trumps holding a cheaper trump — once from a
+        // recap screenshot, then again as hand 9 of the collected corpus, where
+        // the human led K-D from the same shape.
+        if (oppTrumpLeft <= 2 && trumps.length >= 2 && !leadDonatesPoints(g, idx, trumps[0], opts)) {
+          return trumps[0];
+        }
         // Holding any trump at all, the picker's side leads trump. The old bar
         // here was `trumps.length >= 3` — "real depth" — and the depth was the
         // wrong quantity to measure. Pulling trump works because the defenders
