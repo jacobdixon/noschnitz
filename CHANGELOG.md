@@ -6,6 +6,38 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.41.0] - 2026-07-30
+- **The AI never takes over the last human's seat.** Reported from a real table:
+  a player alone with the four AI put their phone down between tricks, came back
+  inside a couple of minutes, and the hand had been picked, called and played
+  out without them. The seat was still theirs — cover marks a seat `away`, not
+  released — but the game they were in the middle of was gone.
+  - `coverIdleSeats` now returns the table untouched when only one seat is
+    `human`. Cover exists to stop a table full of people stalling on somebody
+    who left; with one human there is nobody to un-stall, so the entire benefit
+    is gone while the cost stays the worst one in the system.
+  - Presence is why this was not a rare accident. `lastSeen` depends on a client
+    ping that a backgrounded tab stops sending — see the note on `active` in
+    `api/tables/[id]/state.js` — so "gone quiet for 90 seconds" routinely means
+    "locked their screen", not "left". Everywhere else that weakness costs at
+    most one covered seat on a table that keeps playing. Alone, it cost the
+    session.
+  - One deliberate exception: a guest who clicked the link mid-hand is queued
+    until the next hand boundary, and that boundary only arrives if the hand is
+    played out. So a waiting joiner still counts as company, or the rule would
+    freeze a real person out of the table with no way in. A stale queue entry
+    can't disable the rule for long — the joiner is seated at the next boundary
+    and becomes a seat of their own.
+  - Stepping away deliberately is untouched, including when you are the only
+    human. Handing your seat to the AI is a choice, and the solo-vs-AI table is
+    exactly where you might want it; this only refuses to make that choice for
+    you. Booting is untouched too — it takes another person acting.
+  - `scripts/tabletest.mjs` pins it with a negative control: the identical table
+    with a second human present still covers exactly as it did, so this is a
+    rule about being last rather than a blanket disabling of cover. Two existing
+    cases assumed a table could be swept empty of humans and were rewritten
+    around three players; they were encoding the behavior this replaces.
+
 ## [0.40.0] - 2026-07-30
 - **The AI stops schmearing a boss fail card over a dead one.** Reported from a
   real hand: a defender void in trump sat behind her partner's winning

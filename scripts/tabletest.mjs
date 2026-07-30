@@ -235,7 +235,11 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   // But it must ALSO never cover a player it isn't waiting on: that turns any
   // weakness in presence tracking into people being replaced mid-game, which is
   // exactly what happened on a live three-player table.
+  // Three humans, because cover stops at the last one (see the block below) —
+  // with two, the second half of this would be testing that rule instead of
+  // this one.
   let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  t = joinTable(t, { playerId: "p-erin", name: "Erin", now: T0 }).table;
   t = startHand(t, T0);
   const daveSeat = seatOf(t, "p-dave");
   const hostSeat = seatOf(t, "p-host");
@@ -283,26 +287,94 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
   // cover now scoped to the blocking seat, a table where everyone has gone
   // quiet clears one seat per pass rather than all at once — so this walks it
   // forward the way advanceTable would, and checks it always terminates.
+  //
+  // It stops one seat short of empty, and that is the rule below: the last
+  // human at the table is never covered.
   let t = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  t = joinTable(t, { playerId: "p-erin", name: "Erin", now: T0 }).table;
   t = startHand(t, T0);
 
   // The turn keeps moving whether or not a seat was covered — an AI seat simply
   // isn't a candidate — so this advances every iteration rather than stopping
   // the first time a pass changes nothing.
   let cur = t;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 15; i++) {
     cur = coverIdleSeats(cur, T0 + AWAY_AFTER_MS * (i + 2));
     cur = { ...cur, g: { ...cur.g, pickTurn: (cur.g.pickTurn + 1) % 5 } };
   }
-  const passes = 0;
-  check("repeated passes eventually clear every absent player",
-    cur.seats.filter((x) => x.kind === "human").length === 0,
+  check("repeated passes cover every absent player but one",
+    cur.seats.filter((x) => x.kind === "human").length === 1,
     `still present: ${cur.seats.filter((x) => x.kind === "human").length}`);
   check("every claimed seat still has an owner",
-    cur.seats.filter((x) => x.playerId).length === 2);
+    cur.seats.filter((x) => x.playerId).length === 3);
   check("no seat is covered twice",
     cur.seats.filter((x) => x.kind === "away").length === 2,
     `away=${cur.seats.filter((x) => x.kind === "away").length}`);
+}
+
+{
+  // THE rule: the AI never takes the last human's seat away from them.
+  //
+  // Cover exists to stop a table stalling on somebody who left. With one human
+  // there is nobody else waiting, so the entire benefit is gone — and the cost
+  // is the worst outcome in the system: you put your phone down between tricks
+  // and come back to find the AI picked, called and played out your hand.
+  //
+  // Presence is why this is not hypothetical. A backgrounded tab stops pinging,
+  // so "gone quiet" routinely means "locked their screen".
+  let t = createTable(host);
+  t = startHand(t, T0);
+  const hostSeat = seatOf(t, "p-host");
+  const solo = { ...t, g: { ...t.g, phase: "picking", pickTurn: hostSeat, passes: 0 } };
+
+  check("the only human is not covered, however long they are quiet",
+    coverIdleSeats(solo, T0 + AWAY_AFTER_MS * 100) === solo);
+
+  // Negative control: the identical table with a second human present covers
+  // exactly as it always did, so this is a rule about being LAST, not a blanket
+  // disabling of cover.
+  let pair = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  pair = startHand(pair, T0);
+  const pairHostSeat = seatOf(pair, "p-host");
+  const pairBlocking = { ...pair, g: { ...pair.g, phase: "picking", pickTurn: pairHostSeat, passes: 0 } };
+  const pairCovered = coverIdleSeats(pairBlocking, T0 + AWAY_AFTER_MS + 1);
+  check("with a second human present the blocking seat is still covered",
+    pairCovered.seats[pairHostSeat]?.kind === "away");
+
+  // ...and once that cover has run, the survivor is now the last human, so the
+  // next pass leaves them alone. This is the path a real two-player table takes.
+  const daveSeat = seatOf(pairCovered, "p-dave");
+  const nowBlockingDave = { ...pairCovered, g: { ...pairCovered.g, pickTurn: daveSeat } };
+  check("the survivor of a cover is not covered in turn",
+    coverIdleSeats(nowBlockingDave, T0 + AWAY_AFTER_MS * 3) === nowBlockingDave);
+
+  // A player who chose to hand their seat over is not "present" for this count,
+  // and must not keep the last real human protected... nor lose their own away
+  // status. Stepping away stays a choice you can make alone at the table.
+  let chosen = joinTable(createTable(host), { playerId: "p-dave", name: "Dave", now: T0 }).table;
+  chosen = startHand(chosen, T0);
+  const awaySeat = seatOf(chosen, "p-dave");
+  const stepped = stepAway(chosen, { playerId: "p-dave", now: T0 });
+  const alone = startHand(createTable(host), T0);
+  check("stepping away still works when you are the only human",
+    stepAway(alone, { playerId: "p-host", now: T0 }).seats[seatOf(alone, "p-host")]?.kind === "away");
+  const lastReal = seatOf(stepped, "p-host");
+  const blockingLastReal = { ...stepped, g: { ...stepped.g, phase: "picking", pickTurn: lastReal, passes: 0 } };
+  check("an away seat doesn't count as company — the last present human is safe",
+    coverIdleSeats(blockingLastReal, T0 + AWAY_AFTER_MS * 100) === blockingLastReal,
+    `host kind=${coverIdleSeats(blockingLastReal, T0 + AWAY_AFTER_MS * 100).seats[lastReal]?.kind}`);
+  check("and the seat that stepped away stays away", stepped.seats[awaySeat]?.kind === "away");
+
+  // The one exception, and it is somebody else's problem being solved, not the
+  // absent player's: a guest who clicked the link mid-hand is queued until the
+  // hand ends, and the hand only ends if it is played. Protecting the last
+  // seated human here would freeze a real person out of the table entirely.
+  const queued = joinTable(solo, { playerId: "p-guest", name: "Guest", now: T0 });
+  check("a mid-hand guest is queued, not seated", queued.status === "pending");
+  check("the last human IS covered when a guest is waiting to get in",
+    coverIdleSeats(queued.table, T0 + AWAY_AFTER_MS + 1).seats[hostSeat]?.kind === "away");
+  check("the covered seat is still theirs to reclaim",
+    seatOf(coverIdleSeats(queued.table, T0 + AWAY_AFTER_MS + 1), "p-host") === hostSeat);
 }
 
 
