@@ -346,6 +346,35 @@ export function resumeSeat(table, { playerId, now }) {
 // covered mid-hand while paying perfect attention. The stream heartbeat is what
 // keeps it current; see api/tables/[id]/events.js.
 export function coverIdleSeats(table, now, awayAfterMs = AWAY_AFTER_MS) {
+  // The last human present is never covered, however quiet they have gone.
+  //
+  // Cover exists for one reason: to stop a table full of people from stalling on
+  // somebody who left. With one human at the table there is nobody to un-stall —
+  // the only party inconvenienced by waiting is the player being waited on, and
+  // the only party harmed by covering is the same person. So the entire upside
+  // is gone and the downside is the worst one this system has: you put your
+  // phone down between tricks, come back, and the AI has picked, buried, called
+  // and played out your hand. That is indistinguishable from losing your game.
+  //
+  // Presence is the weak link that makes it concrete. lastSeen depends on a
+  // client ping that a backgrounded tab stops sending — see the note on `active`
+  // in api/tables/[id]/state.js — so "gone quiet" routinely means "locked their
+  // screen", not "left". Everywhere else that weakness costs at most one covered
+  // seat on a table that keeps playing; here it costs the whole session.
+  //
+  // Stepping away deliberately (stepAway) is untouched: asking the AI to cover
+  // for you is a choice, and the solo-vs-AI table is exactly where you might
+  // want it. This only refuses to make that choice FOR you.
+  //
+  // A queued joiner counts as company, and has to. They clicked the link
+  // mid-hand and are waiting on a hand boundary that only arrives if the hand
+  // is played out (applyPendingJoins runs in startHand) — so protecting the
+  // last SEATED human here would strand a real person on a frozen table with no
+  // way in. They are not "nobody waiting"; they are the one case where covering
+  // still does its job. A stale queue entry can't disable the rule for long:
+  // the joiner is seated at the next boundary and becomes a seat of their own.
+  if (humanSeats(table) <= 1 && table.pendingJoins.length === 0) return table;
+
   // Only ever cover the seat the table is actually WAITING ON. Covering a quiet
   // player whose turn it isn't achieves nothing — the hand wasn't blocked on
   // them — and turns any weakness in presence tracking into players being
