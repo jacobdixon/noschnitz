@@ -142,6 +142,14 @@ Unchanged rules:
   `v2` is kept deliberately as a landmark; do not delete it in a tidy-up.
 
 ## Conventions established this session (keep following them)
+- **Watch every PR you open on this repo, without being asked.** Standing instruction
+  from the owner, 2026-07-30. Subscribe to the PR's activity as soon as it exists, drive
+  it to green, and answer review comments — a PR opened and abandoned is worse than not
+  opening one, because the deploy pipeline treats a red `master` as a reason to withhold
+  the beta build silently. Schedule a check-in alongside the subscription rather than
+  relying on it: webhooks do not reliably deliver CI *success*, new pushes, or
+  merge-conflict transitions. Stop when the PR merges or closes, or when told to.
+  Merging is still the owner's call — it is the only path to a production deploy.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
