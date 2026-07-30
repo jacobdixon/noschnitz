@@ -142,6 +142,15 @@ Unchanged rules:
   `v2` is kept deliberately as a landmark; do not delete it in a tidy-up.
 
 ## Conventions established this session (keep following them)
+- **Watch every PR you open, without being asked.** Subscribe to its activity as
+  soon as it exists, and stay subscribed until it is merged or closed. A PR here is
+  not finished when it is opened: CI going red on `master` is what silently withholds
+  the beta deploy (see the deploy section), so a failure nobody is watching for is a
+  deploy outage that looks like nothing happening. Webhooks do not reliably deliver
+  CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
+  with a self check-in about an hour out and re-arm it quietly while the PR is open.
+  Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
+  what is broken and why it is not yours to fix — never in silence.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
