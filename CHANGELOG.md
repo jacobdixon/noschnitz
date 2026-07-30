@@ -6,6 +6,29 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.39.2] - 2026-07-30
+- **No behaviour change — a measurement written down where it will be found.**
+  The largest single error in the collected corpus is a defender playing the
+  cheaper of two Queens on trick 1 and losing the trick to the picker's
+  Q-spades, worth 43 points double-dummy. The play really is wrong (over 3,000
+  deals consistent with what that seat can see, the boss Queen is worth +2.8
+  points to the defense and wins 81.3% of hands against 75.4%) — so the hand
+  will be reported again, and the next person to look deserves the result of
+  having already tried.
+- The obvious fix — upgrade to a boss winner when the cheap winner has a live
+  beater and `securityAfterPlay` says the trick is not yet certain — measures
+  **-7.37 per firing over 2,929 firings, 0 of 3 seeds**, with the acting side's
+  win rate falling from 75.1% to 62.5%. It fires on ~12% of hands and is the
+  rule 0.19.0 deleted for +0.089/seat/hand coming back in by another door.
+- Narrowed to the reported shape exactly, it reads +1.25 per firing in-sample
+  and **-0.61 on fresh seeds**. That is noise; the in-sample figure was the best
+  of twenty slices. Recorded because "narrow it until it works" is the obvious
+  next move and it does not work.
+- What the position actually needs is a prior nothing in the engine has yet:
+  the card that beats the cheap Queen is likelier to sit with the **picker**,
+  because pickers pick on trump. Noted against §B of `AI_PERFECT_PLAY.md` as a
+  ready-made test case for the belief layer.
+
 ## [0.39.1] - 2026-07-30
 - **Renaming yourself at a table works again.** `TableScreen` called
   `api.renameSeat(...)`; `src/api.js` exports that function as `setName`. There
@@ -30,6 +53,7 @@ corresponds to the entries below.
 - The bug outlived five releases (0.34.0 through 0.39.0) with the warning in
   every build log the whole time, which is the case for the guard more than the
   one-word fix is.
+
 
 ## [0.39.0] - 2026-07-30
 - **The picker no longer leads a fat trump into higher trump.** Holding K-D, A-D
