@@ -13,23 +13,25 @@
    The cost is that flipping it needs a redeploy, which is the right trade for
    something that gates an unfinished feature rather than an experiment.
 
-   How the two environments differ:
+   Where the flag stands (2026-07-31 — multiplayer was promoted to production):
 
-     production  (www.noschnitz.com, master)  flag unset -> solo only
+     production  (www.noschnitz.com, master)  VITE_MULTIPLAYER=1
      beta        (beta.noschnitz.com, beta)   VITE_MULTIPLAYER=1
 
-   Those are separate Vercel environments — Production and Preview — which is
-   also why beta has an Upstash store and production doesn't. The same split
-   that keeps test tables out of the live keyspace keeps unfinished multiplayer
-   out of the live site.
+   Those are still separate Vercel environments — Production and Preview — each
+   with its OWN Upstash database. That split no longer gates the feature; it
+   keeps beta's tables out of the live keyspace, which is the part that still
+   matters and is invisible until two groups play at once.
 
-   Note that the table above describes VERCEL, not this file. Production being
-   flag-off is the absence of a variable on an environment, so nothing here
-   changes when it is promoted — the variable arrives, the next build inlines
-   `true`, and the branches this eliminates today are shipped instead. See
-   "Promoting multiplayer to production" in CLAUDE.md for the three variables
-   that have to move together, and for why the bundle is the only honest place
-   to check which build actually landed.
+   Note that the table above describes VERCEL, not this file. Being flag-off was
+   only ever the absence of a variable on an environment, so nothing here changed
+   when it was promoted — the variable arrived and the next build inlined `true`.
+   Which means this file is also the rollback: unset it on Production, redeploy,
+   and every branch behind it is eliminated again. See "Promoting multiplayer to
+   production" in CLAUDE.md for the four variables that move together, why
+   `VITE_MULTIPLAYER` in particular must not be marked "sensitive" (build-time
+   variables are withheld from sensitive), and why the bundle is the only honest
+   place to check which build actually landed.
 
    The server has its own flag (MULTIPLAYER, no VITE_ prefix, read at runtime by
    the API routes) because this one never reaches it: VITE_* vars exist only in
