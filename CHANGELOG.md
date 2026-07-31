@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.45.2] - 2026-07-31 (`_pending_`)
+## [0.45.2] - 2026-07-31 (`d5dbb8c`)
 - **Multiplayer is live on www.noschnitz.com.** Documentation catching up to a
   deployment, no behaviour change. `VITE_MULTIPLAYER=1`, `MULTIPLAYER=1` and a
   Production-scoped Upstash database are set on Vercel; verified by bundle
