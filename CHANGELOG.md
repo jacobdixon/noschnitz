@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.46.0] - 2026-07-31
+## [0.46.0] - 2026-07-31 (`a29d0d4`)
 - **The collected corpus can be read and mined without a browser, from Actions
   → "Mine hands".** `minehands.mjs` has existed since 0.32.0 and found a real
   bug in its first 41 hands, but reading the corpus meant reaching
