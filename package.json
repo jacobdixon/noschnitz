@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.44.0",
+  "version": "0.44.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,7 @@
     "pacingtest": "node scripts/pacingtest.mjs",
     "aiskilltest": "node scripts/aiskilltest.mjs",
     "abtest": "node scripts/abtest.mjs",
+    "montecarlo": "node scripts/montecarlo.mjs",
     "gradetest": "node scripts/gradetest.mjs",
     "belieftest": "node scripts/belieftest.mjs 1200",
     "handstest": "node scripts/handstest.mjs",

@@ -6,6 +6,21 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.44.1] - 2026-07-31
+- **Added `scripts/montecarlo.mjs` (`npm run montecarlo`), a single-dummy
+  Monte Carlo deal-sampler.** `gradeAllPlays`/`solveHandValue` (the recap
+  grader) and this are different tools for different questions, and it's
+  worth being precise about which is which: the grader is double-dummy —
+  every hand known, used only after a hand is finished. This tool samples
+  the unseen cards instead, consistent with what a seat could actually see
+  mid-hand (remaining hand sizes, and voids revealed by failing to follow a
+  led suit), and averages an evaluator over many such deals. Two evaluators
+  are provided: `exact` (double-dummy-solves each sampled deal) and
+  `heuristic` (plays each sampled deal out with the engine's own deployed
+  policy, `aiChooseCard`) — cheap enough for thousands of samples in under
+  two seconds, since it's a handful of heuristic lookups per sample rather
+  than a search. No engine.js changes; it only consumes existing exports.
+
 ## [0.44.0] - 2026-07-30 (`3944da3`)
 - **The "Go alone" button is gated on the hand now — `ALONE_OFFER_STRENGTH`.**
   0.43.0 offered it on every hand, which made a losing move available on most of
