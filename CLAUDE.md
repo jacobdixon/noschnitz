@@ -141,6 +141,19 @@ Unchanged rules:
   `git branch -r --merged origin/master` — it under-reports badly, for the reason
   given under "Things a session will try and cannot do" below.
   `v2` is kept deliberately as a landmark; do not delete it in a tidy-up.
+- **`beta` has its own verifier now: Actions → "Verify beta" → Run workflow**
+  (`.github/workflows/verify-beta.yml`, `workflow_dispatch`). `release.yml` requests
+  the beta build but cannot wait for it — Vercel builds beta asynchronously while that
+  job is already blocked on production — so "requested" was the last honest thing it
+  could say, and its summary printed a curl nobody ran. The workflow checks two
+  failures that look identical from outside: **stale** (hook fired, build never
+  landed) and **flag-off** (build succeeded without `VITE_MULTIPLAYER=1`, so beta is
+  serving the solo game while the commit status, the version and the deployment all
+  report green). It tells you which. The flag-off discriminator is `/api/tables/` —
+  the multiplayer API surface, whose call sites are all eliminated from the flag-off
+  build; measured at v0.44.0 it is 0 occurrences flag-off against 8 flag-on. If you
+  ever need a different discriminator, pick a structural string, not a UI label
+  somebody can reword without knowing that file depends on it.
 
 ## Conventions established this session (keep following them)
 - **Watch every PR you open, without being asked.** Subscribe to its activity as
@@ -194,6 +207,23 @@ Unchanged rules:
   engine *before* anything changed, and was then pinned as a constructed assertion
   with a negative control. Several correct-looking diagnoses measured as pure noise;
   measure before believing.
+- **"What should the AI do?" and "what should we OFFER a human?" are different
+  questions and get different numbers.** `ALONE_HANDSTRENGTH` (17) is the AI's bar for
+  going alone; `ALONE_OFFER_STRENGTH` (18) is when the button is worth showing a
+  person. They sit next to each other in `engine.js` and look like a typo — they are
+  not. The AI decides while it still holds all eight and buries to match the plan
+  (banking points instead of protecting a call); a human decides *after* the bury is
+  spent, which is strictly worse, so the human's bar is a point higher. Measured over
+  20,239 pickers who had a partner available: alone is behind by 1.9 points/hand at
+  17, negative in 4 of 4 seeds, and only turns positive at 18. **If the AI bar is ever
+  re-tuned, re-measure the offer bar in the same pass** rather than assuming it
+  follows.
+  - The harness for that is the general shape to reuse for any "is this option worth
+    offering" question: identical deal AND identical bury in both arms, differing only
+    in the decision under test, every seat on the unchanged engine, scored on the
+    picker's own `handDelta` (which already carries the 4x). It was **not committed** —
+    it lives only in this session's transcript. Rebuild it as `scripts/alonetest.mjs`
+    if the bar is ever revisited.
 - Sandbox-specific network restrictions from this session (blocked `vercel.com`,
   `api.vercel.com`, `api.github.com`) are **Cowork sandbox allowlist limits, not
   real-world limits** — they most likely won't apply in Claude Code on your own
@@ -255,12 +285,29 @@ Genuinely open:
    five-human tables through the real handlers and is a good net for server bugs, but
    every bug worth fixing so far came from real people playing on real phones. Mid-hand
    join (MP-2.3) in particular has synthetic coverage only.
-3. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
+   - **First real multiplayer session: 2026-07-30. Two humans, three AI seats, ~20
+     hands, no stalls.** The headline is not that it worked, it is *what shape it
+     worked in*: the table filled to five with only two people in the room. AI-filled
+     seats were bet on specifically to remove the "we need five before it's worth
+     starting" barrier that killed the get61 era, and on the first real outing that
+     bet paid. Do not read it as coverage — two humans is not five, nobody joined
+     mid-hand, and nobody backgrounded a phone for long. The next session is the one
+     that tests those.
+3. **Nothing from a multiplayer table is recorded.** `recordHand()` is called in
+   exactly one place — `src/Sheepshead.jsx`, the solo screen. `TableScreen.jsx` never
+   calls it, so `/api/hands` collects nothing from real tables. That is the corpus
+   built *because* "both AI fixes that shipped this week were found by reading one
+   reported hand at a time," and the richest possible source of hands does not feed it.
+   Not a one-liner to fix: all five clients would record the same hand from different
+   seats, so it needs dedup, and `handLog.js` says in its own header that collecting
+   other people's play needs their consent. Worth doing properly, not hastily, and
+   never in the hours before a games night.
+4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,
    readable from the in-app menu) precisely because this class of bug cannot be caught
    by staring at it. If someone reports a frozen table, get that log.
-4. **PAT rotation is still open.** A GitHub PAT was used inline in shell commands in an
+5. **PAT rotation is still open.** A GitHub PAT was used inline in shell commands in an
    early session and flagged for rotation. Assume it may no longer be valid, and note
    that making the repo private would NOT be the remediation — private does not undo
    public. Rotating the token is the fix.
@@ -272,8 +319,20 @@ Genuinely open:
 
 ## Things a session will try and cannot do
 
-Both of these were established the expensive way. They are recorded so the next session
+All of these were established the expensive way. They are recorded so the next session
 doesn't spend a turn rediscovering them.
+
+- **A session may not be able to fetch noschnitz.com at all.** In the Claude Code
+  remote environment (2026-07-30) the egress proxy answered `403` to CONNECT for both
+  `www.noschnitz.com:443` and `beta.noschnitz.com:443` — an organization policy denial,
+  logged as `connect_rejected` in `curl -sS "$HTTPS_PROXY/__agentproxy/status"`. So a
+  session **cannot** do the one check this project insists on, verifying a deploy by
+  bundle content. Do not route around it to the same host by another tool. Read the
+  answer out of CI instead, which can reach it: `release.yml`'s "Make sure production
+  actually deployed" step logs what www is serving, and the "Verify beta" workflow does
+  the same for beta. That is *why* the beta verifier exists as a workflow rather than a
+  shell one-liner in a transcript. Note this is a different limit from the Cowork
+  sandbox one noted above — check the proxy status before assuming either applies.
 
 - **Repo visibility cannot be changed from an agent session.** The agent proxy refuses
   repository-settings writes outright, independent of token scope:
