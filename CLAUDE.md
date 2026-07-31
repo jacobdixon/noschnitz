@@ -367,6 +367,22 @@ Genuinely open:
    seats, so it needs dedup, and `handLog.js` says in its own header that collecting
    other people's play needs their consent. Worth doing properly, not hastily, and
    never in the hours before a games night.
+   - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
+     `workflow_dispatch`). A session cannot fetch it — `beta.noschnitz.com` is a 403
+     CONNECT policy denial, the same wall as the deploy checks — so this exists for the
+     same reason `verify-beta.yml` does. It needs `HANDS_READ_TOKEN` as an **Actions
+     secret**, which is a separate thing from the Vercel environment variable of the
+     same name; copy the value across. `GET /api/hands` answers 404 both when the
+     server's token is unset and when the one given is wrong, deliberately, so a 404
+     tells you nothing about which.
+   - **Mining is bounded by `--budget-min`, not by how many hands you ask for.** An
+     exact grade of every decision costs seconds a hand — ~24s on a slow box — so a
+     thousand hands is hours, not minutes. It takes the newest first when the clock is
+     bounded and reports what it did not reach.
+   - **What the corpus can answer is narrower than it looks.** Every record is one
+     human against four AI seats, so a cluster is evidence about the engine and never
+     about a table. And per the census, a corpus whose newest `version` is several
+     releases old means collection broke — not that nobody played.
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,

@@ -6,6 +6,72 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.46.0] - 2026-07-31
+- **The collected corpus can be read and mined without a browser, from Actions
+  → "Mine hands".** `minehands.mjs` has existed since 0.32.0 and found a real
+  bug in its first 41 hands, but reading the corpus meant reaching
+  `beta.noschnitz.com/api/hands` — and an agent session cannot: the egress proxy
+  answers 403 to CONNECT as a policy denial, exactly as it does for the deploy
+  checks. Same answer as `verify-beta.yml`, for the same reason: the check runs
+  where it can reach the site, and the answer gets read out of CI.
+  - It prints a census before it mines. The first question about a corpus is not
+    what it says, it is whether it is still arriving — and since every record is
+    stamped with the build that produced it, a corpus whose newest version is
+    three releases back means collection broke rather than that nobody played.
+  - The miner self-tests first, on a seat that plays a random legal card a
+    quarter of the time. An instrument that cannot detect a deliberately worse
+    player cannot be trusted to detect a better one.
+- **A grade could take the whole heap down, and did.** `DD_NODE_BUDGET` bounds
+  the search in TIME, and nothing bounded it in MEMORY — the transposition table
+  grows one entry per node, so at 50M nodes it wants gigabytes and the heap limit
+  arrives long before the budget can fire. `minehands.mjs --selftest 30` died on
+  "Ineffective mark-compacts near heap limit" at 8GB after six minutes. The
+  budget's whole purpose is to make a pathological hand report no verdict instead
+  of hanging; a crash is worse than the thing it was built to prevent, and in the
+  browser it takes `grader.worker.js` with it rather than returning nothing.
+  - Fixed by capping the table at 750k entries and clearing it when full, which
+    is safe because a transposition table is a cache and correctness never
+    depended on a hit. Sized on the measurement rather than a guess: the same
+    self-test peaks at 5.2GB with a 3M cap and 2.0GB at 750k, grading 30 of 30
+    hands either way in the same wall-clock. A CI runner's default old-space is
+    around 4GB and a phone's worker heap is far smaller, so the headroom is the
+    whole point.
+  - `gradetest` proves the clearing is harmless rather than assuming it: every
+    one of its 1,479 cross-checked positions is now solved a third time with the
+    table capped at five entries, so it clears constantly, and the value has to
+    match the unmemoised reference minimax. A table that corrupted results on
+    eviction could not pass that.
+- **Every device was losing the tail of its log — up to four hands each.**
+  `flushHands` only ran after a hand ended and only sent once five were pending,
+  so a browser that stopped on four kept them forever: the fifth hand that would
+  release them never comes. Since a device stops mid-batch by definition, that is
+  not an edge case, and it fell hardest on people who tried the game once. A
+  forced flush now runs on mount, so stragglers leave with the next visit.
+- **The uploader had no test coverage at all**, which is how that survived. It
+  has some now, stubbing `localStorage` and `fetch` and driving the real module:
+  four hands stay put, a forced flush sends them, a second forced flush sends
+  nothing because the first marked them, an empty queue makes no request, and a
+  503 stops the browser asking forever. Checked against the negative control —
+  with the fix removed, three of them fail.
+- **The miner's self-test advertised a fixed seed and did not have one.** It
+  seeded its own shuffle but started from `makeDeck()`, which shuffles with
+  `Math.random` first — so the seed was decorative and every run sampled a
+  different 30 hands. Three runs on identical code returned nets of -37, -38 and
+  -45, which is exactly the size of difference someone would report as an effect.
+  It deals from `ALL_CARDS` now, and two consecutive runs are byte-identical.
+  - This is why the memo cap above was measured with `gradetest` rather than with
+    the self-test: 1,479 positions solved a third time with a 5-entry table, each
+    against the unmemoised reference. A control that resamples every run cannot
+    settle a question like that, and would have looked like it had.
+- `minehands.mjs` takes `--budget-min`, because an exact grade is seconds a hand,
+  not milliseconds, so any real corpus outlives any job timeout. It takes the
+  newest hands first when the clock is bounded — an old hand is graded against an
+  engine that no longer exists — and says how many it did not reach, which is the
+  difference between a truncated run and a run that merely looks complete.
+- Correcting the comment above the recorder in `Sheepshead.jsx`: it still said
+  nothing leaves the browser, which stopped being true in 0.32.0 when uploads
+  were added.
+
 ## [0.45.0] - 2026-07-31 (`060791f`)
 - **Arriving at a table now puts you AT it, watching, instead of on a holding
   page.** Tap a friend's link mid-hand, type a name, and you land on the felt

@@ -14,7 +14,7 @@ import { shareRecap } from "./shareRecap.js";
 import { statusLine, progressLine } from "./status.js";
 import { CallButtons } from "./decisions.jsx";
 import { useHandGrade } from "./useHandGrade.js";
-import { recordHand, installExportGlobal, isSharing, setSharing } from "./handLog.js";
+import { recordHand, installExportGlobal, isSharing, setSharing, flushHands } from "./handLog.js";
 
 // The house rules moved to rules.js so a table can copy the same list onto the
 // table object, where they have to be state rather than a constant. Solo reads
@@ -173,9 +173,15 @@ export default function Sheepshead({ onPlayWithFriends }) {
   const playGrades = useHandGrade(g, g.phase === "handEnd");
 
   // Keep a local record of finished hands so human play can be compared
-  // against the engine's offline — see handLog.js. Nothing leaves the browser;
-  // export is a console call, not a feature.
-  useEffect(() => { installExportGlobal(); }, []);
+  // against the engine's offline — see handLog.js. Records are uploaded in
+  // small batches unless sharing is off; the console export is a second way
+  // out, for pulling one device's log down by hand.
+  //
+  // The forced flush on mount is what collects the tail. Uploads otherwise
+  // trigger on a completed hand, and a device always stops playing part-way
+  // through a batch, so without this the last few hands of every visit sit in
+  // localStorage forever.
+  useEffect(() => { installExportGlobal(); flushHands(true); }, []);
   useEffect(() => {
     if (g.phase === "handEnd") recordHand(g, __APP_VERSION__, 0);
   }, [g.phase, g.handNum]);

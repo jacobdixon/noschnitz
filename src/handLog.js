@@ -116,12 +116,20 @@ export function recordHand(g, version, humanSeat = 0) {
 // Environments without a store answer 503 and that is a permanent no, not a
 // retry — production has no Redis, so a browser there would otherwise queue
 // forever and re-send on every hand.
+//
+// `force` exists because the batch threshold, on its own, loses the tail. This
+// is only ever called after a hand ends, so a device that finishes on 4 unsent
+// hands keeps them forever: it needs a fifth to trigger a send, and the fifth
+// never comes. Every device that stops playing does so mid-batch by definition,
+// so that is up to four hands lost per device rather than an edge case, and it
+// falls hardest on exactly the people who try the game once. Calling it forced
+// at startup means the stragglers leave with the next visit instead.
 let sharingOff = false;
-export async function flushHands() {
+export async function flushHands(force = false) {
   if (!canStore() || sharingOff || !isSharing()) return;
   let log = readHandLog();
   const pending = log.filter((r) => !r.sent);
-  if (pending.length < BATCH) return;
+  if (force ? !pending.length : pending.length < BATCH) return;
 
   const batch = pending.slice(0, BATCH);
   const install = installId();
