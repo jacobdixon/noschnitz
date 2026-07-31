@@ -6,6 +6,38 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.45.2] - 2026-07-31 (`d5dbb8c`)
+- **Multiplayer is live on www.noschnitz.com.** Documentation catching up to a
+  deployment, no behaviour change. `VITE_MULTIPLAYER=1`, `MULTIPLAYER=1` and a
+  Production-scoped Upstash database are set on Vercel; verified by bundle
+  content (8 `/api/tables/` references in what www actually serves) and by a
+  table surviving a reload in a fresh tab.
+
+  Every claim that production is the solo game is now false, and this repo has
+  been bitten by exactly that drift before — CLAUDE.md's own header notes a line
+  that said v0.7.2 while the app shipped v0.22.0. Corrected in `CLAUDE.md`,
+  `src/flags.js` and `api/_lib/flags.js`, including the consequence that is easy
+  to miss: a multiplayer-only change no longer leaves the production bundle
+  byte-identical. Verify-by-content still stands, for the other reason — Vercel's
+  minifier is non-deterministic.
+
+- **The promotion runbook now records what it cost.** Four variables, three of
+  them right first time, and three deploy cycles spent finding the fourth:
+  `KV_REST_API_TOKE`, missing a trailing `N`. Written down so the next person
+  doesn't pay it again — expect the marketplace integration to auto-prefix
+  (Preview already owns the bare name, and clearing the prefix fails as "no
+  environment variables created", which is a name collision reported obliquely);
+  never substitute `KV_REST_API_READ_ONLY_TOKEN`, which the store would accept
+  and then fail on at the first write; and **`VITE_MULTIPLAYER` must not be
+  marked "sensitive"**, because sensitive variables reach functions at runtime
+  but are withheld from the build step — which would serve a solo-game bundle in
+  front of a fully live API, with every signal green and the feature absent.
+
+  Plus the four-layer verification chain, one row per thing that can be
+  independently wrong: build flag, server flag, store credentials, and store
+  *persistence* — the last of which only a human can run, and the only one that
+  proves a warm isolate isn't quietly on the in-memory fallback.
+
 ## [0.45.1] - 2026-07-31 (`49d1001`)
 - **`no-store` now says WHICH credential name is missing.** The gate was already
   loud — it refuses with a distinct code rather than silently falling back to an
