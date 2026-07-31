@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.44.1] - 2026-07-31
+## [0.44.1] - 2026-07-31 (`e6f6d9d`)
 - **Added `scripts/montecarlo.mjs` (`npm run montecarlo`), a single-dummy
   Monte Carlo deal-sampler.** `gradeAllPlays`/`solveHandValue` (the recap
   grader) and this are different tools for different questions, and it's
