@@ -366,6 +366,51 @@ check("a full hand plays to completion through the API", hand1.done, hand1.reaso
       JSON.stringify(after.g) === JSON.stringify(before.g));
   }
   assertNoLeak("late join", late.body, after, -1, ERIN, ALL_IDS);
+
+  // The watcher's own view of the table, which is what they now SEE rather
+  // than a holding page. It has to be the maximally-redacted one — seat -1,
+  // no hand, nobody's token — because a spectator is the least trusted viewer
+  // a table has: possession of the link is their entire credential.
+  if (late.body?.status === "pending") {
+    check("a watcher is handed the table", Boolean(late.body.table));
+    check("...with no seat", late.body.table.you === -1, `you=${late.body.table.you}`);
+    check("...and no hand at all",
+      (late.body.table.g?.hands || []).every((h) => h === null),
+      JSON.stringify(late.body.table.g?.hands?.map((h) => (h ? h.length : null))));
+    check("...but can still see the seats to render the table",
+      late.body.table.seats.length === 5 && late.body.table.seats.every((s) => s.name));
+    check("...and finds themselves in the queue",
+      late.body.table.pendingJoins.some((p) => p.isYou && p.name === "Erin"));
+    check("...with nobody's token in it",
+      late.body.table.pendingJoins.every((p) => p.playerId === undefined));
+  }
+}
+
+// --- a full table takes a watcher instead of refusing ---------------------
+{
+  // Five humans used to be a 409. It is now a seat in the queue and a view of
+  // the table — the difference between "come back later" and "you're here".
+  const t = await call(createTableRoute, {
+    method: "POST", body: { playerId: "pid-w-host", hostName: "Host" },
+  });
+  const wid = t.body.table.id;
+  for (const n of [1, 2, 3, 4]) {
+    await call(joinRoute, {
+      method: "POST", query: { id: wid }, body: { playerId: `pid-w-${n}`, name: `W${n}` },
+    });
+  }
+  const filled = await store.get(wid);
+  check("five humans are seated", filled.seats.filter((s) => s.kind === "human").length === 5);
+
+  const sixth = await call(joinRoute, {
+    method: "POST", query: { id: wid }, body: { playerId: "pid-w-6", name: "Six" },
+  });
+  check("a sixth person is admitted as a watcher", sixth.status === 200, `got ${sixth.status}`);
+  check("...as pending, not seated", sixth.body?.status === "pending", `status=${sixth.body?.status}`);
+  check("...and is told which seat they're waiting on — there is none, so the other line",
+    sixth.body?.table?.pendingJoins?.[0]?.name === "Six");
+  check("...without displacing anyone",
+    (await store.get(wid)).seats.filter((s) => s.kind === "human").length === 5);
 }
 
 // --- the all-pass deadlock, end to end ------------------------------------

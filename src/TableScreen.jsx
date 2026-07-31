@@ -36,7 +36,7 @@ import { shareRecap } from "./shareRecap.js";
 // are live in the store with no `rules` field, and a header with no rules line
 // is a visibly broken header rather than a missing feature.
 import { HOUSE_RULES } from "./rules.js";
-import { idleMs, isBootable, AWAY_AFTER_MS } from "./table.js";
+import { idleMs, isBootable, AWAY_AFTER_MS, watcherNotices } from "./table.js";
 import * as api from "./api.js";
 import { useHandGrade } from "./useHandGrade.js";
 
@@ -168,8 +168,9 @@ function ShareRow({ tableId }) {
 
 /* ------------------------------- The lobby -------------------------------- */
 
-function Lobby({ table, mySeat, onStart, busy, err }) {
+function Lobby({ table, mySeat, onStart, busy, err, notices }) {
   const humans = table.seats.filter((s) => s.kind === "human").length;
+  const watching = mySeat < 0;
 
   return (
     <div style={{ padding: 20, color: felt.cream, maxWidth: 460, margin: "0 auto" }}>
@@ -198,10 +199,12 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
         </div>
       ))}
 
-      {/* MP-2.3 — queued players are visible so the table knows they're there. */}
-      {table.pendingJoins?.length > 0 && (
+      {/* MP-2.3 — queued players are visible so the table knows they're there.
+          Same sentence the felt shows once a hand is under way, rather than a
+          second phrasing of the same fact. */}
+      {notices?.length > 0 && (
         <div style={{ marginTop: 10, fontSize: 12, color: felt.creamDim }}>
-          {table.pendingJoins.map((p) => p.name).join(", ")} joining next hand
+          {notices.map((n, i) => <div key={i}>{n.text}</div>)}
         </div>
       )}
 
@@ -209,10 +212,15 @@ function Lobby({ table, mySeat, onStart, busy, err }) {
 
       {/* Everyone seated gets this, not just the host. The Host badge above is
           all that's left of the role: dealing is not an office, and making it
-          one is what left a table stranded when the host dropped. */}
-      <button style={{ ...btnGold, marginTop: 18, width: "100%" }} disabled={busy} onClick={onStart}>
-        {busy ? "Dealing…" : "Deal the first hand"}
-      </button>
+          one is what left a table stranded when the host dropped.
+
+          A watcher is not seated, and api/tables/[id]/start.js refuses them —
+          so offering the button would be offering an error. */}
+      {!watching && (
+        <button style={{ ...btnGold, marginTop: 18, width: "100%" }} disabled={busy} onClick={onStart}>
+          {busy ? "Dealing…" : "Deal the first hand"}
+        </button>
+      )}
     </div>
   );
 }
@@ -390,7 +398,10 @@ function PlayerModal({ table, seat, serverNow, onBoot, onAway, onBack, onClose, 
   const s = table.seats[seat];
   if (!s) return null;
   const idle = idleMs(table, seat, serverNow());
-  const bootable = isBootable(table, seat, serverNow());
+  // A watcher may not boot anyone: api/tables/[id]/seat.js refuses an unseated
+  // caller, so the button would only ever produce a 403. Freeing a seat is the
+  // table's call, and a watcher stands to gain the seat they'd be freeing.
+  const bootable = table.you >= 0 && isBootable(table, seat, serverNow());
   const isMe = seat === table.you;
 
   const kindLabel =
@@ -649,38 +660,47 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   const mySeat = table.you;
   const g = table.g;
 
-  // No seat. Two very different situations that used to render the same
-  // message: someone waiting for the next hand, and someone whose seat was
-  // reclaimed. Telling a removed player "you'll be seated at the start of the
-  // next hand" is simply false — they aren't in the queue, so nothing will
-  // ever seat them, and the screen offered no way back.
-  if (mySeat < 0) {
-    const queued = (table.pendingJoins || []).some((p) => p.isYou);
+  // No seat, and two very different situations behind it.
+  //
+  // Somebody QUEUED is at the table. They tapped a link a friend texted them,
+  // gave a name, and are waiting on the hand to end — so they get the felt,
+  // not a holding page. Watching is the point: the whole reason to open a table
+  // link mid-hand is the room, and parking someone on a "you're in the queue"
+  // card until a stranger decides to deal is telling them to wait outside the
+  // door they just walked through. It is also the one thing the get61 era could
+  // never do — rotate people through five chairs without the arrivals having
+  // nothing to do.
+  //
+  // Somebody whose seat was RECLAIMED is not in the queue, and nothing will
+  // ever seat them, so "you'll be seated at the start of the next hand" was
+  // simply false. That case keeps its own screen, and the way back out of it.
+  const watching = mySeat < 0;
+  const queued = watching && (table.pendingJoins || []).some((p) => p.isYou);
+  // The announcement, computed from the view the server already sends rather
+  // than from a field it would have to keep in step with the seats. Everyone at
+  // the table sees it, the watcher included — it is how they learn whose seat
+  // they are getting and when.
+  const notices = watcherNotices(table);
+
+  if (watching && !queued) {
     const seatsFree = table.seats.some((s) => s.kind === "ai");
     return (
       <Centered>
         <div style={{ fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 900, color: felt.brass, marginBottom: 8 }}>
-          {queued ? "You're in the queue" : "You're not at the table"}
+          You&rsquo;re not at the table
         </div>
         <div style={{ fontSize: 14, color: felt.creamDim, marginBottom: 18, maxWidth: 320 }}>
-          {queued
-            ? "You'll be seated at the start of the next hand."
-            : seatsFree
-              ? "Your seat was given up or reclaimed. There's room — you can sit back down."
-              : "Your seat was given up or reclaimed, and the table is full right now."}
+          {seatsFree
+            ? "Your seat was given up or reclaimed. There's room — you can sit back down."
+            : "Your seat was given up or reclaimed. You can wait for the next one and watch in the meantime."}
         </div>
-        {!queued && (
-          <div style={{ display: "flex", gap: 10 }}>
-            {onRejoin && (
-              <button style={btnGold} onClick={onRejoin}>
-                {seatsFree ? "Sit back down" : "Join when a seat opens"}
-              </button>
-            )}
-          </div>
-        )}
-        {queued && table.g && (
-          <div style={{ fontSize: 13, color: felt.creamDim }}>Hand {table.g.handNum} in progress…</div>
-        )}
+        <div style={{ display: "flex", gap: 10 }}>
+          {onRejoin && (
+            <button style={btnGold} onClick={onRejoin}>
+              {seatsFree ? "Sit back down" : "Watch and wait for a seat"}
+            </button>
+          )}
+        </div>
       </Centered>
     );
   }
@@ -692,6 +712,7 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         mySeat={mySeat}
         busy={busy}
         err={err}
+        notices={notices}
         onStart={() => act(() => api.startHand(tableId, playerId))}
       />
     );
@@ -776,6 +797,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
     setEnded(null);
     setShowRecap(false);
     if (!finished) return;
+    // A watcher may read the summary but may not deal — api/tables/[id]/start.js
+    // refuses anyone unseated, so attempting it would put a 403 on screen at the
+    // end of every hand. The deal that seats them is somebody else's to make.
+    if (watching) return;
     // Someone else got there first. The felt behind this modal is already the
     // next hand, so there is nothing to deal.
     if (g.phase !== "handEnd" || g.handNum !== finished.g.handNum) return;
@@ -903,6 +928,28 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
         }}
       />
 
+      {/* Somebody arrived. Announced on the felt rather than in a modal or a
+          toast for two reasons: the table needs to know a seat is changing
+          hands before it happens, and the person who arrived needs to see that
+          the table knows. A toast that has faded by the time you look up has
+          told nobody anything.
+
+          Stays up for as long as they are waiting, because it is status rather
+          than an event — "when do I get in" is the question, and this is the
+          answer, continuously true. */}
+      {notices.length > 0 && (
+        <div style={{
+          flexShrink: 0, padding: "6px 12px", textAlign: "center",
+          background: "#00000038", borderTop: `1px solid ${felt.brassDim}44`,
+        }}>
+          {notices.map((n, i) => (
+            <div key={i} style={{ fontSize: 13, fontStyle: "italic", color: n.isYou ? felt.brass : felt.creamDim }}>
+              {n.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* COM-3.2. Deliberately a banner rather than something tucked in a
           modal: a player who has just come back needs to find this without
           hunting, and until they do, the AI is playing their cards. */}
@@ -1014,7 +1061,10 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           this and the table never did, so six tricks went by with no sense of
           progress. Reads from the drawn state, so it cannot count a trick the
           player has not been shown. */}
-      {progressLine({ g: view, mySeat }) && caughtUp && (
+      {/* Not for a watcher: it counts the points YOU have taken, and a watcher
+          has taken none by definition — "You've taken 0 pts" all hand is a
+          scoreboard for a game they aren't in. */}
+      {!watching && progressLine({ g: view, mySeat }) && caughtUp && (
         <div style={{ fontSize: 13, color: felt.creamDim, marginTop: 4, textAlign: "center" }}>
           {progressLine({ g: view, mySeat })}
         </div>
@@ -1045,13 +1095,29 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           button only exists once a trick has finished, and without a floor the
           felt above shrank by 11px the first time it appeared (measured). */}
       <div style={{ flexShrink: 0, padding: "0 10px 4px" }}>
-        <HandLabel g={view} seat={mySeat} name={table.seats[mySeat]?.name}>
-          {g.lastTrick && (
-            <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
-              Last Trick
-            </button>
-          )}
-        </HandLabel>
+        {/* A watcher has no name, no score and no role on this row — HandLabel
+            would read "You +0" for somebody who is not playing. What they do
+            still want is the way back into the last trick. */}
+        {watching ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 30 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: ".04em", color: felt.brass }}>
+              Watching
+            </div>
+            {g.lastTrick && (
+              <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
+                Last Trick
+              </button>
+            )}
+          </div>
+        ) : (
+          <HandLabel g={view} seat={mySeat} name={table.seats[mySeat]?.name}>
+            {g.lastTrick && (
+              <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setModal("lastTrick")}>
+                Last Trick
+              </button>
+            )}
+          </HandLabel>
+        )}
       </div>
 
       {/* Your hand. HandFan sizes itself from the viewport now, so the fan
@@ -1059,15 +1125,22 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
       {/* calc() for the home indicator, which solo has always accounted for and
           this screen did not — on a notched phone the bottom row of cards sat
           under it. */}
-      <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px calc(12px + env(safe-area-inset-bottom))" }}>
-        <HandFan
-          dealKey={g.handNum}
-          cards={myHand}
-          isSelected={(c) => selected.some((x) => cid(x) === cid(c))}
-          isDim={(c) => g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
-          onCardClick={(c) => () => onCardClick(c)}
-        />
-      </div>
+      {/* Dropped entirely for a watcher rather than rendered empty: HandFan
+          holds CARD_ROW_H whether or not it has cards (deliberately — see the
+          note in felt.jsx), which would leave a watcher looking at a hundred
+          pixels of empty rail. The felt is flex:1, so the space goes to the
+          table they came here to watch. */}
+      {!watching && (
+        <div style={{ borderTop: `2px solid ${felt.rail}`, padding: "8px 6px calc(12px + env(safe-area-inset-bottom))" }}>
+          <HandFan
+            dealKey={g.handNum}
+            cards={myHand}
+            isSelected={(c) => selected.some((x) => cid(x) === cid(c))}
+            isDim={(c) => g.phase === "playing" && isMyTurn && !legal.includes(cid(c))}
+            onCardClick={(c) => () => onCardClick(c)}
+          />
+        </div>
+      )}
 
       {/* The hand-end summary and the recap, which the table simply never had
           — you finished a hand and got a Deal button. They work here because

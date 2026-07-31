@@ -38,6 +38,13 @@ export const SEATS = 5;
 export const rotate = (seat, mySeat = 0) =>
   mySeat < 0 ? seat : (seat - mySeat + SEATS) % SEATS;
 
+// Where a seat goes when nobody is sitting in position 0 — a watcher, who has
+// no seat and therefore no hand along the bottom. rotate() leaves their view
+// unrotated, so seat 0 lands in the slot SEAT_POS deliberately leaves empty,
+// and without this it simply wasn't drawn: the table appeared to have four
+// players. Low enough to clear TRICK_POS[0], which sits at 67%.
+export const SEAT_POS_BOTTOM = { left: "50%", top: "78%", transform: "translateX(-50%)" };
+
 // Where each rotated position sits. Position 0 is the viewer, drawn as the hand
 // along the bottom rather than as an avatar, so it has no entry here.
 export const SEAT_POS = {
@@ -325,7 +332,9 @@ export function Felt({ g, names, mySeat = 0, seatExtra, onSeatClick, decisions, 
   return (
     <div ref={feltRef} style={{ position: "relative", flex: "1 1 auto", minHeight: 0 }}>
       {names.map((_, seat) => {
-        const pos = SEAT_POS[rotate(seat, mySeat)];
+        // A watcher (mySeat < 0) has no hand along the bottom, so the seat that
+        // lands in position 0 is drawn there instead of being skipped.
+        const pos = SEAT_POS[rotate(seat, mySeat)] || (mySeat < 0 ? SEAT_POS_BOTTOM : null);
         if (!pos) return null; // the viewer — drawn as the hand below
         return (
           <div

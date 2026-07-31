@@ -1,0 +1,147 @@
+# Verify production — what is www.noschnitz.com actually serving?
+#
+# The sibling of verify-beta.yml, and it exists for the same reason: a session
+# working on this repo cannot fetch noschnitz.com at all (the egress proxy
+# answers 403 to CONNECT), so the one check this project insists on — verify a
+# deploy by bundle CONTENT, never by hash or by a commit status — has to be run
+# somewhere that can reach the site. That somewhere is Actions.
+#
+# release.yml already checks production for the version string on every merge,
+# and repairs it via the deploy hook if it is stale. What it does NOT check is
+# WHICH BUILD landed, and that is the question the multiplayer promotion turns
+# into a live one.
+#
+# Until the promotion, production was built flag-off on purpose: VITE_MULTIPLAYER
+# unset, every multiplayer call site eliminated, www serving the solo game. That
+# made "is the flag right" a non-question, because the answer never changed.
+# Once Production carries VITE_MULTIPLAYER=1 the flag can silently regress — an
+# environment variable scoped to the wrong environment, a Preview/Production mix
+# up, someone clearing a variable while doing something else — and every signal
+# still reads green. Same failure verify-beta.yml was written for; it just moved
+# to the environment where it costs more.
+#
+# So this asks BOTH questions and says which one failed:
+#
+#   1. STALE     — the bundle does not contain the version being checked.
+#   2. WRONG BUILD — the version is right but the flag is not what was asked
+#                  for. Both directions are failures: flag-off after the
+#                  promotion means www quietly lost multiplayer, and flag-on
+#                  before it means unfinished multiplayer went live against a
+#                  Production environment with no store behind it.
+#
+# `/api/tables/` is the discriminator, exactly as on beta: the multiplayer API
+# surface, whose call sites are all dead code in a flag-off build (measured at
+# v0.45.0: 0 occurrences flag-off, 8 flag-on). Structural, not a UI label — a
+# label can be reworded by somebody with no idea this file depends on it.
+name: Verify production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to expect (default: whatever package.json on master says)"
+        required: false
+        type: string
+      expect:
+        description: "Which build production should be serving"
+        required: true
+        default: multiplayer
+        type: choice
+        options:
+          - multiplayer
+          - solo
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: check what www.noschnitz.com serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Check the served bundle
+        env:
+          WANT_INPUT: ${{ inputs.version }}
+          EXPECT: ${{ inputs.expect }}
+        run: |
+          set -uo pipefail
+
+          want="${WANT_INPUT:-}"
+          if [ -n "$want" ]; then
+            echo "checking production for v$want (given explicitly)"
+          else
+            want="$(node -p "require('./package.json').version")"
+            echo "master is v$want per package.json — checking what the site serves"
+          fi
+          echo "expecting the $EXPECT build"
+
+          # Whatever bundle the live page references, not a path we guessed —
+          # the filename is content-hashed and changes every build.
+          fetch_bundle() {
+            local html asset
+            html="$(curl -sL --max-time 20 https://www.noschnitz.com/ || true)"
+            asset="$(printf '%s' "$html" | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)"
+            [ -n "$asset" ] || return 1
+            printf '%s' "$asset" > bundle.name
+            curl -sL --max-time 20 "https://www.noschnitz.com$asset" -o bundle.js || return 1
+            [ -s bundle.js ]
+          }
+
+          # Dispatched right after a merge or a redeploy, the build may still be
+          # queued. Two minutes, the same patience release.yml gives it.
+          fresh=0
+          for i in 1 2 3 4 5 6; do
+            if fetch_bundle && grep -q "$want" bundle.js; then
+              fresh=1
+              break
+            fi
+            echo "  attempt $i: not serving v$want yet"
+            sleep 20
+          done
+
+          asset="$(cat bundle.name 2>/dev/null || echo '(none)')"
+          size="$(wc -c < bundle.js 2>/dev/null || echo 0)"
+          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l)"
+
+          {
+            echo "### www.noschnitz.com"
+            echo ""
+            echo "- expected version: \`$want\`"
+            echo "- expected build: \`$EXPECT\`"
+            echo "- bundle: \`$asset\` ($size bytes)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$fresh" != "1" ]; then
+            echo "- **stale** — the bundle does not contain \`$want\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::production is NOT serving v$want after two minutes. Vercel's git integration did not build this commit — check the Vercel dashboard, or re-run the Release workflow, which fires the production deploy hook when it finds production stale."
+            exit 1
+          fi
+          echo "production is serving v$want"
+
+          # Right version, wrong build. Everything else reports green.
+          if [ "$EXPECT" = "multiplayer" ] && [ "$mp" -eq 0 ]; then
+            echo "- version OK, but **built flag-off** — no multiplayer" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::production is serving v$want but the bundle contains no multiplayer code (0 occurrences of /api/tables/). VITE_MULTIPLAYER=1 is not set on the Production environment, so www is serving the solo game. Set it in the Vercel dashboard (Production scope, not Preview) and redeploy."
+            exit 1
+          fi
+
+          if [ "$EXPECT" = "solo" ] && [ "$mp" -ne 0 ]; then
+            echo "- version OK, but **built flag-on** — multiplayer is live" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::production is serving v$want with multiplayer code in it ($mp references to /api/tables/), and this run expected the solo build. If that was not deliberate, unset VITE_MULTIPLAYER on the Production environment and redeploy — and check MULTIPLAYER and the Upstash credentials while you are there, because a flag-on client against an unconfigured Production API returns 503 on every table action."
+            exit 1
+          fi
+
+          echo "production is serving the $EXPECT build ($mp references to the tables API)"
+          {
+            echo "- version verified by bundle content"
+            echo "- build verified: $mp references to \`/api/tables/\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -23,6 +23,14 @@
    that keeps test tables out of the live keyspace keeps unfinished multiplayer
    out of the live site.
 
+   Note that the table above describes VERCEL, not this file. Production being
+   flag-off is the absence of a variable on an environment, so nothing here
+   changes when it is promoted — the variable arrives, the next build inlines
+   `true`, and the branches this eliminates today are shipped instead. See
+   "Promoting multiplayer to production" in CLAUDE.md for the three variables
+   that have to move together, and for why the bundle is the only honest place
+   to check which build actually landed.
+
    The server has its own flag (MULTIPLAYER, no VITE_ prefix, read at runtime by
    the API routes) because this one never reaches it: VITE_* vars exist only in
    the browser bundle. See api/_lib/flags.js — a client that can't see the

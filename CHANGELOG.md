@@ -6,6 +6,54 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.45.0] - 2026-07-31 (`_pending_`)
+- **Arriving at a table now puts you AT it, watching, instead of on a holding
+  page.** Tap a friend's link mid-hand, type a name, and you land on the felt
+  with the hand in progress — and the table is told who just showed up and whose
+  chair they are taking: *"Dave will take Gus's seat after this hand."* With no
+  AI seated there is nothing to name, so it says what is actually true instead:
+  *"Dave is watching and will take next available seat."*
+
+  The announcement is derived from the table's live state (`watcherNotices` in
+  `src/table.js`), never stored at join time. `applyPendingJoins` hands out
+  whatever is open **at the deal**, so a seat pinned when somebody joined would
+  be a promise the deal need not keep — the AI seat can be claimed by an earlier
+  arrival, or a fifth human can leave and open a different one. Reading it off
+  current state means the line always describes the seat that player would
+  genuinely take if the hand ended right now.
+
+- **A full table no longer turns people away.** `joinTable` used to answer
+  "five humans are already seated" with a 409, which was the wrong answer to
+  the question being asked: somebody tapping a texted link has not asked for a
+  seat, they have asked to be at the table. Five chairs plus a queue is how a
+  games night rotates six or seven people through them — the exact thing the
+  get61 era could never do. Joining now always gets you in; what varies is
+  whether you are holding cards yet. The 409 survives only past `MAX_WATCHERS`
+  (8), which is a ceiling on an array anyone holding the link can write to,
+  not a statement about the game.
+
+- **The felt renders for a viewer with no seat.** `rotate()` leaves a watcher's
+  view unrotated, so seat 0 landed in the slot `SEAT_POS` deliberately leaves
+  empty for the viewer's own hand — and simply wasn't drawn. The table appeared
+  to have four players. `SEAT_POS_BOTTOM` gives it somewhere real to be. The
+  hand row is dropped rather than rendered empty (`HandFan` holds its height on
+  purpose), so the felt takes the space, and the controls a watcher would only
+  get a 403 from — deal, boot — are not offered.
+
+- **A refresh no longer re-announces you.** `JoinGate` now recognises its own
+  queue entry on the initial state check, so reloading while you wait doesn't
+  send you back through the name step and introduce "Dave 2" to the table.
+  `uniqueName` also dedupes against the queue, not just the seats, so two
+  arrivals with the same name don't produce the same sentence twice.
+
+- **`Verify production`** (Actions → Run workflow), the sibling of
+  `Verify beta`. A session working on this repo cannot fetch noschnitz.com, so
+  the check this project insists on — verify by bundle **content** — has to be
+  readable out of CI. It reports *stale* and *wrong build* separately, in both
+  directions: flag-off after the multiplayer promotion means www quietly lost
+  it, flag-on before means unfinished multiplayer went live against a Production
+  environment with no store behind it.
+
 ## [0.44.0] - 2026-07-30 (`3944da3`)
 - **The "Go alone" button is gated on the hand now — `ALONE_OFFER_STRENGTH`.**
   0.43.0 offered it on every hand, which made a losing move available on most of

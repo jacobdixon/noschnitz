@@ -4,12 +4,17 @@
    Body: { playerId, name }
    200:  { status: "seated" | "pending", you, table: <redacted> }
    404:  no such table (or it expired)
-   409:  the table already has five humans
+   409:  MAX_WATCHERS are already waiting for a seat
 
    joinTable() decides all three outcomes; this route only translates them to
    HTTP. Rejoining with a playerId that already holds a seat is the reconnect
    path and short-circuits to "seated" — the client can call this
    unconditionally on load without needing to know whether it's a first join.
+
+   "pending" is a 200 and carries the table, because a watcher is AT the table:
+   they see the hand play out and the table sees their announcement. A table
+   with five people in it is no longer a refusal — see joinTable. The 409 is
+   now only the degenerate case where even the queue is full.
    ========================================================================= */
 import { joinTable } from "../../../src/table.js";
 import { mutate } from "../../../src/store/mutate.js";
@@ -43,7 +48,7 @@ export default async function handler(req, res) {
     // No table body here: the error shape is the contract for every non-2xx,
     // and a would-be joiner can still poll api/tables/[id]/state.js with their
     // playerId to watch the table from the outside (seat -1, fully redacted).
-    return fail(res, 409, "table-full", "That table already has five players.");
+    return fail(res, 409, "table-full", "That table has as many people waiting as it can hold.");
   }
 
   return sendJson(res, 200, {

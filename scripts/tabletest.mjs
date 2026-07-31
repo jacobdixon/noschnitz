@@ -14,6 +14,7 @@ import {
   markSeen, seatOf, humanSeats, aiSeatIndexes, uniqueName, makeTableCode,
   atHandBoundary, AI_NAMES, stepAway, coverIdleSeats, AWAY_AFTER_MS,
   idleMs, isBootable, bootSeat, resumeSeat, commit,
+  MAX_WATCHERS, watcherSeats, watcherNotice, watcherNotices,
 } from "../src/table.js";
 import { createMemoryStore } from "../src/store/memory.js";
 import { mutate } from "../src/store/mutate.js";
@@ -101,9 +102,83 @@ const host = { hostPlayerId: "p-host", hostName: "Jacob", now: T0 };
     cur = joinTable(cur, { playerId: p[0], name: p[1], now: T0 + i }).table;
   }
   check("MP-2.4 five humans fills the table", humanSeats(cur) === 5);
-  const overflow = joinTable(cur, { playerId: "p5", name: "E", now: T0 });
-  check("full table rejects a sixth player", overflow.status === "full");
-  check("rejected join doesn't mutate the table", overflow.table === cur);
+
+  // A sixth person is not turned away — they watch and queue. Five chairs and
+  // a queue is how a games night rotates seven people through them.
+  const sixth = joinTable(cur, { playerId: "p5", name: "E", now: T0 });
+  check("a sixth player watches rather than being refused", sixth.status === "pending");
+  check("...and is on the table's queue", sixth.table.pendingJoins.length === 1);
+  check("...without taking a seat", humanSeats(sixth.table) === 5);
+  check("...and is announced as waiting for a seat, since there is no AI to name",
+    watcherNotices(sixth.table)[0].text === "E is watching and will take next available seat.",
+    watcherNotices(sixth.table)[0].text);
+
+  // The ceiling, which is the only thing left that can refuse anybody.
+  let crowded = sixth.table;
+  for (let i = 1; i < MAX_WATCHERS; i++) {
+    crowded = joinTable(crowded, { playerId: `w${i}`, name: `W${i}`, now: T0 + i }).table;
+  }
+  check("the queue fills at MAX_WATCHERS", crowded.pendingJoins.length === MAX_WATCHERS);
+  const overflow = joinTable(crowded, { playerId: "w-last", name: "Last", now: T0 });
+  check("past the ceiling a join is refused", overflow.status === "full");
+  check("rejected join doesn't mutate the table", overflow.table === crowded);
+}
+
+/* ------------------- MP-3.5: watching while you wait ---------------------- */
+
+{
+  // The two sentences, pinned literally. They are what the table reads, so
+  // they are a contract rather than an implementation detail — and the second
+  // one is the case nobody hits until a games night is genuinely full.
+  check("the announcement names the seat being taken",
+    watcherNotice("Dave", "Gus") === "Dave will take Gus's seat after this hand.",
+    watcherNotice("Dave", "Gus"));
+  check("with no AI seated it promises the next one instead",
+    watcherNotice("Dave", null) === "Dave is watching and will take next available seat.",
+    watcherNotice("Dave", null));
+}
+
+{
+  // The announcement is the whole feature: an arrival mid-hand is told when
+  // they are in, and the table is told whose seat is changing hands.
+  const t = startHand(createTable(host), T0);
+  const r = joinTable(t, { playerId: "p-dave", name: "Dave", now: T0 + 500 });
+  check("a mid-hand arrival watches", r.status === "pending");
+
+  const [notice] = watcherNotices(r.table);
+  const target = watcherSeats(r.table)[0];
+  check("the watcher is pointed at the first free AI seat", target === aiSeatIndexes(t)[0]);
+  check("the table is told whose seat it is",
+    notice.text === `Dave will take ${r.table.seats[target].name}'s seat after this hand.`,
+    notice.text);
+  check("the notice names the arrival", notice.name === "Dave");
+
+  // Derived, not stored. If that AI seat is taken by somebody else before the
+  // deal, the announcement has to follow — applyPendingJoins hands out
+  // whatever is open AT THE DEAL, so a seat pinned at join time would be a
+  // promise the deal need not keep.
+  const stolen = {
+    ...r.table,
+    seats: r.table.seats.map((s, i) =>
+      i === target ? { kind: "human", name: "Erin", playerId: "p-erin", lastSeen: T0 } : s
+    ),
+  };
+  check("the announcement follows the seats, not the moment of joining",
+    watcherSeats(stolen)[0] === aiSeatIndexes(stolen)[0] && watcherSeats(stolen)[0] !== target);
+
+  // Two watchers queue for two different seats, in arrival order.
+  const second = joinTable(r.table, { playerId: "p-fran", name: "Fran", now: T0 + 600 });
+  const seats = watcherSeats(second.table);
+  check("two watchers are slated for different seats", seats[0] !== seats[1] && seats[1] >= 0);
+  check("...in arrival order", seats[0] === aiSeatIndexes(t)[0] && seats[1] === aiSeatIndexes(t)[1]);
+  const drained = startHand({ ...second.table, g: { ...second.table.g, phase: "handEnd" } }, T0 + 2000);
+  check("...and the deal seats them exactly where they were promised",
+    seatOf(drained, "p-dave") === seats[0] && seatOf(drained, "p-fran") === seats[1]);
+
+  // Names are deduped against the queue too, or the announcement says the same
+  // thing twice about two different people.
+  const twin = joinTable(second.table, { playerId: "p-dave2", name: "Dave", now: T0 + 700 });
+  check("a second Dave in the queue is renamed", twin.table.pendingJoins[2].name !== "Dave");
 }
 
 /* --------------------- MP-2.3: joining mid-hand ---------------------- */
