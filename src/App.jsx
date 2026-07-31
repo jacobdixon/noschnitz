@@ -169,6 +169,14 @@ function JoinGate({ tableId, onLeave }) {
           setPhase("joined"); // already ours — straight in
           return;
         }
+        // Already watching, from an earlier load. A refresh must not send them
+        // back through the name step: they are in, the table has already been
+        // told they are coming, and re-joining would announce them a second
+        // time under a deduplicated name ("Dave 2 will take Gus's seat").
+        if (res?.table?.pendingJoins?.some((p) => p.isYou)) {
+          setPhase("joined");
+          return;
+        }
         setPhase("naming");
       } catch (e) {
         if (cancelled) return;
@@ -190,11 +198,10 @@ function JoinGate({ tableId, onLeave }) {
     setErr(null);
     try {
       const clean = setPlayerName(displayName);
-      const res = await api.joinTable(tableId, playerId, clean);
-      if (res.status === "full") {
-        setErr("That table is full — five people are already playing.");
-        return;
-      }
+      // "seated" and "pending" both land on the table. A watcher is at the
+      // table — they see the hand, and the table sees their announcement —
+      // so there is nothing left to decide here.
+      await api.joinTable(tableId, playerId, clean);
       setPhase("joined");
     } catch (e) {
       setErr(e.code === "no-such-table"

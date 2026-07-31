@@ -121,6 +121,66 @@ Consequences that look like bugs and are not:
   and built fine and *production* never shipped. Read which step failed before
   concluding anything about either environment.
 
+## Promoting multiplayer to production — the runbook
+
+Requested 2026-07-31, after the first real five-seat session. **The flip itself is
+three environment variables in the Vercel dashboard and cannot be done from a
+session** — the agent proxy refuses vercel.com and api.vercel.com, `vercel --prod`
+is banned here anyway, and one of the three is a credential. So the split is:
+code and verification land in the repo, the flip is a human action.
+
+What "promote" means concretely. Production is flag-off today, which is not a
+state of the code — it is the *absence* of variables on Vercel's **Production**
+environment. Three of them have to arrive together:
+
+| variable | why | where it is read |
+|---|---|---|
+| `VITE_MULTIPLAYER=1` | build-time; without it Vite dead-code-eliminates every multiplayer call site and www keeps serving the solo game | `src/flags.js` |
+| `MULTIPLAYER=1` | runtime; the API routes gate on their own copy, because `VITE_*` never reaches a function | `api/_lib/flags.js` |
+| `KV_REST_API_URL` + `KV_REST_API_TOKEN` | a real store. Without it `getStore()` falls back to in-memory, and on serverless a table is created and then vanishes — which reads as data loss, not as an unfinished feature | `api/_lib/store.js` |
+
+**The Upstash database must be a NEW one, scoped to Production only.** Not the
+Preview database. Beta tables and live tables sharing a keyspace is the thing the
+Preview/Production split exists to prevent, and it is invisible until two groups
+are playing at once. `api/_lib/flags.js` already refuses with a distinct
+`no-store` code if the flag is on and the credentials are missing, so a half-done
+flip fails loudly rather than silently losing tables — but it cannot tell a
+Production database from a Preview one.
+
+Order matters, and the middle step is the one that is easy to skip:
+
+1. Merge the work to `master`; `release.yml` carries it to `beta` and verifies
+   production is serving the version.
+2. Set the four variables on **Production** scope in Vercel. Nothing changes yet
+   — a variable is only read at build time.
+3. Redeploy production. A merge does it; so does the Vercel dashboard. Do **not**
+   run `vercel --prod`.
+4. **Verify by content**: Actions → *Verify production* → Run workflow, with
+   `expect: multiplayer`. It answers the two questions that look identical from
+   outside — stale, versus right version wrong build — and it is the only check
+   worth trusting, for all the reasons in the deploy section above. A session
+   cannot do this by curl; read it out of the workflow.
+5. Sanity-check the API separately from the bundle: a flag-on client against an
+   unconfigured Production API looks like a working feature until you tap
+   something, then 503s on every table action. `Verify production` checks the
+   bundle only — it cannot see the server flag or the store.
+
+Rolling back is the same three variables in reverse plus a redeploy, and
+`Verify production` with `expect: solo` confirms it. Instant Rollback is still
+the move if production is actively broken.
+
+Two consequences worth knowing before deciding:
+
+- **The "Play with friends" button becomes public to every visitor**, not just
+  people holding a link. Both entry points read the same flag (`src/App.jsx`),
+  by design: a shared link that opened on production while the API had no store
+  behind it would fail worse than not existing.
+- **`beta` stops being a different build from production.** It keeps its value
+  as a branch that can be moved independently, but it is no longer "the only
+  place multiplayer exists," and any instruction elsewhere that says so becomes
+  historical the moment step 3 completes. `verify-beta.yml` still works
+  unchanged.
+
 Unchanged rules:
 
 - **Never run `vercel --prod`.** Not from a terminal, not from an agent session.
@@ -284,7 +344,12 @@ Genuinely open:
 2. **Multiplayer has thin real-device coverage.** `scripts/soaktest.mjs` drives
    five-human tables through the real handlers and is a good net for server bugs, but
    every bug worth fixing so far came from real people playing on real phones. Mid-hand
-   join (MP-2.3) in particular has synthetic coverage only.
+   join (MP-2.3) in particular has synthetic coverage only — and 0.45.0 just
+   changed what that path DOES (an arrival now watches the table instead of
+   waiting on a card, and a full table queues instead of refusing), so the thing
+   with the least real-device coverage is also the thing most recently rewritten.
+   Watch it on the next games night specifically: somebody joining mid-hand, and
+   somebody arriving when all five chairs are taken.
    - **First real multiplayer session: 2026-07-30. Two humans, three AI seats, ~20
      hands, no stalls.** The headline is not that it worked, it is *what shape it
      worked in*: the table filled to five with only two people in the room. AI-filled

@@ -59,7 +59,14 @@ const sameName = (a, b) => norm(a).toLowerCase() === norm(b).toLowerCase();
 // is meant to prevent.
 export function uniqueName(table, desired) {
   const base = norm(desired) || "Guest";
-  const taken = table.seats.filter((s) => s.name).map((s) => s.name);
+  const taken = [
+    ...table.seats.filter((s) => s.name).map((s) => s.name),
+    // Watchers count as taken too. They are named on the table's announcement
+    // line before they ever sit down — "Dave will take Gus's seat after this
+    // hand" — and two of those saying the same thing is exactly the confusion
+    // the seat check above exists to prevent, just one step earlier.
+    ...(table.pendingJoins || []).filter((p) => p.name).map((p) => p.name),
+  ];
   if (!taken.some((n) => sameName(n, base))) return base;
   for (let i = 2; i < 100; i++) {
     const candidate = `${base} ${i}`;
@@ -172,14 +179,33 @@ export const atHandBoundary = (table) =>
 
 /* ------------------------------- Joining --------------------------------- */
 
-// MP-3.1 / MP-3.2 / MP-2.3. Three distinct outcomes, and which one you get
-// depends on whether a hand is in progress:
+// How many people may be waiting on a seat at one table at once.
 //
-//   "seated"  — took a seat right now (lobby, or a returning player
-//               reclaiming the seat they already hold)
-//   "pending" — queued to take an AI seat at the next hand boundary, so
-//               joining mid-hand never disrupts a hand in progress
-//   "full"    — five humans are already seated
+// A watcher costs almost nothing — a name in an array — but the queue is
+// writable by anyone holding the link, and the link circulates in group texts,
+// so it needs a ceiling somewhere. Eight comes from how this group actually
+// plays: the get61 era topped out at six or seven wanting in on a good night,
+// and five of them are in seats.
+export const MAX_WATCHERS = 8;
+
+// MP-3.1 / MP-3.2 / MP-2.3. Three distinct outcomes, and which one you get
+// depends on whether there is a free seat AND whether a hand is in progress:
+//
+//   "seated"  — took a seat right now (a free AI seat at a hand boundary, or
+//               a returning player reclaiming the seat they already hold)
+//   "pending" — in, watching the table, and queued for the next seat that
+//               opens. Either the hand is mid-flight (so seating them now
+//               would corrupt it) or every seat is held by a person.
+//   "full"    — nobody can even watch, because MAX_WATCHERS are already
+//               waiting. The genuinely degenerate case, not "the table has
+//               five players".
+//
+// A full table used to be refused outright, which was the wrong answer to the
+// question being asked. Somebody who taps a link their friend texted them has
+// not asked for a seat, they have asked to be at the table — and the table
+// wants them there, because five humans and a queue is how a games night
+// rotates people through five chairs. So arriving always gets you in; what
+// varies is whether you are holding cards yet.
 //
 // A returning guest on the same device (same playerId) always short-circuits
 // to "seated": they're not taking a new seat, they still have theirs.
@@ -200,13 +226,9 @@ export function joinTable(table, { playerId, name, now }) {
   }
 
   const open = aiSeatIndexes(table);
-  if (open.length === 0) {
-    return { table, seat: -1, status: "full" };
-  }
-
   const finalName = uniqueName(table, name);
 
-  if (atHandBoundary(table)) {
+  if (open.length > 0 && atHandBoundary(table)) {
     const idx = open[0];
     const seats = table.seats.map((s, i) =>
       i === idx ? { kind: "human", name: finalName, playerId, lastSeen: now } : s
@@ -214,8 +236,13 @@ export function joinTable(table, { playerId, name, now }) {
     return { table: commit({ ...table, seats }, now), seat: idx, status: "seated" };
   }
 
-  // Mid-hand: hold them until the hand ends. The name is resolved now so the
-  // roster can show "Dave (joining next hand)" rather than a blank.
+  if (table.pendingJoins.length >= MAX_WATCHERS) {
+    return { table, seat: -1, status: "full" };
+  }
+
+  // Watching, and queued. The name is resolved now because it is announced to
+  // the table immediately — see watcherNotice — rather than only appearing
+  // when they sit down.
   const pendingJoins = [...table.pendingJoins, { playerId, name: finalName, requestedAt: now }];
   return { table: commit({ ...table, pendingJoins }, now), seat: -1, status: "pending" };
 }
@@ -244,6 +271,54 @@ export function applyPendingJoins(table, now) {
   if (!changed) return table;
   return commit({ ...table, seats, pendingJoins: stillPending }, now);
 }
+
+/* ------------------------------- Watching --------------------------------- */
+
+// Which seat each queued watcher is slated to take, in arrival order. -1 for a
+// watcher with nothing to point at: every seat is held by a person, so they are
+// waiting on somebody leaving rather than on the hand ending.
+//
+// Derived rather than stored, and that is the whole point. applyPendingJoins
+// hands out whatever is open AT THE DEAL, so a seat recorded at join time would
+// be a promise the deal need not keep — the AI seat can be claimed by someone
+// else first, or a fifth human can leave and open a different one. Reading it
+// off current state means the announcement always describes the seat this
+// person would genuinely take if the hand ended right now.
+export function watcherSeats(table) {
+  const open = aiSeatIndexes(table);
+  return (table.pendingJoins || []).map((_, i) => (i < open.length ? open[i] : -1));
+}
+
+// What the table is told when somebody arrives.
+//
+// Third person on purpose: this is an announcement to the room, not a message
+// to the arrival. They are watching the same felt as everyone else, so they
+// read the same line — and it answers the only question they actually have,
+// which is when they are in.
+export function watcherNotice(name, aiName) {
+  return aiName
+    ? `${name} will take ${aiName}'s seat after this hand.`
+    : `${name} is watching and will take next available seat.`;
+}
+
+// One announcement per watcher, ready to render.
+//
+// Reads only fields that survive redaction (a seat's kind and name, a queued
+// player's name and `isYou`), so the client can call it on the view it already
+// holds. The alternative — a server-computed line shipped alongside the table —
+// is a second copy of this rule that can fall out of step with the seats it
+// describes.
+export function watcherNotices(table) {
+  const targets = watcherSeats(table);
+  return (table.pendingJoins || []).map((p, i) => ({
+    name: p.name,
+    seat: targets[i],
+    isYou: Boolean(p.isYou),
+    text: watcherNotice(p.name, targets[i] >= 0 ? table.seats[targets[i]].name : null),
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
 
 // A human leaving hands their seat back to the AI under the same name they
 // were using, so the table keeps playing without a gap. Full COM-3 behavior
