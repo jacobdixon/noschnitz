@@ -23,7 +23,7 @@
    Refusing with 503 and a stable code says the true thing: the feature exists,
    it isn't turned on here, and nothing you did is at fault.
    ========================================================================= */
-import { hasRealStore } from "./store.js";
+import { hasRealStore, storeEnvReport } from "./store.js";
 import { fail } from "./http.js";
 
 export function multiplayerEnabled(env = process.env) {
@@ -43,7 +43,22 @@ export function requireMultiplayer(res, env = process.env) {
   if (!hasRealStore(env)) {
     // Enabled but unconfigured. Distinct code because it is a deployment
     // mistake rather than a deliberate state, and it should be loud.
-    fail(res, 503, "no-store", "Multiplayer is enabled here but has no store configured.");
+    //
+    // Loud was not enough. This message says a thing is missing without saying
+    // WHICH thing, and every way of getting it wrong — a provisioning prefix, a
+    // typo, the wrong environment scope, a deployment that predates the
+    // variable — produces this identical body. Telling them apart cost a
+    // redeploy per hypothesis. `details` names what the deployment can actually
+    // see, so the next person reads the answer instead of guessing at it.
+    //
+    // Names only. See storeEnvReport — this response is public.
+    fail(
+      res,
+      503,
+      "no-store",
+      "Multiplayer is enabled here but has no store configured.",
+      storeEnvReport(env)
+    );
     return false;
   }
   return true;

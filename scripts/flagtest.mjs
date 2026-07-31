@@ -20,7 +20,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { multiplayerEnabled, requireMultiplayer } from "../api/_lib/flags.js";
-import { hasRealStore } from "../api/_lib/store.js";
+import { hasRealStore, storeEnvReport, STORE_ENV_KEYS } from "../api/_lib/store.js";
 
 let passed = 0;
 const failures = [];
@@ -64,6 +64,19 @@ const codeOf = (res) => { try { return JSON.parse(res.body).error.code; } catch 
     requireMultiplayer(res, { MULTIPLAYER: "1" }) === false);
   check("...distinguishably", codeOf(res) === "no-store", `got ${codeOf(res)}`);
 
+  // The 503 has to say WHICH name is missing, or it is the same message for a
+  // prefix, a typo, the wrong environment scope and a stale deployment — which
+  // is what made a real promotion cost a redeploy per hypothesis.
+  res = mockRes();
+  requireMultiplayer(res, { MULTIPLAYER: "1", prod_KV_REST_API_URL: "u", prod_KV_REST_API_TOKEN: "t" });
+  const details = JSON.parse(res.body).error.details;
+  check("the no-store body reports which accepted names are present",
+    details.accepted.KV_REST_API_URL === false && details.accepted.UPSTASH_REDIS_REST_TOKEN === false);
+  check("...and names the near-misses that were actually set",
+    details.otherNamesPresent.includes("prod_KV_REST_API_URL") &&
+    details.otherNamesPresent.includes("prod_KV_REST_API_TOKEN"),
+    JSON.stringify(details.otherNamesPresent));
+
   // Beta's shape.
   res = mockRes();
   check("enabled with a store is allowed",
@@ -71,6 +84,40 @@ const codeOf = (res) => { try { return JSON.parse(res.body).error.code; } catch 
       MULTIPLAYER: "1", KV_REST_API_URL: "u", KV_REST_API_TOKEN: "t",
     }) === true);
   check("...and says nothing", res.body === "" && res.statusCode === 200);
+}
+
+/* ------------------- the diagnostic never leaks a value ------------------- */
+{
+  // The one property that makes storeEnvReport safe to return over the wire.
+  // A token in a public 503 body would be far worse than the misconfiguration
+  // it diagnoses, so this is asserted rather than left to a code comment — and
+  // asserted against the SERIALIZED body, because that is what actually ships.
+  const SECRET = "s3cret-token-do-not-ship";
+  const env = {
+    MULTIPLAYER: "1",
+    prod_KV_REST_API_URL: `https://example.upstash.io/${SECRET}`,
+    prod_KV_REST_API_TOKEN: SECRET,
+    UPSTASH_REDIS_REST_TOKEN_OLD: SECRET,
+    SOME_UNRELATED_SECRET: SECRET,
+  };
+  const res = mockRes();
+  requireMultiplayer(res, env);
+  check("no value from the environment reaches the response body",
+    !res.body.includes(SECRET), res.body);
+  check("...and the whole report is names and booleans only",
+    !JSON.stringify(storeEnvReport(env)).includes(SECRET));
+
+  // Scoped to store credentials — it is a diagnostic, not an environment dump.
+  check("unrelated variables are not named",
+    !res.body.includes("SOME_UNRELATED_SECRET"), res.body);
+
+  // The report describes the predicate, so the two cannot drift apart.
+  check("every accepted name is reported on",
+    STORE_ENV_KEYS.every((k) => k in storeEnvReport({}).accepted));
+  const good = storeEnvReport({ KV_REST_API_URL: "u", KV_REST_API_TOKEN: "t" });
+  check("a correct environment reports both halves present",
+    good.accepted.KV_REST_API_URL && good.accepted.KV_REST_API_TOKEN);
+  check("...and has no near-misses to report", good.otherNamesPresent.length === 0);
 }
 
 /* ----------------------- every route carries the guard -------------------- */

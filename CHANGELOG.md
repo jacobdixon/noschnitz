@@ -6,6 +6,36 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.45.1] - 2026-07-31 (`_pending_`)
+- **`no-store` now says WHICH credential name is missing.** The gate was already
+  loud — it refuses with a distinct code rather than silently falling back to an
+  in-memory store that loses tables — but it was not specific, and that turned
+  out to be most of the cost. Every way of getting the store wrong produces a
+  byte-identical 503: a provisioning prefix, a typo, the wrong environment
+  scope, or a deployment created before the variable was saved. Told apart only
+  by hypothesis, each guess costs a redeploy. Found the expensive way during the
+  production promotion, where the real cause was a prefix — Vercel's marketplace
+  integration adds one automatically when the bare name is already taken on the
+  project, which it is here, because the Preview database owns it. So a
+  Production store arrives as `prod_KV_REST_API_URL` and nothing reads it.
+
+  The 503 body now carries `details`:
+
+  ```json
+  { "accepted": { "KV_REST_API_URL": false, "...": false },
+    "otherNamesPresent": ["prod_KV_REST_API_TOKEN", "prod_KV_REST_API_URL"] }
+  ```
+
+  **Names only, never values**, and that rule is asserted rather than commented:
+  `flagtest` plants a secret in four differently-named variables and checks it
+  appears nowhere in the serialized body. `KV_REST_API_TOKEN` is a bearer
+  credential for the whole table store, so a value here would be far worse than
+  the misconfiguration it diagnoses. A name is not a secret — that
+  `prod_KV_REST_API_URL` exists is not usable by anyone — and the report is
+  scoped to store credentials by pattern, so it cannot become an environment
+  dump. `STORE_ENV_KEYS` is exported and the report is built from it, so the
+  diagnostic cannot drift from the predicate it describes.
+
 ## [0.45.0] - 2026-07-31 (`060791f`)
 - **Arriving at a table now puts you AT it, watching, instead of on a holding
   page.** Tap a friend's link mid-hand, type a name, and you land on the felt
