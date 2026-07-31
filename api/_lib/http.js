@@ -39,8 +39,15 @@ export function sendJson(res, status, body) {
   return res;
 }
 
-export function fail(res, status, code, message) {
-  return sendJson(res, status, { error: { code, message } });
+// `details` is optional structured context for the caller — used today only by
+// the no-store gate, which reports which credential NAMES the deployment can
+// see. Anything put here is public: it goes to any client that triggers the
+// failure, so it must never carry a value, only a fact about the shape of the
+// problem.
+export function fail(res, status, code, message, details) {
+  return sendJson(res, status, {
+    error: { code, message, ...(details ? { details } : {}) },
+  });
 }
 
 // Returns false (and responds) when the method isn't allowed, so callers can
