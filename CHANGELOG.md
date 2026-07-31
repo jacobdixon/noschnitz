@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.45.1] - 2026-07-31 (`_pending_`)
+## [0.45.1] - 2026-07-31 (`49d1001`)
 - **`no-store` now says WHICH credential name is missing.** The gate was already
   loud — it refuses with a distinct code rather than silently falling back to an
   in-memory store that loses tables — but it was not specific, and that turned
