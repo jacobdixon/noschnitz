@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.45.0] - 2026-07-31 (`_pending_`)
+## [0.45.0] - 2026-07-31 (`060791f`)
 - **Arriving at a table now puts you AT it, watching, instead of on a holding
   page.** Tap a friend's link mid-hand, type a name, and you land on the felt
   with the hand in progress — and the table is told who just showed up and whose
