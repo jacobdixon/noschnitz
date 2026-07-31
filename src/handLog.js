@@ -114,8 +114,11 @@ export function recordHand(g, version, humanSeat = 0) {
 // hand, so playing on a train loses nothing.
 //
 // Environments without a store answer 503 and that is a permanent no, not a
-// retry — production has no Redis, so a browser there would otherwise queue
-// forever and re-send on every hand.
+// retry, so a browser there stops asking instead of re-sending on every hand.
+// Production used to be that environment; since the 2026-07-31 promotion it has
+// its own store and collects like beta does. The 503 path stays because the
+// condition it handles is "no store", not "not production" — a local dev server
+// or a half-configured environment still answers it.
 //
 // `force` exists because the batch threshold, on its own, loses the tail. This
 // is only ever called after a hand ends, so a device that finishes on 4 unsent

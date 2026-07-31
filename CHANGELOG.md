@@ -18,6 +18,15 @@ corresponds to the entries below.
     what it says, it is whether it is still arriving — and since every record is
     stamped with the build that produced it, a corpus whose newest version is
     three releases back means collection broke rather than that nobody played.
+  - **There are two corpora as of 0.45.2, and picking the wrong one reads as
+    "nobody played".** Preview and Production hold separate Upstash databases on
+    purpose, so beta has everything collected up to the promotion and www has
+    real play from that day on. The workflow takes the host as an input and
+    stamps it on the census; the default stays beta because that is where the
+    history is. `HANDS_READ_TOKEN` is scoped per environment too, so reading www
+    needs the Production copy of it. Comments in `api/hands.js` and
+    `handLog.js` that described production as having no store are corrected —
+    that stopped being true the same day this was written.
   - The miner self-tests first, on a seat that plays a random legal card a
     quarter of the time. An instrument that cannot detect a deliberately worse
     player cannot be trusted to detect a better one.
@@ -71,6 +80,68 @@ corresponds to the entries below.
 - Correcting the comment above the recorder in `Sheepshead.jsx`: it still said
   nothing leaves the browser, which stopped being true in 0.32.0 when uploads
   were added.
+
+## [0.45.2] - 2026-07-31 (`d5dbb8c`)
+- **Multiplayer is live on www.noschnitz.com.** Documentation catching up to a
+  deployment, no behaviour change. `VITE_MULTIPLAYER=1`, `MULTIPLAYER=1` and a
+  Production-scoped Upstash database are set on Vercel; verified by bundle
+  content (8 `/api/tables/` references in what www actually serves) and by a
+  table surviving a reload in a fresh tab.
+
+  Every claim that production is the solo game is now false, and this repo has
+  been bitten by exactly that drift before — CLAUDE.md's own header notes a line
+  that said v0.7.2 while the app shipped v0.22.0. Corrected in `CLAUDE.md`,
+  `src/flags.js` and `api/_lib/flags.js`, including the consequence that is easy
+  to miss: a multiplayer-only change no longer leaves the production bundle
+  byte-identical. Verify-by-content still stands, for the other reason — Vercel's
+  minifier is non-deterministic.
+
+- **The promotion runbook now records what it cost.** Four variables, three of
+  them right first time, and three deploy cycles spent finding the fourth:
+  `KV_REST_API_TOKE`, missing a trailing `N`. Written down so the next person
+  doesn't pay it again — expect the marketplace integration to auto-prefix
+  (Preview already owns the bare name, and clearing the prefix fails as "no
+  environment variables created", which is a name collision reported obliquely);
+  never substitute `KV_REST_API_READ_ONLY_TOKEN`, which the store would accept
+  and then fail on at the first write; and **`VITE_MULTIPLAYER` must not be
+  marked "sensitive"**, because sensitive variables reach functions at runtime
+  but are withheld from the build step — which would serve a solo-game bundle in
+  front of a fully live API, with every signal green and the feature absent.
+
+  Plus the four-layer verification chain, one row per thing that can be
+  independently wrong: build flag, server flag, store credentials, and store
+  *persistence* — the last of which only a human can run, and the only one that
+  proves a warm isolate isn't quietly on the in-memory fallback.
+
+## [0.45.1] - 2026-07-31 (`49d1001`)
+- **`no-store` now says WHICH credential name is missing.** The gate was already
+  loud — it refuses with a distinct code rather than silently falling back to an
+  in-memory store that loses tables — but it was not specific, and that turned
+  out to be most of the cost. Every way of getting the store wrong produces a
+  byte-identical 503: a provisioning prefix, a typo, the wrong environment
+  scope, or a deployment created before the variable was saved. Told apart only
+  by hypothesis, each guess costs a redeploy. Found the expensive way during the
+  production promotion, where the real cause was a prefix — Vercel's marketplace
+  integration adds one automatically when the bare name is already taken on the
+  project, which it is here, because the Preview database owns it. So a
+  Production store arrives as `prod_KV_REST_API_URL` and nothing reads it.
+
+  The 503 body now carries `details`:
+
+  ```json
+  { "accepted": { "KV_REST_API_URL": false, "...": false },
+    "otherNamesPresent": ["prod_KV_REST_API_TOKEN", "prod_KV_REST_API_URL"] }
+  ```
+
+  **Names only, never values**, and that rule is asserted rather than commented:
+  `flagtest` plants a secret in four differently-named variables and checks it
+  appears nowhere in the serialized body. `KV_REST_API_TOKEN` is a bearer
+  credential for the whole table store, so a value here would be far worse than
+  the misconfiguration it diagnoses. A name is not a secret — that
+  `prod_KV_REST_API_URL` exists is not usable by anyone — and the report is
+  scoped to store credentials by pattern, so it cannot become an environment
+  dump. `STORE_ENV_KEYS` is exported and the report is built from it, so the
+  diagnostic cannot drift from the predicate it describes.
 
 ## [0.45.0] - 2026-07-31 (`060791f`)
 - **Arriving at a table now puts you AT it, watching, instead of on a holding

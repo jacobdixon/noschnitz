@@ -61,8 +61,11 @@ because of the CAS rule below — that rule is load-bearing, not a nicety.
   a long-lived `SUBSCRIBE` from a function. `api/tables/[id]/events.js` polls the
   version and pushes only on change, then closes at a bounded lifetime because Vercel
   kills long connections — the client reconnects with `since=<version>` and resumes.
-- **Preview and Production have separate stores.** Only Preview/Development have
-  Upstash connected today. Never let test tables and live tables share a keyspace.
+- **Preview and Production have separate stores.** Both have Upstash connected since
+  the 2026-07-31 promotion, and they are two different databases on purpose. Never
+  let test tables and live tables share a keyspace. This is also why the Production
+  credentials arrived prefixed — the marketplace integration would not reuse a name
+  Preview already held; see the promotion runbook.
 - **`playerId` is a bearer token.** It's how a player proves which seat is theirs, so
   it must be stripped from other players' entries in every payload.
 
@@ -74,11 +77,16 @@ historical — this section is current.
 
 The two branches, and the thing that surprises everyone:
 
-- **`master` = production = www.noschnitz.com.** Built **flag-off** (`VITE_MULTIPLAYER`
-  unset), so the multiplayer code is dead-code-eliminated and production is the solo
-  game: 1 human + 4 AI, no network calls, works offline.
-- **`beta` = a BRANCH** (not an environment name), built **flag-on** →
-  beta.noschnitz.com. This is the only place multiplayer exists.
+- **`master` = production = www.noschnitz.com.** Built **flag-on since 2026-07-31**
+  (`VITE_MULTIPLAYER=1` on the Production environment), with `MULTIPLAYER=1` and its
+  own Upstash database behind the API. Multiplayer is live to every visitor, and
+  "Play with friends" is a public button rather than something only link-holders find.
+  Anything elsewhere that describes production as the solo game is historical.
+- **`beta` = a BRANCH** (not an environment name), built flag-on →
+  beta.noschnitz.com. It used to be *the only place multiplayer exists*; since the
+  promotion it is the same build as production, still worth keeping because it is a
+  ref that can be moved independently when you want to try something on a real
+  domain without shipping it to www.
 - **`beta` is fast-forwarded automatically — do NOT do it by hand.**
   `.github/workflows/release.yml` moves beta to master and requests its build on every
   green CI run on master. This section used to tell you to push the refspec yourself;
@@ -96,10 +104,13 @@ outage with extra steps. Fix marginal tests, do not re-run them.
 
 Consequences that look like bugs and are not:
 
-- **A multiplayer-only change leaves the production bundle hash IDENTICAL.** The code
-  was eliminated from that build, so there is genuinely nothing to deploy. Verify a
-  deploy by *string content*, never by bundle hash. (Vercel's minifier is also
-  non-deterministic — identical content can produce different hashes.)
+- **Verify a deploy by *string content*, never by bundle hash.** Vercel's minifier is
+  non-deterministic, so identical content can produce different hashes.
+  Until the promotion there was a second, sharper reason: a multiplayer-only change
+  left the production bundle *byte-identical*, because the code was eliminated from
+  that build and there was genuinely nothing to deploy. That no longer holds — www is
+  flag-on, so multiplayer changes do reach it — but the rule it produced was right for
+  the other reason anyway, and every verifier in `.github/workflows` is built on it.
 - **Vercel appears to deduplicate builds of the same commit SHA.** Pushing `beta` to
   the same SHA `master` just merged, while that commit's Production build is still in
   flight, can silently skip the beta build. `release.yml` handles both halves of this
@@ -121,17 +132,19 @@ Consequences that look like bugs and are not:
   and built fine and *production* never shipped. Read which step failed before
   concluding anything about either environment.
 
-## Promoting multiplayer to production — the runbook
+## Promoting multiplayer to production — DONE 2026-07-31
 
-Requested 2026-07-31, after the first real five-seat session. **The flip itself is
-three environment variables in the Vercel dashboard and cannot be done from a
-session** — the agent proxy refuses vercel.com and api.vercel.com, `vercel --prod`
-is banned here anyway, and one of the three is a credential. So the split is:
-code and verification land in the repo, the flip is a human action.
+**Multiplayer went live on www.noschnitz.com on 2026-07-31**, the day after the
+first real five-seat session. Kept as a runbook rather than deleted, because it is
+also the rollback procedure and because what it cost is worth knowing.
 
-What "promote" means concretely. Production is flag-off today, which is not a
-state of the code — it is the *absence* of variables on Vercel's **Production**
-environment. Three of them have to arrive together:
+**The flip cannot be done from a session** — the agent proxy refuses vercel.com and
+api.vercel.com, `vercel --prod` is banned here anyway, and one of the variables is a
+credential. Code and verification land in the repo; the dashboard work is a human
+action. That split held exactly as written.
+
+What "promote" means concretely: it is not a state of the code, it is variables on
+Vercel's **Production** environment. Four of them, and they have to arrive together:
 
 | variable | why | where it is read |
 |---|---|---|
@@ -165,21 +178,70 @@ Order matters, and the middle step is the one that is easy to skip:
    something, then 503s on every table action. `Verify production` checks the
    bundle only — it cannot see the server flag or the store.
 
-Rolling back is the same three variables in reverse plus a redeploy, and
+Rolling back is the same variables in reverse plus a redeploy, and
 `Verify production` with `expect: solo` confirms it. Instant Rollback is still
 the move if production is actively broken.
 
-Two consequences worth knowing before deciding:
+### What it actually cost, and what to do differently
 
-- **The "Play with friends" button becomes public to every visitor**, not just
-  people holding a link. Both entry points read the same flag (`src/App.jsx`),
-  by design: a shared link that opened on production while the API had no store
-  behind it would fail worse than not existing.
-- **`beta` stops being a different build from production.** It keeps its value
-  as a branch that can be moved independently, but it is no longer "the only
-  place multiplayer exists," and any instruction elsewhere that says so becomes
-  historical the moment step 3 completes. `verify-beta.yml` still works
-  unchanged.
+Every one of the four variables was set correctly on the first try except one, and
+finding that one took **three deploy cycles** — because the failure is a single 503
+that says a thing is missing without saying which thing. Recorded so nobody pays it
+again:
+
+- **The real bug was `KV_REST_API_TOKE`** — a missing trailing `N`. That is why
+  0.45.1 exists: `no-store` now returns a `details` object naming which accepted
+  keys are present and which near-miss names are set. **Read that first.** It
+  distinguishes a typo from a prefix from a wrong scope from a stale deployment,
+  all of which were previously the same response.
+- **Expect a prefix, and do not fight it.** Vercel's marketplace integration
+  auto-prefixes when the bare name is already taken on the *project* — which it is
+  here, because the Preview database owns `KV_REST_API_URL`. Trying to clear the
+  prefix fails with "no environment variables created", which is a name collision
+  reported obliquely. Add plain, Production-scoped variables by hand instead;
+  Vercel keys on name *plus* environment, so they coexist with Preview's.
+- **`VITE_MULTIPLAYER` must NOT be marked "sensitive".** Sensitive variables reach
+  functions at runtime but are withheld from the *build step*, and this is the only
+  build-time one of the four. Marked sensitive, it produces a solo-game bundle
+  sitting in front of a fully live API — every signal green, feature absent. The
+  other three are runtime-only and sensitive is fine. Sensitive also means you
+  cannot read the value back to copy it: **get the token from the Upstash console's
+  REST API panel**, not from Vercel.
+- **Never use `KV_REST_API_READ_ONLY_TOKEN`.** The integration provisions it, the
+  name is plausible, and `hasRealStore()` deliberately does not accept it. The store
+  writes on every table action (`HSET`/`PEXPIRE` inside each `EVAL`), so a read-only
+  token would pass the gate and fail at the first write — much worse than failing up
+  front. `REDIS_URL` is likewise the non-REST connection string and unusable by
+  `@upstash/redis`.
+
+### Verifying it, layer by layer
+
+Four independent checks, because each is blind to what the others see. This is the
+sequence that confirmed the live promotion:
+
+| layer | check | pass |
+|---|---|---|
+| build flag | Actions → *Verify production*, `expect: multiplayer` | `8 references to the tables API` |
+| server flag | `GET /api/tables/zzzzzzzz/state?playerId=test` | not `multiplayer-disabled` |
+| store credentials | same request | `404 no-such-table` |
+| store *persistence* | create a table on www, reload `/t/<code>` in a new tab | the table is still there |
+
+The last row is the one only a human can do, and it is the one that matters most.
+A clean 404 proves the credentials are **valid** — nothing in the read path catches,
+so a bad token throws out of `mutate` and surfaces as a 500 rather than a tidy JSON
+404 — but only a table surviving a second request proves a warm isolate is not
+quietly on the in-memory fallback. That failure reads as data loss, not as
+misconfiguration, which is why it gets its own step.
+
+### Consequences, now true
+
+- **"Play with friends" is public to every visitor**, not just people holding a
+  link. Both entry points read the same flag (`src/App.jsx`), by design: a shared
+  link that opened on production while the API had no store behind it would fail
+  worse than not existing.
+- **`beta` is no longer a different build from production.** It keeps its value as a
+  ref that can be moved independently, but anything elsewhere calling it "the only
+  place multiplayer exists" is historical. `verify-beta.yml` still works unchanged.
 
 Unchanged rules:
 
@@ -335,8 +397,19 @@ calling under and calling a ten. The backend question below was answered long ag
 **Vercel serverless + Upstash Redis**, with every write going through the
 compare-and-swap loop in `src/store/mutate.js`.
 
+**Multiplayer is LIVE on www.noschnitz.com as of 2026-07-31**, verified by bundle
+content and by a table surviving a reload. See the promotion runbook above — both
+for how it was checked and for the rollback.
+
 Genuinely open:
 
+0. **The first games night on production is the real test, and nothing else is.**
+   Every multiplayer bug worth fixing so far came from a person on a phone, not
+   from a harness. Two things are newest and least exercised: the arrival flow
+   rewritten in 0.45.0 (watching while queued, a full table queueing instead of
+   refusing) and the Production Upstash database, which has never held a real
+   table. Watch specifically for somebody joining mid-hand and somebody arriving
+   when all five chairs are taken.
 1. **COM-1 voice/video (#4, #19-22) and COM-2 presence (#5, #23-24)** are the only
    open epics. On voice/video, the standing lean is to embed something existing (a
    Jitsi room per table, or an auto-generated link) rather than own WebRTC — the goal
@@ -383,6 +456,13 @@ Genuinely open:
      human against four AI seats, so a cluster is evidence about the engine and never
      about a table. And per the census, a corpus whose newest `version` is several
      releases old means collection broke — not that nobody played.
+   - **There are TWO corpora since the promotion, and reading the wrong one looks
+     exactly like nobody playing.** Preview and Production hold separate Upstash
+     databases by design, so beta has everything up to 2026-07-31 and www has real
+     play from then on. The workflow takes the host as an input and stamps it on the
+     census; the default is beta because that is where the history is, and it should
+     move to www once www has more. Do not merge the two without reading the version
+     field — they are hands against different builds, which is what that field is for.
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,

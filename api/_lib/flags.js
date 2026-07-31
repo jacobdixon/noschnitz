@@ -9,21 +9,23 @@
 
    Two conditions, and the second is the one that actually bit:
 
-   1. MULTIPLAYER must be enabled for this environment. Set on Preview (beta),
-      unset on Production, mirroring VITE_MULTIPLAYER on the client.
+   1. MULTIPLAYER must be enabled for this environment. Set on Preview (beta)
+      and, since the 2026-07-31 promotion, on Production too — mirroring
+      VITE_MULTIPLAYER on the client. Still checked rather than assumed: a
+      preview branch, a local run, or a future environment may not have it.
 
-   2. A real store must be configured. This is the important one. Upstash is
-      scoped to Preview and Development only, so on Production getStore() falls
-      back to the in-memory store — and on serverless every invocation can get
-      a fresh isolate. A table would be created, then vanish before the next
-      request; joining would 404 against a table you just made. That fails
-      worse than not working at all, because it looks like data loss rather
-      than an unfinished feature.
+   2. A real store must be configured. This is the important one. Each
+      environment has its OWN Upstash database, and an environment without one
+      falls back to the in-memory store — where, on serverless, every
+      invocation can get a fresh isolate. A table would be created, then vanish
+      before the next request; joining would 404 against a table you just made.
+      That fails worse than not working at all, because it looks like data loss
+      rather than an unfinished feature.
 
    Refusing with 503 and a stable code says the true thing: the feature exists,
    it isn't turned on here, and nothing you did is at fault.
    ========================================================================= */
-import { hasRealStore } from "./store.js";
+import { hasRealStore, storeEnvReport } from "./store.js";
 import { fail } from "./http.js";
 
 export function multiplayerEnabled(env = process.env) {
@@ -43,7 +45,22 @@ export function requireMultiplayer(res, env = process.env) {
   if (!hasRealStore(env)) {
     // Enabled but unconfigured. Distinct code because it is a deployment
     // mistake rather than a deliberate state, and it should be loud.
-    fail(res, 503, "no-store", "Multiplayer is enabled here but has no store configured.");
+    //
+    // Loud was not enough. This message says a thing is missing without saying
+    // WHICH thing, and every way of getting it wrong — a provisioning prefix, a
+    // typo, the wrong environment scope, a deployment that predates the
+    // variable — produces this identical body. Telling them apart cost a
+    // redeploy per hypothesis. `details` names what the deployment can actually
+    // see, so the next person reads the answer instead of guessing at it.
+    //
+    // Names only. See storeEnvReport — this response is public.
+    fail(
+      res,
+      503,
+      "no-store",
+      "Multiplayer is enabled here but has no store configured.",
+      storeEnvReport(env)
+    );
     return false;
   }
   return true;

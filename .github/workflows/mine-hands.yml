@@ -17,6 +17,15 @@
 # records nothing — every hand in here is one human against four AI seats. Read
 # a cluster accordingly: it is evidence about the engine, never about a table.
 #
+# THERE ARE TWO CORPORA, and picking the wrong one reads as "nobody played".
+# Preview and Production have separate Upstash databases by design, so beta holds
+# everything collected up to the 2026-07-31 promotion and www holds real play
+# from that day on. Default is beta because that is where the history is; switch
+# to www once www has accumulated more than beta ever did. Do not merge them
+# without looking at the version field — they are hands against different builds.
+# `HANDS_READ_TOKEN` is scoped per environment too, so reading www needs the
+# Production copy of it, which may be a different value.
+#
 # Reading the output: a cluster is a hypothesis, not a fix. Double-dummy cost is
 # biased against play that is correct under uncertainty, and a human can beat the
 # engine by exploiting it rather than by playing well. Reproduce against the
@@ -43,7 +52,7 @@ on:
         required: false
         type: string
       source:
-        description: "Which host to read the corpus from"
+        description: "Which corpus to read. beta = everything up to the 2026-07-31 promotion; www = real play since it."
         required: false
         default: "beta.noschnitz.com"
         type: choice
@@ -120,7 +129,8 @@ jobs:
               echo "::error::GET https://${host}/api/hands answered 404. The route returns 404 both when HANDS_READ_TOKEN is unset on the server and when the token given does not match it — deliberately, so a probe cannot tell the two apart. Check the variable on the Vercel project for the scope ${host} builds from."
               exit 1 ;;
             503)
-              echo "::error::GET https://${host}/api/hands answered 503. That host has no store configured, so it never collected anything — production is flag-off and has no Redis. Read the corpus from beta."
+              echo "::error::GET https://${host}/api/hands answered 503 — that host has no store configured, so it never collected anything. Since the 2026-07-31 promotion both environments are supposed to have one, so this means the credentials for ${host} are missing or misnamed rather than absent by design. The body says which name it could not find:"
+              head -c 600 hands.raw || true
               exit 1 ;;
             000)
               echo "::error::Could not reach https://${host}/api/hands at all."
@@ -150,6 +160,8 @@ jobs:
       # the build that produced them, so a corpus whose newest version is three
       # releases back means collection broke, not that nobody played.
       - name: Census
+        env:
+          SOURCE: ${{ inputs.source }}
         run: |
           node -e '
             const hands = require("./hands.json");
@@ -161,7 +173,7 @@ jobs:
             };
             const day = (h) => (h.at ? new Date(h.at).toISOString().slice(0, 10) : "unknown");
             const out = [];
-            out.push("### Corpus census");
+            out.push(`### Corpus census — ${process.env.SOURCE || "beta.noschnitz.com"}`);
             out.push("");
             out.push(`- **${total}** hands stored, **${hands.length}** read by this run`);
             out.push(`- **${new Set(hands.map((h) => h.install)).size}** distinct installs (a browser, not a person)`);
