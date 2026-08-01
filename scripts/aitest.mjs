@@ -875,12 +875,13 @@ for (let humans = 0; humans <= 5; humans++) {
   const C = (x) => ({ rank: x.slice(0, -1), suit: x.slice(-1) });
   const H = (a) => a.map(C);
 
-  // A separate bar from the AI's, and deliberately one point higher — see
-  // ALONE_OFFER_STRENGTH in engine.js for the measurement. The AI decides on
-  // all eight and buries to match the plan; a human decides after the bury is
-  // already spent, and at 17 that costs about two points a hand against just
-  // calling somebody, in 4 of 4 seeds.
-  check("the offer bar sits above the AI's own", ALONE_OFFER_STRENGTH > ALONE_HANDSTRENGTH,
+  // The two bars are held equal on purpose: whatever the AI is allowed to
+  // decide for itself, a human gets the button for. That is a product call and
+  // not a measured one — see ALONE_OFFER_STRENGTH in engine.js, where the
+  // measurement says 18 and the reasoning for 17 is written down. Asserted so
+  // that moving one bar without considering the other fails here rather than
+  // silently reopening the gap.
+  check("the offer bar matches the AI's own", ALONE_OFFER_STRENGTH === ALONE_HANDSTRENGTH,
     `${ALONE_OFFER_STRENGTH} vs ${ALONE_HANDSTRENGTH}`);
 
   // The reported case: five trump and an ace, the shape that used to be forced
@@ -898,14 +899,18 @@ for (let humans = 0; humans <= 5; humans++) {
   const fivePowerAndAnAce = H(["QC", "QS", "QH", "JD", "JC", "AC"]);
   check("...but the same shape in Queens and Jacks is",
     mayGoAlone(fivePowerAndAnAce), `strength ${handStrength(fivePowerAndAnAce)}`);
-  // One notch weaker — a Jack swapped for a plain diamond — and it is not.
-  const oneShort = H(["QC", "QS", "QH", "JD", "AD", "AC"]);
+  // One notch weaker — a Queen swapped for a plain diamond — reads 16 and is
+  // not offered. 16 is the first strength below the bar and the one worth
+  // pinning: alone costs four points a hand there.
+  const oneShort = H(["QC", "QS", "AD", "JD", "JC", "AC"]);
   check("...and one power trump short of the bar is not",
     !mayGoAlone(oneShort), `strength ${handStrength(oneShort)}`);
 
-  // Exactly at the bar counts — 18 is where alone stops losing, not where it
-  // starts winning big.
-  const atBar = H(["QC", "QS", "JD", "JC", "AD", "10D"]);
+  // Exactly at the bar counts. 17 is the AI's own threshold rather than the
+  // point where alone stops losing — which is 18 — so this is the hand the two
+  // bars being equal is actually about: the AI would go alone on it, and now
+  // so may a person.
+  const atBar = H(["QC", "QS", "QH", "JD", "AD", "AC"]);
   check("the bar itself is inside the offer", handStrength(atBar) === ALONE_OFFER_STRENGTH &&
     mayGoAlone(atBar), `strength ${handStrength(atBar)}`);
 

@@ -315,8 +315,11 @@ export function chooseUnderCard(hand) {
 // accident to a hand this far below the bar.
 export const ALONE_HANDSTRENGTH = 17;
 
-// When the "Go alone" button is worth putting in front of a human, which is a
-// DIFFERENT question from the one above and measured to a different answer.
+// When the "Go alone" button is worth putting in front of a human.
+//
+// Set to match `ALONE_HANDSTRENGTH` deliberately, and NOT because the two
+// questions turned out to have the same answer — they do not. Read the
+// measurement below before moving this again.
 //
 // `ALONE_HANDSTRENGTH` decides what the AI does with a hand it is still holding
 // all eight of: it picks the bury to match the plan, banking points instead of
@@ -336,13 +339,23 @@ export const ALONE_HANDSTRENGTH = 17;
 //     strength 19   +2.5                      68.7%     positive in 4 of 4 seeds
 //     strength 20   +4.3                      91.1%
 //
-// So 18, not 17. At the AI's bar the picker is still giving up about two points
-// a hand by declining the partner, consistently across every seed — offering it
-// there would be offering a losing move. This is a UI affordance and not a
-// rule: the server deliberately does not enforce it, because going alone is
-// legal at any strength and a client that wants to do it anyway is only hurting
-// itself.
-export const ALONE_OFFER_STRENGTH = 18;
+// By points alone the bar belongs at 18: at 17 the picker gives up about two
+// points a hand by declining the partner, consistently in every seed, and the
+// hand is only better played alone 31.7% of the time. Lowering it to 17 offers
+// a move that loses on average.
+//
+// It sits here anyway, as a product call rather than a measured one: the AI is
+// allowed to make this decision at 17 and a person watching it do so has no
+// button for the same hand, which reads as the game knowing something it will
+// not tell you. Consistency with what the opponents may do was judged worth
+// two points a hand on the 2.5% of picked hands where this is a genuine choice.
+//
+// The cost is bounded and known — see the table — so if the win rate on human
+// picks moves, this is the first thing to put back to 18. It is a UI affordance
+// and not a rule either way: the server deliberately does not enforce it,
+// because going alone is legal at any strength and a client that wants to do it
+// anyway is only hurting itself.
+export const ALONE_OFFER_STRENGTH = ALONE_HANDSTRENGTH;
 
 // Tolerant of a missing hand on purpose — it answers "should we offer this?",
 // and the safe answer when we do not know is no.

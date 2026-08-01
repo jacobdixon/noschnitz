@@ -330,16 +330,19 @@ Unchanged rules:
   with a negative control. Several correct-looking diagnoses measured as pure noise;
   measure before believing.
 - **"What should the AI do?" and "what should we OFFER a human?" are different
-  questions and get different numbers.** `ALONE_HANDSTRENGTH` (17) is the AI's bar for
-  going alone; `ALONE_OFFER_STRENGTH` (18) is when the button is worth showing a
-  person. They sit next to each other in `engine.js` and look like a typo — they are
-  not. The AI decides while it still holds all eight and buries to match the plan
-  (banking points instead of protecting a call); a human decides *after* the bury is
-  spent, which is strictly worse, so the human's bar is a point higher. Measured over
-  20,239 pickers who had a partner available: alone is behind by 1.9 points/hand at
-  17, negative in 4 of 4 seeds, and only turns positive at 18. **If the AI bar is ever
-  re-tuned, re-measure the offer bar in the same pass** rather than assuming it
-  follows.
+  questions, and the answer here is a PRODUCT call sitting on top of a measurement —
+  do not read the two as one number.** `ALONE_HANDSTRENGTH` and
+  `ALONE_OFFER_STRENGTH` are both **17** as of 0.46.0, and `aitest` asserts they are
+  *equal* rather than ordered, so moving one without considering the other fails
+  loudly. That is deliberately not what the measurement alone would say: over 20,239
+  pickers who had a partner available, alone is behind by 1.9 points/hand at 17,
+  negative in 4 of 4 seeds, and only turns positive at 18 — which is why the offer bar
+  sat at 18 from 0.44.0. It moved because a person watching an opponent go alone on a
+  hand their own screen refuses to offer reads as the game knowing something it will
+  not tell them, and consistency was judged worth ~0.08 points per picked hand of
+  bounded exposure. **If the win rate on human picks moves, 18 is the first thing to
+  put back**, and if the AI bar is ever re-tuned, re-measure the offer bar in the same
+  pass rather than assuming it follows.
   - The harness for that is the general shape to reuse for any "is this option worth
     offering" question: identical deal AND identical bury in both arms, differing only
     in the decision under test, every seat on the unchanged engine, scored on the
