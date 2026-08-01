@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.46.0] - 2026-08-01 (`pending`)
+## [0.46.0] - 2026-08-01 (`6ef0eba`)
 - **`ALONE_OFFER_STRENGTH` drops to 17, matching the AI's `ALONE_HANDSTRENGTH`.**
   The "Go alone" button now appears on every hand the AI would consider going
   alone on itself. It sat at 18 since 0.44.0 on the strength of a paired
