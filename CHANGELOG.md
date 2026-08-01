@@ -6,6 +6,49 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.46.0] - 2026-08-01 (`pending`)
+- **`ALONE_OFFER_STRENGTH` drops to 17, matching the AI's `ALONE_HANDSTRENGTH`.**
+  The "Go alone" button now appears on every hand the AI would consider going
+  alone on itself. It sat at 18 since 0.44.0 on the strength of a paired
+  measurement, and that measurement has not changed — this is a product call
+  made against it, not a new number.
+
+  What it costs, from the same table 0.44.0 was set from (20,239 pickers who had
+  a partner available, alone minus calling, points per hand to the picker):
+
+  | strength | alone − calling | alone better on | per seed |
+  |---------:|----------------:|----------------:|:---------|
+  | 16 | −4.0 | 24.5% | negative in 4 of 4 |
+  | 17 | −1.9 | 31.7% | negative in 4 of 4 |
+  | 18 | +0.3 | 49.7% | positive in 3 of 4 |
+
+  So the newly-offered band is exactly strength 17, where declining the partner
+  loses about two points a hand in every seed. The button is now on **19.1%** of
+  picked hands against 15.0% before — 12.5% forced (no callable suit, ungated,
+  unchanged) plus **6.6%** where it is a genuine choice, up from 2.5%. The
+  marginal band is 4.1% of picked hands, so the exposure is roughly 0.08 points
+  per picked hand, and only if the offer is always taken.
+
+  The reason it moved anyway: the AI has been allowed to make this decision at
+  17 since `ALONE_HANDSTRENGTH` landed, and a person watching an opponent go
+  alone on a hand their own screen refuses to offer reads as the game knowing
+  something it will not tell them. Consistency about what the table is permitted
+  to do was judged worth two points a hand on 2.5% of picks. The cost is bounded
+  and written down; if the win rate on human picks moves, 18 is the first thing
+  to put back.
+
+- **The two bars are now asserted equal rather than ordered.** `aitest.mjs`
+  checked `ALONE_OFFER_STRENGTH > ALONE_HANDSTRENGTH`, which was the old
+  invariant stated as a test. It now checks equality, so moving either bar
+  without considering the other fails loudly instead of silently reopening the
+  gap. The boundary hands moved with it: strength 17 (`Q♣ Q♠ Q♥ J♦ A♦ A♣`) is
+  the new at-the-bar case, and 16 (`Q♣ Q♠ A♦ J♦ J♣ A♣`) the new one-short case.
+
+- No engine, scoring or server behaviour changed. `mayGoAlone` remains a UI
+  affordance that the server deliberately does not enforce — alone is legal at
+  any strength, and a client that goes alone on a weak hand is only hurting
+  itself.
+
 ## [0.45.2] - 2026-07-31 (`d5dbb8c`)
 - **Multiplayer is live on www.noschnitz.com.** Documentation catching up to a
   deployment, no behaviour change. `VITE_MULTIPLAYER=1`, `MULTIPLAYER=1` and a

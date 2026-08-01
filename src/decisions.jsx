@@ -25,10 +25,12 @@
    needed anything: a null call is a null call however it arose.
 
    It is GATED on `mayGoAlone`, though, because "always available" and "always
-   worth showing" are not the same either. Measured, declining a partner is
-   worth about -4 points a hand at strength 16 and -2 at 17; it only turns
-   positive at 18, which is where the bar sits. See ALONE_OFFER_STRENGTH in
-   engine.js for the numbers. The rule lives there rather than here so the solo
+   worth showing" are not the same either. The bar is the AI's own
+   ALONE_HANDSTRENGTH: whatever an opponent is allowed to decide for itself, a
+   person gets the button for. That is not the points-optimal bar — declining a
+   partner measures at about -4 a hand at strength 16 and -2 at 17, and only
+   turns positive at 18 — and engine.js records both the numbers and why the
+   bar sits below them anyway. The rule lives there rather than here so the solo
    screen and the table screen cannot end up disagreeing about it — the same
    reason this file renders options instead of suits.
    ========================================================================= */
