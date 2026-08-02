@@ -6,6 +6,34 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.2] - 2026-08-02 (`PENDING`)
+- **`pimc.mjs --partner NAME` prices a READ.** It restricts sampling to worlds
+  where a named seat holds the called card. The harness has no theory of how
+  somebody played and cannot derive this — it is supplied by hand, and that is
+  the point: run the same decision with and without, and the gap is what the
+  inference is worth in points. The card is dealt to that seat rather than
+  sampled and rejected, because rejection on top of the call filter would gut an
+  already thin acceptance rate.
+- Reported on hand 1: at trick 1 Bunny threw the **A♣** into a trick the picker
+  had already trumped and won — playing last, void in the led suit, holding
+  cheaper cards. No defender pays eleven points to the picker, so Gus can read
+  Bunny as the partner from that alone. Once he has, Bunny's Q♣ at trick 3 means
+  the trick is already the picker team's.
+  - Throwing the **10♠** goes from **0.9 points** behind the best card to
+    **5.9** (±0.12, same sign in 4 of 4 seeds). The read is worth more than six
+    times the error it exposes, which is the more useful number: the mistake is
+    cheap, *not making the read* is what costs.
+  - With the read on, every legal card wins the hand for the picker team in 100%
+    of worlds, so the decision is purely the schneider line — 58.7% with the 8♥
+    against 76.5% with the 10♠.
+- **The engine cannot make this read, and that is a gap in the belief model
+  rather than in the play code.** `partnerWeight` has exactly one evidence term,
+  `trumpLeadKind`, and a schmear into the picker's trick is not a lead.
+  `BELIEF_SCHMEAR` gates a defender *paying* on the belief; nothing feeds the
+  belief *from* somebody else's payment. `teammateProbability` is the right
+  place for it and `belieftest` is the harness that would calibrate it — this is
+  a candidate weight, measurable the same way `TRUMP_LEAD_ODDS` was.
+
 ## [0.48.1] - 2026-08-02 (`32621fe`)
 - **`pimc.mjs` handles a DEFENDER's viewpoint, which is a different information
   set and was quietly getting it wrong.** A defender cannot see the bury, so the

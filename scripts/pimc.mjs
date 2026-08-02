@@ -39,6 +39,8 @@
        --worlds n     sampled deals (default 300)
        --seed n       RNG seed (default 1)
        --no-passes    drop the passer-strength filter
+       --partner NAME pin a read: only sample worlds where NAME holds the
+                      called card, so the read can be priced against not having it
    ========================================================================= */
 import { readFileSync } from "node:fs";
 import {
@@ -194,6 +196,24 @@ function analyse(spec, opts) {
     !spec.calledSuit ||
     callOptions(hands[spec.picker], buried).some((o) => o.kind === calledKind && o.suit === spec.calledSuit);
 
+  // A READ, pinned by hand: restrict sampling to worlds where a named seat holds
+  // the called card. This is not deduction from the rules — it is what a player
+  // concludes from how somebody played, and the harness has no theory of that.
+  // Pinning it is how you price the read: run the decision with and without, and
+  // the gap is what the inference is worth in points. The card is dealt to that
+  // seat rather than sampled and rejected, because rejection on top of the call
+  // filter would throw away most of an already thin acceptance rate.
+  const pinned = opts.partner ?? null;
+  const calledCard = spec.calledSuit
+    ? unseen.find((c) => c.suit === spec.calledSuit && c.rank === (spec.calledRank ?? "A"))
+    : null;
+  if (pinned !== null) {
+    if (!spec.calledSuit) throw new Error("--partner is meaningless when the picker went alone");
+    if (!calledCard) throw new Error("the called card is already out — the partner is known, not read");
+    if (pinned === viewer || pinned === spec.picker) throw new Error(`${spec.seats[pinned]} cannot be the partner`);
+    if (!held[pinned]) throw new Error(`${spec.seats[pinned]} has no cards left to hold it`);
+  }
+
   const samples = legal.map(() => []);
   const worldPartner = [];
   const partnerCount = [0, 0, 0, 0, 0];
@@ -201,7 +221,7 @@ function analyse(spec, opts) {
 
   while (kept < opts.worlds && tries < opts.worlds * opts.maxTries) {
     tries++;
-    const pool = [...unseen];
+    const pool = pinned === null ? [...unseen] : unseen.filter((c) => cid(c) !== cid(calledCard));
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -214,7 +234,11 @@ function analyse(spec, opts) {
     const hands = [];
     for (let p = 0; p < 5; p++) hands[p] = actualHands[p].filter((c) => seen.has(cid(c)));
     hands[viewer] = [...actualHands[viewer]];
-    for (const p of others) hands[p] = [...hands[p], ...pool.slice(di, (di += held[p]))];
+    for (const p of others) {
+      const take = held[p] - (p === pinned ? 1 : 0);
+      hands[p] = [...hands[p], ...pool.slice(di, (di += take))];
+      if (p === pinned) hands[p].push(calledCard);
+    }
 
     if (opts.passes && passers.some((p) => handStrength(hands[p]) >= PICK_STRENGTH)) { rejPass++; continue; }
     if (!callWasAvailable(hands, buried)) { rejCall++; continue; }
@@ -301,9 +325,14 @@ const seatArg = flag("seat", spec.seats[spec.picker]);
 const seat = spec.seats.findIndex((n) => n.toLowerCase() === String(seatArg).toLowerCase());
 if (seat < 0) throw new Error(`unknown seat ${seatArg} (have ${spec.seats.join(", ")})`);
 
+const partnerArg = flag("partner", null);
+const partnerSeat = partnerArg === null ? null : spec.seats.findIndex((n) => n.toLowerCase() === String(partnerArg).toLowerCase());
+if (partnerSeat !== null && partnerSeat < 0) throw new Error(`unknown seat ${partnerArg} (have ${spec.seats.join(", ")})`);
+
 const opts = {
   trick: Number(flag("trick", 1)) - 1,
   seat,
+  partner: partnerSeat,
   worlds: Number(flag("worlds", 300)),
   seed: Number(flag("seed", 1)),
   passes: !argv.includes("--no-passes"),
@@ -329,7 +358,7 @@ console.log(`decision: ${spec.seats[r.viewer]}, trick ${opts.trick + 1} — play
 console.log(`seat:     ${spec.seats[r.viewer]} is a ${side}; points below are the PICKER TEAM's, stake is ${spec.seats[r.viewer]}'s own`);
 console.log(`worlds:   ${r.kept} kept of ${r.tries} sampled  (rejected ${r.rejLegal} illegal, ${r.rejPass} pick-strength, ${r.rejCall} call-inconsistent)${opts.passes ? "" : "  [passer filter OFF]"}`);
 const pc = r.partnerCount.map((n, p) => (n ? `${spec.seats[p]} ${(100 * n / r.kept).toFixed(0)}%` : null)).filter(Boolean);
-console.log(`partner:  ${pc.join("  ")}   (truth: ${spec.seats[r.truth.partner]})`);
+console.log(`partner:  ${pc.join("  ")}   (truth: ${spec.seats[r.truth.partner]})${opts.partner === null ? "" : "  [PINNED by read]"}`);
 // What the shipped heuristic would have done from the same seat. It reads only
 // what that seat may know, so it is a fair third opinion — and where it agrees
 // with the played card and PIMC disagrees with both, the finding is about the
