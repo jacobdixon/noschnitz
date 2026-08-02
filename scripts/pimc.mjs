@@ -43,7 +43,7 @@
 import { readFileSync } from "node:fs";
 import {
   ALL_CARDS, cid, cardPts, legalPlays, applyPlay, resolveTrick,
-  assignPartner, solveHandValue, handStrength, aiChooseCard, gradeAllPlays, pickerTeamOf, SUIT_SYM,
+  assignPartner, solveHandValue, handStrength, aiChooseCard, gradeAllPlays, pickerTeamOf, callOptions, SUIT_SYM,
 } from "../src/engine.js";
 
 /* ------------------------------- plumbing ------------------------------- */
@@ -181,9 +181,23 @@ function analyse(spec, opts) {
   const others = [0, 1, 2, 3, 4].filter((p) => p !== viewer);
   const passers = (spec.passers ?? []).filter((p) => p !== viewer);
 
+  // The call itself is evidence, and for a DEFENDER it is most of the evidence
+  // about the two cards nobody ever sees. A world that puts the called ace in
+  // the picker's hand or in the bury is one where this call was not available,
+  // and neither the replay nor any void filter would notice — the hand plays out
+  // perfectly legally, it just could not have been called that way. Asking
+  // `callOptions` rather than restating its rules keeps under-calls and
+  // called-tens right for free, and keeps this from drifting away from the
+  // engine the way a second copy of a rule always does.
+  const calledKind = spec.calledUnder ? "under" : spec.calledRank === "10" ? "ten" : "ace";
+  const callWasAvailable = (hands, buried) =>
+    !spec.calledSuit ||
+    callOptions(hands[spec.picker], buried).some((o) => o.kind === calledKind && o.suit === spec.calledSuit);
+
   const samples = legal.map(() => []);
+  const worldPartner = [];
   const partnerCount = [0, 0, 0, 0, 0];
-  let tries = 0, kept = 0, rejLegal = 0, rejPass = 0;
+  let tries = 0, kept = 0, rejLegal = 0, rejPass = 0, rejCall = 0;
 
   while (kept < opts.worlds && tries < opts.worlds * opts.maxTries) {
     tries++;
@@ -203,6 +217,7 @@ function analyse(spec, opts) {
     for (const p of others) hands[p] = [...hands[p], ...pool.slice(di, (di += held[p]))];
 
     if (opts.passes && passers.some((p) => handStrength(hands[p]) >= PICK_STRENGTH)) { rejPass++; continue; }
+    if (!callWasAvailable(hands, buried)) { rejCall++; continue; }
 
     let g;
     try {
@@ -212,35 +227,50 @@ function analyse(spec, opts) {
       rejLegal++;
       continue;
     }
+    // Belt and braces on the same point: a called suit always has a partner,
+    // because the picker cannot hold or bury the card that names one.
+    if (spec.calledSuit && g.partner === null) { rejCall++; continue; }
     kept++;
+    worldPartner.push(g.partner);
     if (g.partner !== null) partnerCount[g.partner]++;
 
+    // The bury is sampled too when the viewer is not the picker, so its points
+    // are part of the world rather than a constant — they belong to the picker
+    // team and they move the schneider line.
+    const bPts = buried.reduce((s, c) => s + cardPts(c), 0);
     // One memo per world, shared across that world's legal cards — the
     // positions below sibling moves overlap heavily, which is most of the cost.
     const memo = new Map();
     const budget = { n: 0 };
     legal.forEach((card, i) => {
-      samples[i].push(solveHandValue(applyPlay(g, viewer, card), memo, budget) + buriedPts);
+      samples[i].push(solveHandValue(applyPlay(g, viewer, card), memo, budget) + bPts);
     });
   }
   if (!kept) throw new Error("no consistent world found — the info set or the log is wrong");
 
-  return { spec, viewer, legal, samples, ddActual, truth, final, kept, tries, rejLegal, rejPass, partnerCount, at, seq };
+  return { spec, viewer, legal, samples, worldPartner, ddActual, truth, final, kept, tries, rejLegal, rejPass, rejCall, partnerCount, at, seq };
 }
 
 /* -------------------------------- scoring ------------------------------- */
-// Stake for the picker's own seat from a finished point total, mirroring
-// scoreHand. teamPts === 120 is treated as the no-tricker case: the picker team
-// here can only reach 120 by taking every remaining trick in all but pathological
-// lines, and the frequency is reported so it can be checked rather than assumed.
-function pickerStake(teamPts, alone, doubler = 1) {
+// One seat's hand delta from a finished point total, mirroring scoreHand. The
+// seat matters because the sides are not symmetric — the picker collects double
+// what the partner does and the defenders each pay one — and for a DEFENDER
+// viewer the sign flips, so a card that lowers the picker's points is the good
+// one. teamPts === 120 is treated as the no-tricker case: the picker team can
+// only reach it by taking every remaining trick in all but pathological lines,
+// and the frequency is printed so that can be checked rather than assumed.
+function seatDelta(seat, picker, partner, teamPts, doubler = 1) {
   const pickerWins = teamPts >= 61;
   const defPts = 120 - teamPts;
   let mult = 1;
   if (pickerWins) { if (teamPts === 120) mult = 3; else if (defPts <= 29) mult = 2; }
   else if (teamPts <= 30) mult = 2;
   const stake = mult * doubler * (pickerWins ? 1 : 2);
-  return (pickerWins ? 1 : -1) * (alone ? 4 : 2) * stake;
+  const sign = pickerWins ? 1 : -1;
+  const alone = partner === null;
+  if (seat === picker) return sign * (alone ? 4 : 2) * stake;
+  if (seat === partner) return sign * 1 * stake;
+  return -sign * stake;
 }
 
 const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
@@ -285,13 +315,19 @@ const r = analyse(spec, opts);
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 
 const actual = r.seq[r.at].card;
-const alone = r.truth.alone;
-const stakes = r.samples.map((s) => s.map((v) => pickerStake(v, alone)));
+// Oriented to the DECIDING seat, not to the picker. A defender's best card is
+// the one that MINIMISES picker-team points, so sorting and the "best" marker
+// have to flip with the side or the table reads exactly backwards.
+const onPickerTeam = pickerTeamOf(r.truth).includes(r.viewer);
+const side = onPickerTeam ? (r.viewer === r.truth.picker ? "picker" : "partner") : "defender";
+const stakes = r.samples.map((col, i) =>
+  col.map((v, w) => seatDelta(r.viewer, r.truth.picker, r.worldPartner[w], v, spec.doubler ?? 1)));
 const refIdx = r.legal.findIndex((c) => cid(c) === cid(actual));
 
 console.log(`\n${spec.label}`);
 console.log(`decision: ${spec.seats[r.viewer]}, trick ${opts.trick + 1} — played ${show(actual)}`);
-console.log(`worlds:   ${r.kept} kept of ${r.tries} sampled  (rejected ${r.rejLegal} illegal, ${r.rejPass} pick-strength)${opts.passes ? "" : "  [passer filter OFF]"}`);
+console.log(`seat:     ${spec.seats[r.viewer]} is a ${side}; points below are the PICKER TEAM's, stake is ${spec.seats[r.viewer]}'s own`);
+console.log(`worlds:   ${r.kept} kept of ${r.tries} sampled  (rejected ${r.rejLegal} illegal, ${r.rejPass} pick-strength, ${r.rejCall} call-inconsistent)${opts.passes ? "" : "  [passer filter OFF]"}`);
 const pc = r.partnerCount.map((n, p) => (n ? `${spec.seats[p]} ${(100 * n / r.kept).toFixed(0)}%` : null)).filter(Boolean);
 console.log(`partner:  ${pc.join("  ")}   (truth: ${spec.seats[r.truth.partner]})`);
 // What the shipped heuristic would have done from the same seat. It reads only
@@ -313,7 +349,6 @@ if (!argv.includes("--no-verify")) {
   if (!graded) console.log("verify:   hand exceeded the node budget, not cross-checked\n");
   else if (!d) console.log("verify:   forced play, nothing for the grader to compare\n");
   else {
-    const onPickerTeam = pickerTeamOf(r.truth).includes(r.viewer);
     const best = onPickerTeam ? Math.max(...r.ddActual) : Math.min(...r.ddActual);
     for (const { card, cost } of d.costs) {
       const v = r.ddActual[r.legal.findIndex((c) => cid(c) === cid(card))];
@@ -335,12 +370,12 @@ const rows = r.legal.map((card, i) => {
   const ds = pairedDiff(stakes[i], stakes[refIdx]);
   return { card, pts, win, sch, got, all, st, d, ds, dd: r.ddActual[i] };
 });
-const bestPts = Math.max(...rows.map((x) => x.pts));
-const bestDD = Math.max(...rows.map((x) => x.dd));
+const bestPts = onPickerTeam ? Math.max(...rows.map((x) => x.pts)) : Math.min(...rows.map((x) => x.pts));
+const bestDD = onPickerTeam ? Math.max(...rows.map((x) => x.dd)) : Math.min(...rows.map((x) => x.dd));
 
 console.log("card    PIMC pts   vs played     win%   schn%   set%   120%   stake   vs played     DD(actual)");
 console.log("----   ---------  ------------   -----  ------  -----  -----  ------  -----------  -----------");
-for (const x of rows.sort((a, b) => b.pts - a.pts)) {
+for (const x of rows.sort((a, b) => (onPickerTeam ? b.pts - a.pts : a.pts - b.pts))) {
   const mark = cid(x.card) === cid(actual) ? "*" : x.pts === bestPts ? "+" : " ";
   const dTxt = cid(x.card) === cid(actual) ? "     —      " : `${x.d.mean >= 0 ? "+" : ""}${x.d.mean.toFixed(2)} ± ${x.d.se.toFixed(2)}`.padStart(12);
   const dsTxt = cid(x.card) === cid(actual) ? "     —     " : `${x.ds.mean >= 0 ? "+" : ""}${x.ds.mean.toFixed(3)} ± ${x.ds.se.toFixed(3)}`.padStart(11);
@@ -350,5 +385,5 @@ for (const x of rows.sort((a, b) => b.pts - a.pts)) {
     `${x.st.toFixed(2).padStart(6)}  ${dsTxt}  ${(x.dd.toFixed(0) + (x.dd === bestDD ? " (best)" : "")).padStart(11)}`
   );
 }
-console.log("\n* = card actually played   + = PIMC best   points are the PICKER TEAM's, buried included");
-console.log("stake is the PICKER's own hand delta under the house rules; DD(actual) solves the one real deal.\n");
+console.log(`\n* = card actually played   + = PIMC best for the ${side}   points are the PICKER TEAM's, buried included`);
+console.log(`stake is ${spec.seats[r.viewer]}'s own hand delta under the house rules; DD(actual) solves the one real deal.\n`);

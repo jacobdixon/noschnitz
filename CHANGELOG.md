@@ -6,6 +6,38 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.1] - 2026-08-02 (`PENDING`)
+- **`pimc.mjs` handles a DEFENDER's viewpoint, which is a different information
+  set and was quietly getting it wrong.** A defender cannot see the bury, so the
+  two cards nobody ever sees have to be sampled — and two things broke on that:
+  - The buried points were being added as a constant taken from the REAL bury.
+    For the picker that is correct and the numbers are unchanged (verified
+    bit-for-bit against 0.48.0); for anyone else it silently fed the viewer two
+    cards' worth of knowledge they do not have, and the bury lands on the
+    picker's side of the schneider line, so it moves the answer.
+  - Worlds that put the called ace in the picker's hand or in the bury were
+    being kept. Nothing about them plays illegally — they simply could not have
+    been called that way. The filter asks `callOptions` whether the call that
+    was actually made was available in the sampled world, rather than restating
+    the rule, so under-calls and called-tens stay right for free. It is doing
+    real work: it rejects **74%** of sampled worlds for the defender seat here,
+    because it also carries the fact that the picker must still be holding a
+    spade, having played nothing but trump.
+  - Output is oriented to the deciding seat now — a defender's best card is the
+    one that MINIMISES picker-team points, so the sort, the "best" marker and
+    the stake column all flip with the side. Stake is the viewer's own delta,
+    computed per world, since who the partner is varies between worlds.
+- Second result on hand 1, and it points the OPPOSITE way to the first: Gus
+  throwing the **10♠** at trick 3 was the worst of his four cards, but by only
+  **0.9 points** (±0.10, same sign in 4 of 4 seeds). The exact solve of the real
+  deal scores it at **6 points** — so the grader overstates this one by nearly
+  7x, having overstated nothing at all about the 10♦. Both errors are real; the
+  actual-deal grader is simply not a measure of size.
+  - The whole cost is schneider margin, not the hand: win probability is flat
+    across all four cards to within a tenth of a point, while the defenders'
+    chance of being schneidered goes 31.6% → 34.3%. `aiChooseCard` throws the
+    10♠ too.
+
 ## [0.48.0] - 2026-08-02 (`924ae24`)
 - **`scripts/pimc.mjs` — the determinized search from AI_PERFECT_PLAY.md §A,
   aimed at one decision instead of at the engine.** Sample complete deals of the
