@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.0] - 2026-08-02 (`PENDING`)
+## [0.48.0] - 2026-08-02 (`924ae24`)
 - **`scripts/pimc.mjs` — the determinized search from AI_PERFECT_PLAY.md §A,
   aimed at one decision instead of at the engine.** Sample complete deals of the
   unseen cards consistent with what the deciding seat knew, run the existing
