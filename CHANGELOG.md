@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.47.0] - 2026-08-02 (`pending`)
+## [0.47.0] - 2026-08-02 (`0131bb1`)
 - **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
   demand and cached on the table. No client yet: this is the flag, the provider
   adapter and `POST /api/tables/[id]/voice`. Nothing is reachable from the UI.
