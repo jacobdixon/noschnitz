@@ -286,11 +286,10 @@ Unchanged rules:
   CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
   with a self check-in about an hour out and re-arm it quietly while the PR is open.
   Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
-  what is broken and why it is not yours to fix — never in silence. The one thing
-  that wake cannot fix is CI never *starting* — a session's own push does not
-  trigger Actions at all (see "Things a session will try and cannot do"), so if the
-  check is absent rather than red, stop retrying, verify locally, and say so in the
-  PR: it needs a human to push.
+  what is broken and why it is not yours to fix — never in silence. The awkward case is CI
+  never *starting*: Actions can lag badly here (see "Things a session will try and
+  cannot do"), so a missing check is not a failing one. Keep waiting and verify
+  locally rather than announcing a blocker.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
@@ -523,30 +522,30 @@ doesn't spend a turn rediscovering them.
   every PR in this repo reports `merged: false`; `merged_at` is the field that tells the
   truth.
 
-- **A session's push does not start GitHub Actions, so a session cannot get its own PR
-  to green.** Observed on #120 (2026-08-02): the PR opened, Vercel built and reported a
-  successful deployment on every push, and `ci.yml` — which is `on: pull_request` and is
-  the check the merge rules require — never queued a run at all. Not a slow run, not a
-  red run: no run. A second push to nudge it produced another Vercel build and still no
-  Actions run, so `mergeable_state` sat at `blocked` on a required check that does not
-  exist.
+- **GitHub Actions can take many minutes and several pushes to start on a session's PR.
+  Do not conclude that it never will.** On #120 (2026-08-02) the PR opened at 23:09 and
+  `ci.yml` — `on: pull_request`, and the check the merge rules require — had still not
+  queued a run after pushes at 23:15 and 23:23. Vercel built and reported success on
+  every one of them, so events were plainly reaching GitHub; `mergeable_state` sat at
+  `blocked` on a required check that did not exist. It finally queued at 23:29, on the
+  fourth push, twenty minutes after the PR opened.
 
-  The signal that explains it: every CI run in this repo's history shows
-  `actor: jacobdixon (User)`, while a session's commits reach GitHub through the agent
-  git proxy and its PR is opened by the GitHub App. GitHub deliberately does not start
-  workflows for events authored with an app/`GITHUB_TOKEN` identity, which is exactly the
-  shape of what happens here. Read that as the likely mechanism rather than a proven one
-  — what is certain is the symptom and that it is not about the diff.
+  Recorded mainly for the wrong conclusion drawn in between, which was written into this
+  file and had to be taken back out an hour later. Every CI run in this repo's history
+  shows `actor: jacobdixon (User)`, while a session's commits arrive through the agent
+  git proxy and its PR is opened by the GitHub App — and GitHub genuinely does suppress
+  workflow triggers for app-authored events. That is a tidy, checkable-looking story
+  which fits every observation available at the time, and it is **wrong**: the run that
+  eventually started came through the same proxy under the same identity as the ones
+  that did not. An explanation that accounts for the evidence is not the same as a
+  demonstrated cause, and this file is the wrong place to put the difference.
 
-  There is no way around it from a session. `ci.yml` has no `workflow_dispatch`, so
-  `actions_run_trigger` has nothing to call; closing and reopening the PR through the app
-  reuses the same identity. **The fix is a human pushing anything to the branch from
-  their own checkout — an empty commit is enough** — and it is worth saying so in the PR
-  body so nobody reads the missing check as a failure. Adding `workflow_dispatch:` to
-  `ci.yml` would make this self-service, and is probably worth doing.
-
-  So verify locally and say plainly in the PR that you did. Which leads to the trap
-  underneath it:
+  So when the check is missing rather than red: keep waiting, push again if there is
+  something real to push, and check by head SHA rather than trusting one poll. Verify
+  locally in the meantime and say in the PR that you did. Only after a genuinely long
+  silence is it worth telling anyone a human has to push — and if this does turn out to
+  recur, adding `workflow_dispatch:` to `ci.yml` would make it self-service, since
+  without it `actions_run_trigger` has nothing to call.
 
 - **`node_modules` is empty in a fresh session, and the failures that causes look like
   real ones.** Nothing installs dependencies for you. Until `npm install` is run,
