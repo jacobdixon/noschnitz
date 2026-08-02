@@ -275,14 +275,25 @@ export function printReport({ player, playerName, decisionTeam, actualCard, resu
 }
 
 // ---------- CLI ----------
-async function main() {
-  const scenarioPath = process.argv[2];
-  if (!scenarioPath) {
-    console.error("Usage: node scripts/pimc.mjs <scenario-file.mjs>");
-    process.exit(1);
-  }
-  const mod = await import(pathToFileURL(path.resolve(scenarioPath)).href);
-  const result = runPimc(mod.default);
-  printReport(result);
+// Guarded so `import { fmt, card } from "./pimc.mjs"` (see gradedecision.mjs)
+// doesn't also kick off a full PIMC run as a side effect of importing it.
+const isMain = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+if (isMain) {
+  // Deliberately NOT a top-level `await`: scenario files import `card` back
+  // from this module (a circular import), and a real top-level await here
+  // deadlocks Node's module loader — this module can't finish evaluating
+  // until the await settles, and the await can't settle until the scenario
+  // module's circular re-import of this (still-evaluating) module resolves.
+  // An async IIFE keeps the await inside a function body, so this module
+  // finishes evaluating synchronously and the circular import resolves fine.
+  (async () => {
+    const scenarioPath = process.argv[2];
+    if (!scenarioPath) {
+      console.error("Usage: node scripts/pimc.mjs <scenario-file.mjs>");
+      process.exit(1);
+    }
+    const mod = await import(pathToFileURL(path.resolve(scenarioPath)).href);
+    const result = runPimc(mod.default);
+    printReport(result);
+  })();
 }
-main();
