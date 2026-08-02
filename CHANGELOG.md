@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.47.0] - 2026-08-02 (`PENDING`)
+## [0.47.0] - 2026-08-02 (`8ad9d73`)
 - **`trickSecurity` now prices a beater by whether its holder could legally
   *play* it.** Holding a card that beats the trick is not the same as being
   allowed to play it: a seat holding any card of the led suit must follow with
