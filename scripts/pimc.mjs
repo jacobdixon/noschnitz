@@ -16,6 +16,18 @@
    with the AI's own policy (`aiChooseCard`) to get an average outcome per
    legal card.
 
+   One deal isn't dealt fully at random, though: when the picker's hand is
+   being sampled (i.e. the deciding player isn't the picker), it's rejected
+   and redealt unless it clears the app's own pick threshold
+   (`PICK_STRENGTH`, `ai-runner.js` — the same bar the AI itself uses to
+   decide whether to pick). A real opponent picked because they judged their
+   hand worth it, and that judgment is itself public information the
+   deciding player gets to use — a picker hand sampled uniformly at random
+   would mostly be hands nobody would have picked with, which is not the
+   population this decision is actually being made against. Every other
+   seat's hand is dealt uniformly, since nothing else at the table carries
+   an equivalent "I chose to do X" signal by this point in the hand.
+
    Reusable per screenshot: transcribe the recap the same way you would for
    an exact-solve grade (see e.g. scripts/scenarios/hand1-jh.mjs), point
    `decision` at the {trickIdx, player} you're debating, and run:
@@ -39,9 +51,10 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  ALL_CARDS, SUIT_SYM, cid, isTrump, effSuit, effSuitFor, cardPts,
+  ALL_CARDS, SUIT_SYM, cid, isTrump, effSuit, effSuitFor, cardPts, handStrength,
   legalPlays, applyPlay, resolveTrick, aiChooseCard,
 } from "../src/engine.js";
+import { PICK_STRENGTH } from "../src/ai-runner.js";
 
 const HAND_SIZE = 6;
 export const fmt = (card) => `${card.rank}${SUIT_SYM[card.suit]}`;
@@ -214,14 +227,31 @@ export function runPimc(scenario) {
   // ---------- Sample, deal, roll every legal card forward from the same world ----------
   let legalAtDecision = null;
   const totalsByCard = new Map(); // cid -> array of per-sample results
-  let ignoredVoidWarning = false;
+  const pickerAlreadyPlayed = playedCardsOf(picker, publicPlays);
+  // The picker's hand only needs this treatment when it's actually being
+  // sampled — i.e. the decision-maker isn't the picker. When they are, it's
+  // their own known hand, already ground truth, nothing to redeal.
+  const pickerHandIsSampled = picker !== player;
+  const MAX_PICKER_REDEALS = 300;
 
   for (let s = 0; s < samples; s++) {
     let dealt;
-    try {
+    if (!pickerHandIsSampled) {
       dealt = dealRespectingVoids(unseen, capacities, voidSuits);
-    } catch (e) {
-      throw e;
+    } else {
+      let attempts = 0;
+      do {
+        dealt = dealRespectingVoids(unseen, capacities, voidSuits);
+        attempts++;
+      } while (
+        handStrength([...pickerAlreadyPlayed, ...dealt[picker], ...dealt.buried]) < PICK_STRENGTH
+        && attempts < MAX_PICKER_REDEALS
+      );
+      // Past the cap: keep the last deal even if it's a sub-threshold picker
+      // hand, rather than hang — this should be exceedingly rare (most
+      // random 8-card hands need only a handful of tries to clear 10), and a
+      // handful of under-strength samples among thousands won't move the
+      // average enough to matter.
     }
     const hands = [[], [], [], [], []];
     hands[player] = [...myRemainingHand];

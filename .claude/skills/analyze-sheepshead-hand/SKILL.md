@@ -17,7 +17,15 @@ questions:
   decision?" It forgets the future and the other hands, samples plausible
   worlds consistent with what was public, and rolls each one forward with
   the AI's own play policy. This is a genuine Monte Carlo estimate (not
-  exact), so it reports a standard error, not just a mean.
+  exact), so it reports a standard error, not just a mean. One seat isn't
+  dealt uniformly at random, though: when the picker's hand is being
+  sampled (the decision-maker isn't the picker), it's redealt until it
+  clears the app's own pick-strength bar (`PICK_STRENGTH` in
+  `ai-runner.js`) — a real opponent's decision to pick is itself public
+  information, and a picker hand sampled with no such filter would mostly
+  be hands nobody would actually have picked with. No other seat gets this
+  treatment; nothing else on the table has an equivalent "I chose to do X"
+  signal by this point.
 
 These can disagree, and when they do it's not a bug — it's information. The
 J♥ hand this skill was built from is the reference case: the exact solver

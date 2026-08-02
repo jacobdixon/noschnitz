@@ -52,7 +52,7 @@ export const MAX_STEPS = 200;
 // play is indistinguishable from single-player AI play. Deliberately named
 // rather than inlined: they're a balance decision, and the two copies must
 // stay in step.
-const PICK_STRENGTH = 10;
+export const PICK_STRENGTH = 10;
 // In the forced-pick seat (four passes already, you're last) the AI stretches
 // down to 8 rather than throwing the hand in.
 const LAST_SEAT_PICK_STRENGTH = 8;
