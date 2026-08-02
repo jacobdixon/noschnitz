@@ -286,7 +286,10 @@ Unchanged rules:
   CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
   with a self check-in about an hour out and re-arm it quietly while the PR is open.
   Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
-  what is broken and why it is not yours to fix — never in silence.
+  what is broken and why it is not yours to fix — never in silence. The awkward case is CI
+  never *starting*: Actions can lag badly here (see "Things a session will try and
+  cannot do"), so a missing check is not a failing one. Keep waiting and verify
+  locally rather than announcing a blocker.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
@@ -518,3 +521,37 @@ doesn't spend a turn rediscovering them.
   Compare each branch tip against the head SHA its PR merged instead. On that API note:
   every PR in this repo reports `merged: false`; `merged_at` is the field that tells the
   truth.
+
+- **GitHub Actions can take many minutes and several pushes to start on a session's PR.
+  Do not conclude that it never will.** On #120 (2026-08-02) the PR opened at 23:09 and
+  `ci.yml` — `on: pull_request`, and the check the merge rules require — had still not
+  queued a run after pushes at 23:15 and 23:23. Vercel built and reported success on
+  every one of them, so events were plainly reaching GitHub; `mergeable_state` sat at
+  `blocked` on a required check that did not exist. It finally queued at 23:29, on the
+  fourth push, twenty minutes after the PR opened.
+
+  Recorded mainly for the wrong conclusion drawn in between, which was written into this
+  file and had to be taken back out an hour later. Every CI run in this repo's history
+  shows `actor: jacobdixon (User)`, while a session's commits arrive through the agent
+  git proxy and its PR is opened by the GitHub App — and GitHub genuinely does suppress
+  workflow triggers for app-authored events. That is a tidy, checkable-looking story
+  which fits every observation available at the time, and it is **wrong**: the run that
+  eventually started came through the same proxy under the same identity as the ones
+  that did not. An explanation that accounts for the evidence is not the same as a
+  demonstrated cause, and this file is the wrong place to put the difference.
+
+  So when the check is missing rather than red: keep waiting, push again if there is
+  something real to push, and check by head SHA rather than trusting one poll. Verify
+  locally in the meantime and say in the PR that you did. Only after a genuinely long
+  silence is it worth telling anyone a human has to push — and if this does turn out to
+  recur, adding `workflow_dispatch:` to `ci.yml` would make it self-service, since
+  without it `actions_run_trigger` has nothing to call.
+
+- **`node_modules` is empty in a fresh session, and the failures that causes look like
+  real ones.** Nothing installs dependencies for you. Until `npm install` is run,
+  `npm run build` dies with `vite: not found`, `npm run lint` dies on a missing
+  `globals`, and `handstest`/`narrationtest`/`flagtest`/`pacingtest`/`e2etest`/`soaktest`
+  all fail with `ERR_MODULE_NOT_FOUND` for `@upstash/redis`. Every one of those reads as
+  a broken repo or a broken change. `npm install` works fine through the proxy and takes
+  well under a minute, so run it before believing any of it — and if a suite still fails,
+  confirm it against a clean tree (`git stash`) before treating it as yours.

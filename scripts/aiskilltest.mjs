@@ -22,6 +22,7 @@ import {
   unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN, SCHMEAR_KEEP_EQUITY,
   freshHand, assignPartner, resolveTrick, sortHand,
   calledCardCandidates, knownPartner, provenSide, teammateProbability,
+  isPowerTrump, unaccountedFor,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -75,6 +76,18 @@ function position({
 
 const empty = [[], [], [], [], []];
 const withHand = (idx, cards) => empty.map((h, i) => (i === idx ? cards : [C("7", "S")]));
+
+// Every card in the deck, exactly once, across hands + trick + played + buried.
+// Only meaningful for fixtures built as a whole deal (most cases here are
+// deliberately partial), but where a case turns on a PROBABILITY the deal has
+// to be complete: trickSecurity counts unaccounted-for cards, so a duplicate
+// or a missing card silently changes the odds it is being asserted against.
+function dealIsComplete(g) {
+  const all = [
+    ...g.hands.flat(), ...g.trick.map((t) => t.card), ...g.played, ...g.buried,
+  ].map(cid);
+  return all.length === 32 && new Set(all).size === 32;
+}
 
 /* ------------------- The reported hand, in play order --------------------- */
 // The recap grid lists seats, not play order. Patty (4) LED, so the trick ran
@@ -518,16 +531,25 @@ const trick2 = [
 }
 
 {
-  // The brake must not seize. Same shape, but here the teammate is holding the
-  // trick with a fail card and this seat has the top trump in the game: taking
-  // it turns a coin-flip into a certainty, which is worth the Queen.
+  // The brake must not seize. The teammate is holding the trick with a fail
+  // Ace and this seat has the top trump in the game, so taking it converts a
+  // trick that is genuinely gone into a certainty — worth the Queen.
+  //
+  // Rebuilt as a complete 32-card deal. It used to be 25 cards with Bunny
+  // holding 9- and 8-clubs, which meant that in the deal as literally written
+  // Bunny had to FOLLOW clubs and could never have taken the trick at all —
+  // the Ace was already safe and the Queen bought nothing. The old security
+  // count could not see that and priced the trick at 0.018, so the fixture
+  // asserted an overtake that its own cards made pointless. Every fail club is
+  // accounted for here instead, so Bunny is certainly void and the danger is
+  // real rather than an artifact of the estimate.
   const g = position({
     hands: [
-      [C("7", "D"), C("8", "D")],                  // You, already played K-clubs
-      [C("Q", "C"), C("8", "H"), C("7", "H")],     // Gus, to act
-      [C("9", "C"), C("8", "C"), C("Q", "S")],     // Bunny, the one opponent left
-      [C("A", "D"), C("10", "H")],                 // Duane, led the club Ace
-      [C("J", "H"), C("7", "C")],                  // Patty
+      [C("J", "C"), C("Q", "D"), C("10", "D")],               // You, played K-clubs
+      [C("Q", "C"), C("8", "H"), C("7", "H"), C("7", "D")],   // Gus, to act
+      [C("Q", "S"), C("A", "H"), C("9", "D"), C("8", "D")],   // Bunny, one opponent left
+      [C("A", "D"), C("10", "H"), C("K", "D")],               // Duane, led the club Ace
+      [C("J", "H"), C("Q", "H"), C("J", "D")],                // Patty
     ],
     trick: [
       { player: 3, card: C("A", "C") },
@@ -536,9 +558,13 @@ const trick2 = [
     ],
     picker: 1, partner: 3, partnerRevealed: true,
     calledSuit: "S", calledAcePlayed: true, tricksDone: 2, leader: 3,
+    buried: [C("9", "C"), C("8", "C")],
     played: [C("K", "S"), C("8", "S"), C("7", "S"), C("10", "S"), C("9", "S"),
-             C("A", "S"), C("J", "S"), C("9", "H"), C("K", "H"), C("10", "D")],
+             C("A", "S"), C("J", "S"), C("9", "H"), C("K", "H"), C("7", "C")],
   });
+  check("fixture is a complete 32-card deal", dealIsComplete(g));
+  check("every fail club is accounted for, so the last opponent is certainly void",
+    unaccountedFor(g, 1).filter((c) => !isTrump(c) && c.suit === "C").length === 0);
   const asIs = trickSecurity(g, 1);
   const taken = securityAfterPlay(g, 1, C("Q", "C"));
   check("taking this one genuinely helps", taken - asIs >= OVERTAKE_MIN_GAIN,
@@ -630,20 +656,38 @@ const trick2 = [
     hands: [
       [C("Q", "D"), C("J", "H"), C("7", "D"), C("K", "H"), C("A", "H"), C("10", "H")],
       [C("K", "C"), C("9", "C"), C("8", "C"), C("K", "S"), C("10", "S"), C("8", "H")],
-      [C("A", "C"), C("J", "C"), C("J", "D"), C("A", "S"), C("9", "H"), C("8", "S")],
-      [C("Q", "H"), C("J", "S"), C("A", "D"), C("10", "C"), C("K", "D"), C("7", "C")],
-      [C("Q", "C"), C("10", "D"), C("K", "D"), C("9", "S"), C("7", "S"), C("7", "H")],
+      // A-clubs and Q-hearts are on the table below, so they are NOT still in
+      // these hands — they were, which duplicated them and left K-diamonds in
+      // two hands at once. trickSecurity counts unaccounted-for cards, so a
+      // deck that cannot exist was pricing the very odds this case asserts.
+      [C("J", "C"), C("J", "D"), C("A", "S"), C("9", "H"), C("8", "S")],
+      [C("J", "S"), C("A", "D"), C("10", "C"), C("K", "D"), C("7", "C")],
+      [C("Q", "C"), C("10", "D"), C("9", "D"), C("9", "S"), C("7", "S"), C("7", "H")],
     ],
     trick: [
       { player: 2, card: C("A", "C") },
       { player: 3, card: C("Q", "H") },
     ],
+    // Q-spades stays OUT of this seat's hand: with both Queens that beat
+    // Q-hearts visible to the viewer there is no unseen beater at all, the
+    // trick prices as already certain, and the overtake this case is about
+    // stops existing.
+    buried: [C("Q", "S"), C("8", "D")],
     picker: 0, partner: null, tricksDone: 0, leader: 2,
   });
-  const asIs = trickSecurity(g, 4);
-  const taken = securityAfterPlay(g, 4, C("Q", "C"));
+  check("fixture is a complete 32-card deal", dealIsComplete(g));
+  // Asked of the OLD estimate on purpose — this case exists to show the flat
+  // gate was too permissive, so it has to be measured against the numbers that
+  // gate actually saw. The follow-suit odds now decline this overtake for an
+  // entirely separate reason (the picker is usually stuck following clubs, so
+  // the trick was never as loose as the raw count said), which would hide the
+  // thing being demonstrated.
+  const RAW = { followSuitOdds: false };
+  const asIsRaw = trickSecurity(g, 4, RAW);
+  const takenRaw = securityAfterPlay(g, 4, C("Q", "C"), RAW);
   check("the old flat gate would have permitted this overtake",
-    taken - asIs >= OVERTAKE_MIN_GAIN, `leave=${asIs.toFixed(3)} take=${taken.toFixed(3)}`);
+    takenRaw - asIsRaw >= OVERTAKE_MIN_GAIN,
+    `leave=${asIsRaw.toFixed(3)} take=${takenRaw.toFixed(3)}`);
   const pick = aiChooseCard(g, 4);
   check("does not spend the boss trump on a trick its own side already owns",
     cid(pick) !== "QC", `played ${cid(pick)}`);
@@ -1049,7 +1093,15 @@ const trick2 = [
   const ON = { forcedFollow: true, deducePartner: true };
   // Every flag added after this hand has to be pinned off too, or "what the old
   // engine did" quietly becomes "what the current engine does minus one thing".
-  const OFF = { forcedFollow: false, deducePartner: false, overtakeBeliefFloor: 1.01 };
+  // "The engine as it was" now needs both follow-suit corrections turned off:
+  // `forcedFollow` for the two called-suit pins, and `followSuitOdds` for the
+  // general case. The second is a strictly wider version of the same insight,
+  // so leaving it on recovers most of hand 27 by itself and the before/after
+  // contrast below stops showing anything.
+  const OFF = {
+    forcedFollow: false, deducePartner: false, overtakeBeliefFloor: 1.01,
+    followSuitOdds: false,
+  };
 
   /* ---- the deduction itself ---- */
   check("hand 27: only one seat can still hold the called ace",
@@ -1078,9 +1130,12 @@ const trick2 = [
       provenSide(t, LEON, 4) === null);
     check("control: the partner still knows themselves",
       knownPartner(t, 4) === 4);
+    // Vary ONLY forcedFollow. OFF also disables followSuitOdds, which is a
+    // different correction and does move this number, so comparing against it
+    // would no longer be a statement about forcing.
     check("control: no called suit led, so nobody is forced",
-      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF),
-      `${trickSecurity(t, LEON, ON)} vs ${trickSecurity(t, LEON, OFF)}`);
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, { ...ON, forcedFollow: false }),
+      `${trickSecurity(t, LEON, ON)} vs ${trickSecurity(t, LEON, { ...ON, forcedFollow: false })}`);
   }
 
   /* ---- the trick is unloseable, and the engine should say so ---- */
@@ -1130,7 +1185,7 @@ const trick2 = [
     check("control: a trick with nobody forced is not certain",
       trickSecurity(t, LEON, ON) < 1, `security=${trickSecurity(t, LEON, ON)}`);
     check("control: forcing changes nothing when the called suit is not led",
-      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, OFF));
+      trickSecurity(t, LEON, ON) === trickSecurity(t, LEON, { ...ON, forcedFollow: false }));
   }
 
   /* ---- negative control: a forced seat that CAN still take the trick ---- */
@@ -1333,8 +1388,19 @@ const trick2 = [
     // outstanding card instead of nine. "Never overtake your own side" would be
     // the wrong rule, and the gain here pays for the card.
     const g2 = board(C("Q", "S"), C("K", "D"));
+    // Stated against the gate this has to clear rather than a bare 0.5. The
+    // structural claim — one outstanding beater instead of nine — is what the
+    // case is really about, and it is asserted directly; the gain itself moved
+    // from 0.61 to 0.36 when the odds started conditioning on the picker
+    // having to follow hearts, which changes the number without touching the
+    // point. A card beaten by exactly one card is priced at 2x, so clearing
+    // 2 x OVERTAKE_MIN_GAIN is precisely what "affordable" means here.
+    check("control: Q-spades is beaten by one card where K-diamonds is beaten by nine",
+      cardEquity(g2, 2, C("Q", "S")) === 1 && cardEquity(g2, 2, C("K", "D")) === 9,
+      `QS=${cardEquity(g2, 2, C("Q", "S"))} KD=${cardEquity(g2, 2, C("K", "D"))}`);
     check("control: this overtake really does secure the trick",
-      securityAfterPlay(g2, 2, C("Q", "S")) - trickSecurity(g2, 2) > 0.5);
+      securityAfterPlay(g2, 2, C("Q", "S")) - trickSecurity(g2, 2) >= 2 * OVERTAKE_MIN_GAIN,
+      `gain=${(securityAfterPlay(g2, 2, C("Q", "S")) - trickSecurity(g2, 2)).toFixed(3)}`);
     check("control: so it still happens, brake or no brake",
       cid(aiChooseCard(g2, 2)) === "QS", `played ${cid(aiChooseCard(g2, 2))}`);
   }
@@ -1466,6 +1532,131 @@ const trick2 = [
   const pick = aiChooseCard(g, 0);
   check("leads the lone fat trump anyway — pulling trump is the measured rule",
     cid(pick) === "10D", `led ${cid(pick)}`);
+}
+
+/* ---- Follow-suit is a constraint on the OPPONENT too (hand 1, trick 2) ---- */
+// Found while validating the PIMC harness, and reproduced from the real hand:
+// the picker overtook his own partner with a Queen while holding two cards
+// that could not win a trick all night. Double-dummy, every Queen costs 19
+// and both dead cards cost 0.
+//
+// The overtake gate is not what is wrong. It already prices an unbeatable card
+// at 4x, so the Queen had to buy 0.60 of security — and `trickSecurity` handed
+// it 0.676 by claiming the trick was only 32% safe. That number is the bug.
+//
+// Kopps' J-hearts is beaten by three unseen cards (Q-diamonds, J-clubs,
+// J-spades) and Bunny is the only opponent left to act, so the count says
+// P(Bunny holds none of them) = 0.324. But CLUBS were led. Bunny can only play
+// a trump at all when void in clubs, and two fail clubs are still unaccounted
+// for. The honest number conditions on that:
+//
+//     P(safe) = P(Bunny holds a club) + P(void) x P(no beater | void)
+//             = 0.515 + 0.485 x 0.264 = 0.643
+//
+// which halves the overtake's gain to 0.36 and leaves it short of the 0.60 it
+// has to clear. engine.js already names this hole — "the count below, which
+// prices every unseen card as reachable by every seat still to act, has no way
+// to see that" — but only closes it for the called-suit pins `forcedPlay`
+// knows about, never for ordinary follow-suit.
+{
+  const g = position({
+    hands: [
+      [C("A", "D"), C("Q", "H"), C("Q", "C"), C("Q", "S"), C("10", "D")], // picker
+      [C("A", "C"), C("8", "H"), C("8", "D"), C("J", "C"), C("Q", "D")],  // Bunny, yet to act
+      [C("9", "H"), C("J", "D"), C("J", "S"), C("K", "H")],
+      [C("9", "S"), C("7", "D"), C("K", "D"), C("10", "C")],
+      [C("7", "S"), C("A", "H"), C("10", "H"), C("7", "H")],
+    ],
+    trick: [
+      { player: 2, card: C("8", "C") },
+      { player: 3, card: C("K", "C") },
+      { player: 4, card: C("J", "H") }, // partner trumps in
+    ],
+    played: [C("8", "S"), C("A", "S"), C("K", "S"), C("10", "S"), C("9", "D")],
+    buried: [C("9", "C"), C("7", "C")],
+    picker: 0, partner: 4, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 1, leader: 2, turn: 0,
+  });
+
+  check("fixture is a complete 32-card deal", dealIsComplete(g));
+  const legal = legalPlays(g, 0);
+  check("picker is void in clubs, so all five trump are legal",
+    legal.length === 5 && legal.every(isTrump), `legal=${legal.map(cid).join(",")}`);
+  check("the partner is winning the trick",
+    trickWinner(g.trick) === 4 && knowsTeammate(g, 0, 4));
+  check("A-diamonds and 10-diamonds are the dead cards here",
+    cardEquity(g, 0, C("A", "D")) === 4 && cardEquity(g, 0, C("10", "D")) === 4);
+  check("every Queen is unbeatable, so the gate prices it at 4x",
+    [C("Q", "H"), C("Q", "C"), C("Q", "S")].every((c) => cardEquity(g, 0, c) === 0));
+
+  // The exact anchor, independent of any heuristic: spending a Queen here is
+  // a 19-point error and the dead cards are free.
+  const value = (c) => solveHandValue(applyPlay(g, 0, c));
+  const best = Math.max(...legal.map(value));
+  check("double-dummy: a dead diamond is optimal", value(C("A", "D")) === best);
+  check("double-dummy: a Queen costs 19", best - value(C("Q", "H")) === 19,
+    `cost ${best - value(C("Q", "H"))}`);
+
+  // The old estimate, kept as the contrast: it is what made this hand go wrong,
+  // and asserting it directly means a future change cannot quietly reintroduce
+  // the bias and still look fine here.
+  const RAW = { followSuitOdds: false };
+  check("the raw count reads this trick as two-thirds lost",
+    trickSecurity(g, 0, RAW) < 0.35, `security ${trickSecurity(g, 0, RAW).toFixed(3)}`);
+  check("and on that number the picker spends a Queen",
+    isPowerTrump(aiChooseCard(g, 0, RAW)), `played ${cid(aiChooseCard(g, 0, RAW))}`);
+
+  // The root cause, asserted directly so a future change to the overtake gate
+  // cannot make the card assertions below pass for the wrong reason.
+  check("security conditions on Bunny having to follow clubs",
+    trickSecurity(g, 0) > 0.6,
+    `security ${trickSecurity(g, 0).toFixed(3)} — raw count gives 0.324, truth is 0.643`);
+
+  const pick = aiChooseCard(g, 0);
+  check("picker does not overtake its own partner with a Queen",
+    !isPowerTrump(pick), `played ${cid(pick)}`);
+  check("picker plays a card that was never going to win anyway",
+    cid(pick) === "AD" || cid(pick) === "10D", `played ${cid(pick)}`);
+}
+
+/* ---- Negative control: no unseen led-suit cards, so nothing to condition on ---- */
+// The same shape with every fail club already accounted for. There is no
+// "Bunny might have to follow" left to discover, the honest security really is
+// the raw count, and the overtake must still fire — otherwise the fix above is
+// not a correction, it is a blanket "never overtake your own side", which
+// engine.js explicitly rejects ("holding the lead is sometimes the entire
+// plan"). Both fixtures are complete 32-card deals, asserted below, because a
+// position with a duplicated card prices security against a deck that cannot
+// exist and would let either of these pass for the wrong reason.
+{
+  const g = position({
+    hands: [
+      [C("A", "D"), C("Q", "H"), C("Q", "C"), C("Q", "S"), C("10", "D")], // picker
+      [C("A", "H"), C("8", "H"), C("8", "D"), C("J", "C"), C("Q", "D")],  // Bunny, yet to act
+      [C("9", "H"), C("J", "D"), C("J", "S"), C("K", "H")],
+      [C("7", "D"), C("K", "D"), C("10", "H"), C("7", "S")],
+      [C("7", "H"), C("8", "S"), C("K", "S"), C("9", "D")],
+    ],
+    trick: [
+      { player: 2, card: C("8", "C") },
+      { player: 3, card: C("K", "C") },
+      { player: 4, card: C("J", "H") },
+    ],
+    // A-clubs and 10-clubs are gone here rather than sitting unseen, so a void
+    // in clubs is not something the count could have been conditioning on.
+    played: [C("10", "S"), C("A", "C"), C("10", "C"), C("9", "S"), C("A", "S")],
+    buried: [C("9", "C"), C("7", "C")],
+    picker: 0, partner: 4, partnerRevealed: true,
+    calledSuit: "S", calledAcePlayed: true, tricksDone: 1, leader: 2, turn: 0,
+  });
+  check("negative control: fixture is a complete 32-card deal", dealIsComplete(g));
+  const unseenClubs = unaccountedFor(g, 0).filter((c) => !isTrump(c) && c.suit === "C").length;
+  check("negative control: no fail clubs left unseen", unseenClubs === 0,
+    `${unseenClubs} still out`);
+  check("negative control: security stays at the raw count, so the overtake is still affordable",
+    trickSecurity(g, 0) < 0.5, `security ${trickSecurity(g, 0).toFixed(3)}`);
+  check("negative control: the picker still overtakes to lock the trick",
+    isPowerTrump(aiChooseCard(g, 0)), `played ${cid(aiChooseCard(g, 0))}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
