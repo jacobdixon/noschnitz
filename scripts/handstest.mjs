@@ -127,10 +127,84 @@ for (const [name, bad] of Object.entries(rejects)) {
     r.status === 503, `status=${r.status}`);
 }
 
+/* ------------------------- the client side of it -------------------------- */
+// The uploader had no coverage at all, which is how it kept the tail of every
+// device's log for months without anyone noticing: `flushHands` only ran after
+// a hand ended and only sent once five were pending, so a device that stopped
+// on four never sent them. Since every device stops mid-batch by definition,
+// that was up to four hands lost per browser rather than a rare case.
+//
+// Stubbed rather than mocked: handLog.js reads `localStorage` and `fetch` off
+// the global at call time, so setting them here is enough and the module is
+// imported unmodified.
+{
+  const mem = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  let sent = [];
+  let reply = { ok: true, status: 200 };
+  globalThis.fetch = async (_url, opts) => {
+    sent.push(JSON.parse(opts.body).hands);
+    return { ...reply, json: async () => ({}) };
+  };
+
+  const { recordHand, flushHands, readHandLog } = await import("../src/handLog.js");
+
+  // A finished hand, in the shape recordHand expects off a real game object.
+  const th = (n) => ({ trick: [0, 1, 2, 3, 4].map((p) => ({ player: p, card: C(["7", "8", "9", "K", "10", "A"][n], "C") })) });
+  const finished = (handNum) => ({
+    phase: "handEnd", handNum, picker: 0, partner: 1, alone: false,
+    calledSuit: "C", calledRank: "A", calledUnder: false, underCard: null, buried: [],
+    trickHistory: [0, 1, 2, 3, 4, 5].map(th),
+  });
+
+  for (let i = 1; i <= 4; i++) recordHand(finished(i), "0.45.0", 0);
+  await new Promise((r) => setImmediate(r));
+  check("four hands is under the batch size, so nothing has gone out yet",
+    sent.length === 0, `${sent.length} request(s)`);
+  check("but all four are kept locally", readHandLog().length === 4, `${readHandLog().length} stored`);
+
+  // This is the regression. Before the forced flush existed, the only way out
+  // was a fifth hand, so a device that stopped here kept them forever.
+  await flushHands(true);
+  check("a forced flush sends the tail rather than waiting for a full batch",
+    sent.length === 1 && sent[0].length === 4, JSON.stringify(sent.map((s) => s.length)));
+  // Guarded, so that a regression in the line above reports as one failure
+  // rather than crashing the harness on the next line and hiding the rest.
+  const batch = sent[0] ?? [];
+  check("a forced flush stamps an install id on what it sends",
+    batch.length > 0 && batch.every((h) => typeof h.install === "string" && h.install.startsWith("i-")));
+  check("and what it sends is a real record, not a stub",
+    batch.length > 0 && batch.every((h) => Array.isArray(h.tricks) && h.tricks.length === 6));
+
+  // Marking is what stops the same hand being uploaded on every visit.
+  sent = [];
+  await flushHands(true);
+  check("a second forced flush sends nothing, because the first marked them sent",
+    sent.length === 0, `${sent.length} request(s)`);
+
+  // The negative control on the whole thing: with nothing pending, a forced
+  // flush must not fire an empty request at the endpoint on every page load.
+  check("a forced flush on an empty queue makes no request", sent.length === 0);
+
+  // 503 is production, which has no store. It is a permanent no — a browser
+  // there must stop asking rather than retry on every hand forever.
+  reply = { ok: false, status: 503 };
+  recordHand(finished(5), "0.45.0", 0);
+  await flushHands(true);
+  sent = [];
+  await flushHands(true);
+  check("a 503 turns sharing off for the session rather than retrying forever",
+    sent.length === 0, `${sent.length} request(s) after a 503`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");
   failures.forEach((f) => console.error(`  ${f}`));
   process.exit(1);
 }
-console.log("PASS — /api/hands stores played hands and refuses everything else.");
+console.log("PASS — /api/hands stores played hands and refuses everything else, and the client sends its tail.");

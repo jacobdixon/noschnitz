@@ -1,0 +1,224 @@
+# Mine hands — read the collected beta corpus and look for where a human
+# outplays the engine.
+#
+# Why this is a workflow and not a curl. `scripts/minehands.mjs` has existed
+# since v0.32.0 and found a real bug (the fat-trump lead, v0.39.0) in the first
+# 41 hands. But the corpus lives behind `GET /api/hands` on beta, and an agent
+# session cannot reach beta.noschnitz.com at all — the egress proxy answers 403
+# to CONNECT as an organization policy denial. Same reason `verify-beta.yml`
+# exists: the checks this project depends on have to run somewhere that can
+# actually reach the site, and the answer gets read out of CI.
+#
+# It is also the only way to run the miner without a human exporting a browser's
+# localStorage by hand, which only ever covers one device.
+#
+# WHAT THIS CAN AND CANNOT SEE. The corpus is solo hands only. `recordHand()` is
+# called from `src/Sheepshead.jsx` and nowhere else, so a multiplayer table
+# records nothing — every hand in here is one human against four AI seats. Read
+# a cluster accordingly: it is evidence about the engine, never about a table.
+#
+# THERE ARE TWO CORPORA, and picking the wrong one reads as "nobody played".
+# Preview and Production have separate Upstash databases by design, so beta holds
+# everything collected up to the 2026-07-31 promotion and www holds real play
+# from that day on. Default is beta because that is where the history is; switch
+# to www once www has accumulated more than beta ever did. Do not merge them
+# without looking at the version field — they are hands against different builds.
+# `HANDS_READ_TOKEN` is scoped per environment too, so reading www needs the
+# Production copy of it, which may be a different value.
+#
+# Reading the output: a cluster is a hypothesis, not a fix. Double-dummy cost is
+# biased against play that is correct under uncertainty, and a human can beat the
+# engine by exploiting it rather than by playing well. Reproduce against the
+# engine, pin with a negative control, measure on the decisions it changes.
+# `minehands.mjs`'s own header says this at more length; it is worth re-reading
+# before acting on a row.
+name: Mine hands
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many of the most recent hands to read (max 5000)"
+        required: false
+        default: "1000"
+        type: string
+      budget_min:
+        description: "Minutes to spend mining. An exact grade is seconds a hand, so this — not `limit` — is what bounds the run."
+        required: false
+        default: "120"
+        type: string
+      seat:
+        description: "Study this seat instead of each hand's recorded human seat"
+        required: false
+        type: string
+      source:
+        description: "Which corpus to read. beta = everything up to the 2026-07-31 promotion; www = real play since it."
+        required: false
+        default: "beta.noschnitz.com"
+        type: choice
+        options:
+          - beta.noschnitz.com
+          - www.noschnitz.com
+
+permissions:
+  contents: read
+
+# One at a time. Two runs would read the same corpus and print the same answer.
+concurrency:
+  group: mine-hands
+  cancel-in-progress: false
+
+jobs:
+  mine:
+    name: read the corpus and mine it
+    runs-on: ubuntu-latest
+    # Generous because the mining step is genuinely slow, not because anything
+    # here hangs: `--budget-min` is what stops the run, and this only has to
+    # exceed it with room for install and fetch. If a run ever hits THIS limit
+    # rather than the budget, something is wrong.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The miner is a measuring instrument, so it gets checked before it is
+      # believed. `--selftest` feeds it a seat that plays a random legal card a
+      # quarter of the time and asserts it comes out net negative: an instrument
+      # that cannot detect a deliberately worse player cannot be trusted to
+      # detect a better one.
+      #
+      # The deal is genuinely seeded now, so this is the same 30 hands every run
+      # and a pass means the same thing every time. It costs ~10 minutes, which
+      # is why it is not in `npm test` — and why the hand count is not raised
+      # casually.
+      - name: Self-test the miner
+        run: node scripts/minehands.mjs --selftest 30
+
+      - name: Fetch the corpus
+        env:
+          HANDS_READ_TOKEN: ${{ secrets.HANDS_READ_TOKEN }}
+          SOURCE: ${{ inputs.source }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set -uo pipefail
+          host="${SOURCE:-beta.noschnitz.com}"
+          limit="${LIMIT:-1000}"
+
+          if [ -z "${HANDS_READ_TOKEN:-}" ]; then
+            echo "::error::HANDS_READ_TOKEN is not set as an Actions secret. It is the same value as the HANDS_READ_TOKEN environment variable on the Vercel project (Preview scope, which is what beta builds from) — copy it into Settings -> Secrets and variables -> Actions. Without it GET /api/hands answers 404 by design, so an unset token cannot be told from a wrong one."
+            exit 1
+          fi
+
+          # The token goes in a header, not the query string. The route accepts
+          # either, but a URL ends up in shell traces and error messages and a
+          # header does not.
+          code="$(curl -sS --max-time 60 -o hands.raw -w '%{http_code}' \
+            -H "x-hands-token: ${HANDS_READ_TOKEN}" \
+            "https://${host}/api/hands?limit=${limit}" || echo 000)"
+
+          case "$code" in
+            200) ;;
+            404)
+              echo "::error::GET https://${host}/api/hands answered 404. The route returns 404 both when HANDS_READ_TOKEN is unset on the server and when the token given does not match it — deliberately, so a probe cannot tell the two apart. Check the variable on the Vercel project for the scope ${host} builds from."
+              exit 1 ;;
+            503)
+              echo "::error::GET https://${host}/api/hands answered 503 — that host has no store configured, so it never collected anything. Since the 2026-07-31 promotion both environments are supposed to have one, so this means the credentials for ${host} are missing or misnamed rather than absent by design. The body says which name it could not find:"
+              head -c 600 hands.raw || true
+              exit 1 ;;
+            000)
+              echo "::error::Could not reach https://${host}/api/hands at all."
+              exit 1 ;;
+            *)
+              echo "::error::GET https://${host}/api/hands answered ${code}."
+              head -c 400 hands.raw || true
+              exit 1 ;;
+          esac
+
+          # The route answers { total, returned, hands }; the miner wants the
+          # bare array. `total` is the interesting half of that envelope — it is
+          # how much has been collected, against `returned` which is only how
+          # much this run asked for.
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync("hands.raw", "utf8"));
+            if (!Array.isArray(body.hands)) { console.error("unexpected body shape"); process.exit(1); }
+            fs.writeFileSync("hands.json", JSON.stringify(body.hands));
+            fs.writeFileSync("corpus.total", String(body.total ?? body.hands.length));
+          '
+          echo "read $(node -p "require('./hands.json').length") of $(cat corpus.total) stored hands from ${host}"
+
+      # A census before the mining, because the first question about a corpus is
+      # never "what does it say" — it is "is there enough of it, and did it stop
+      # arriving". A version breakdown answers the second: hands are stamped with
+      # the build that produced them, so a corpus whose newest version is three
+      # releases back means collection broke, not that nobody played.
+      - name: Census
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          node -e '
+            const hands = require("./hands.json");
+            const total = require("node:fs").readFileSync("corpus.total", "utf8").trim();
+            const by = (f) => {
+              const m = new Map();
+              for (const h of hands) m.set(f(h), (m.get(f(h)) ?? 0) + 1);
+              return [...m.entries()].sort((a, b) => b[1] - a[1]);
+            };
+            const day = (h) => (h.at ? new Date(h.at).toISOString().slice(0, 10) : "unknown");
+            const out = [];
+            out.push(`### Corpus census — ${process.env.SOURCE || "beta.noschnitz.com"}`);
+            out.push("");
+            out.push(`- **${total}** hands stored, **${hands.length}** read by this run`);
+            out.push(`- **${new Set(hands.map((h) => h.install)).size}** distinct installs (a browser, not a person)`);
+            out.push(`- pickers: ${hands.filter((h) => h.picker === h.humanSeat).length} human, ${hands.filter((h) => h.picker !== h.humanSeat).length} AI; ${hands.filter((h) => h.alone).length} alone`);
+            out.push("");
+            out.push("| version | hands |");
+            out.push("| --- | --- |");
+            for (const [v, n] of by((h) => h.version ?? "unknown").slice(0, 12)) out.push(`| \`${v}\` | ${n} |`);
+            out.push("");
+            out.push("| day | hands |");
+            out.push("| --- | --- |");
+            for (const [d, n] of by(day).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 14)) out.push(`| ${d} | ${n} |`);
+            out.push("");
+            out.push("_Solo hands only — `recordHand()` is called from the solo screen and nowhere else, so multiplayer tables contribute nothing._");
+            console.log(out.join("\n"));
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Mine
+        env:
+          SEAT: ${{ inputs.seat }}
+          BUDGET_MIN: ${{ inputs.budget_min }}
+        run: |
+          set -uo pipefail
+          set -- hands.json --budget-min "${BUDGET_MIN:-120}"
+          [ -n "${SEAT:-}" ] && set -- "$@" --seat "$SEAT"
+          node scripts/minehands.mjs "$@" | tee mine.txt
+          {
+            echo ""
+            echo "### Mined"
+            echo ""
+            echo '```'
+            cat mine.txt
+            echo '```'
+            echo ""
+            echo "A cluster here is a hypothesis. Reproduce it against the engine, pin it with a negative control, and measure it on the decisions it changes — never on a whole-hand aggregate."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The raw corpus, so a deeper pass can run against the same hands without
+      # asking the endpoint again — and so a hand worth reading one at a time can
+      # be pulled out by hand. Short retention: it is re-fetchable, and there is
+      # no reason for a copy to outlive the question that prompted it.
+      - name: Keep the corpus
+        if: always() && hashFiles('hands.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: hands
+          path: hands.json
+          retention-days: 7
