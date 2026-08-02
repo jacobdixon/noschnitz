@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.0] - 2026-08-02 (`PENDING`)
+## [0.49.0] - 2026-08-02 (`5066c23`)
 - **The schmear tell: a new evidence term in the partner belief, calibrated at
   8:1, and shipped OFF because it is almost never actionable.** Every existing
   term in `partnerWeight` is about LEADING a trick; this one is about paying
