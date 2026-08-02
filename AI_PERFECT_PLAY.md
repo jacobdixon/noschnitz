@@ -43,6 +43,16 @@ play the card with the best average. This replaces the entire heuristic stack
 with search, and it converges toward correct imperfect-information play as
 the sampling gets smarter.
 
+**This exists now, offline: `npm run pimc` (`scripts/pimc.mjs`, 0.48.0).** Not in
+the engine — it analyses ONE decision from a logged hand, which is the cheap half
+and the half that produces evidence. Point it at a recap and it prints the PIMC
+average next to the exact solve of the real deal, which is the comparison that
+matters: on its first hand the two disagreed by a full 4.3 points, with the exact
+solve calling the played card best-available because the partner's queen happened
+to take the trick. Every finding in §B's style — "this position is a ready-made
+test case" — can now be measured instead of argued, and the sampler is where a
+belief model would attach.
+
 - Start where heuristics are weakest and trees are smallest: tricks 3–6.
   `solveEndgameCard` already does the "one deal, exact" version; this is the
   same idea with sampling instead of omniscience.

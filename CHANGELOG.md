@@ -6,6 +6,42 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.0] - 2026-08-02 (`PENDING`)
+- **`scripts/pimc.mjs` — the determinized search from AI_PERFECT_PLAY.md §A,
+  aimed at one decision instead of at the engine.** Sample complete deals of the
+  unseen cards consistent with what the deciding seat knew, run the existing
+  exact solver on every legal card in every sample, average. It answers the
+  question the recap grader structurally cannot: the grader solves the one deal
+  that happened, so it scores a play against cards nobody could see, and it will
+  happily call a guess correct because the guess came in.
+  - **Consistency is enforced by REPLAY, not by a rule list.** A sampled world
+    gives each seat its real played cards plus a sampled remainder, the hand is
+    replayed from trick 1, and the world is discarded if any card somebody
+    actually played would have been illegal in it. Voids, the called-ace
+    restrictions and the picker's retain rule all come along for free, and the
+    filter cannot drift away from `legalPlays` the way a hand-written one would.
+  - Two further filters, kept separate because they are assumptions rather than
+    observations: seats that passed are held to `handStrength < 10` (real
+    information, and it pushes power trump toward the seats that never got to
+    pick), and `--no-passes` turns that off so the sensitivity is visible rather
+    than asserted. Error bars are PAIRED — every card is scored on the same
+    worlds, so the spread of the difference is what gets reported, not the
+    spread of two means.
+  - **It cross-checks its own reconstruction against `gradeAllPlays` and refuses
+    to print if they disagree.** Analysing a position that is not the position
+    that was played produces numbers that are confidently wrong and look fine,
+    which is the one failure mode here that nothing else would catch.
+  - First result, on the 2026-08-02 hand 1 recap (`scripts/hands/`): leading the
+    **10♦** at trick 3 costs **4.3 points against leading the 8♦** (±0.15, same
+    sign in 5 of 5 seeds, unchanged with the passer filter off) — the 10 is fat
+    and cannot win, with five power trump still out. The exact solver on the real
+    deal scores that same lead as **best-available, cost 0**, because in the one
+    world that happened the partner's Q♣ took the trick. Both numbers are right;
+    they are answers to different questions, and the recap only ever showed the
+    second. `aiChooseCard` leads J♠ from that seat — better than the 10♦, still
+    2.2 points behind the 8♦, so this is an engine finding and not only a human
+    one.
+
 ## [0.47.0] - 2026-08-01 (`a29d0d4`)
 - **The collected corpus can be read and mined without a browser, from Actions
   → "Mine hands".** `minehands.mjs` has existed since 0.32.0 and found a real
