@@ -36,13 +36,31 @@ happen:
   remaining tricks. `aiBuryAndCall` is the engine's own answer, so PIMC
   calls it rather than approximating.
 
-Both were found by exactly the check worth repeating whenever a number
+The picker's *identity* is never sampled, and neither is the partner's
+once it is known — either because the decision-maker holds the called ace
+themselves, or because it has already been played in front of everyone.
+Only a genuinely unknown partner gets sampled, and even then the called
+ace is placed only where the rules allow it: never with the picker, and
+never in the bury, since `callOptions` treats a buried ace as held.
+
+All of these were found by the check worth repeating whenever a number
 looks wrong: compare the average against the hand's actual result and
 against a conditioned baseline from `simulate.mjs`. On the reference hand
-the two fixes moved the picker team's average from 35 to 48 out of 120,
+the fixes moved the picker team's average from 35 to 48 out of 120,
 against an actual result of 68 — and the gap that remains is real
 uncertainty, not a bug, since the true picker held three Queens and
 nothing visible ruled that in or out.
+
+**Known contamination, and it matters for how you report a result.** The
+rollout inherits a real bug in `heuristicCard`: when a teammate already
+has the trick secured, the shed branch picks the lowest-*point* card,
+which in a trump-heavy hand is a Queen. Measured on the reference hand,
+the picker sheds a Queen or Jack 64.8% of the time after the partner
+trumps in, against 7.3% when a defender still holds the trick. So any
+candidate whose effect is to SECURE a trick for its own side is scored
+too harshly. Until that is fixed, treat the gap between such a candidate
+and its alternatives as an upper bound, and say so rather than reporting
+the number flat.
 
 These can disagree, and when they do it's not a bug — it's information. The
 J♥ hand this skill was built from is the reference case: the exact solver

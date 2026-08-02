@@ -151,12 +151,10 @@ export function runPimc(scenario) {
   const revealedAcePlay = calledSuit
     ? publicPlays.find((p) => p.card.suit === calledSuit && p.card.rank === calledRank && !isTrump(p.card))
     : null;
-  const partnerKnownFixed = iAmOnPickerTeam
-    ? (iAmPicker ? (calledAceIsMine ? player : null) : player) // I'm picker (partner unknown unless ace fell) or I hold the ace myself
-    : (revealedAcePlay ? revealedAcePlay.player : null);
-  // null here means "not yet fixed" and must be sampled — EXCEPT when I hold
-  // the ace myself (then partner === me, always, regardless of reveal).
-  const partnerFixed = calledAceIsMine ? player : (revealedAcePlay ? revealedAcePlay.player : (calledSuit ? null : null));
+  // Fixed when I hold the ace myself (partner === me, regardless of reveal),
+  // or when it has already been played in front of everyone. Otherwise the
+  // partner's identity is genuinely unknown to this seat and gets sampled.
+  const partnerFixed = calledAceIsMine ? player : (revealedAcePlay ? revealedAcePlay.player : null);
   const partnerMustBeSampled = calledSuit !== null && !calledAceIsMine && !revealedAcePlay;
 
   // ---------- Build the known/unseen card pools ----------
@@ -189,6 +187,55 @@ export function runPimc(scenario) {
   };
   for (const t of priorTricks) noteTrick(t.trick);
   noteTrick(thisTrick.slice(0, actorPos + 1)); // include the leader of this trick too
+
+  // ---------- Where the called ace is allowed to be ----------
+  // The picker can never hold it: `callOptions` refuses a suit whose ace is in
+  // hand, and refuses it just as firmly when the ace is in the bury, because
+  // "buried counts as held" — calling the ace you buried would mean no partner
+  // exists while the defenders believe one does. So whenever the partner is
+  // still unknown, the ace sits in exactly one of the seats that is neither
+  // the picker nor the decision-maker.
+  //
+  // Left unconstrained this is not a rounding error. Dealing it freely put the
+  // ace in the picker's own bury in 22% of worlds — turning the hand into a
+  // secretly-alone picker in a fifth of the sample — and handed the picker
+  // their own ace often enough to make them their own partner, which
+  // double-counts that seat's points in `pickerTeamOf`. The bury figure is
+  // this high precisely BECAUSE the bury is now `aiBuryAndCall`: it pays a +3
+  // bonus for burying a fat fail ace, so an ace that reaches the picker's
+  // eight rarely survives to be called.
+  const calledAceCard = calledSuit
+    ? ALL_CARDS.find((c) => c.suit === calledSuit && c.rank === calledRank && !isTrump(c))
+    : null;
+  const aceMustBePlaced = Boolean(
+    partnerMustBeSampled && calledAceCard && unseen.some((c) => cid(c) === cid(calledAceCard))
+  );
+  const unseenForDeal = aceMustBePlaced
+    ? unseen.filter((c) => cid(c) !== cid(calledAceCard))
+    : unseen;
+  // Drawn in proportion to how many unknown cards each seat still holds, which
+  // is what uniform dealing implies once the picker and the bury are ruled out.
+  const aceSeats = aceMustBePlaced
+    ? otherSeats.filter((s) => s !== picker && capacities[s] > 0 && !voidSuits[s]?.has(calledSuit))
+    : [];
+  if (aceMustBePlaced && !aceSeats.length) {
+    throw new Error(`no seat can hold the called ${calledRank} of ${calledSuit} — check the scenario's picker/called suit`);
+  }
+
+  function dealOnce() {
+    if (!aceMustBePlaced) return dealRespectingVoids(unseen, capacities, voidSuits);
+    const total = aceSeats.reduce((sum, s) => sum + capacities[s], 0);
+    let r = Math.floor(Math.random() * total);
+    let holder = aceSeats[aceSeats.length - 1];
+    for (const s of aceSeats) {
+      if (r < capacities[s]) { holder = s; break; }
+      r -= capacities[s];
+    }
+    const caps = { ...capacities, [holder]: capacities[holder] - 1 };
+    const dealt = dealRespectingVoids(unseenForDeal, caps, voidSuits);
+    dealt[holder] = [...dealt[holder], calledAceCard];
+    return dealt;
+  }
 
   // ---------- The rollout base state, up to the decision point ----------
   function buildBaseState(hands, partner, buriedCards) {
@@ -256,7 +303,7 @@ export function runPimc(scenario) {
   function samplePickerWorld() {
     let last = null;
     for (let attempt = 0; attempt < MAX_PICKER_REDEALS; attempt++) {
-      const dealt = dealRespectingVoids(unseen, capacities, voidSuits);
+      const dealt = dealOnce();
       const eight = [...pickerAlreadyPlayed, ...dealt[picker], ...dealt.buried];
       // Which two of the eight came from the blind? The picker hadn't seen
       // them when they decided, so the strength test belongs on the other six.
@@ -282,7 +329,7 @@ export function runPimc(scenario) {
   for (let s = 0; s < samples; s++) {
     let dealt, split = null;
     if (!pickerHandIsSampled) {
-      dealt = dealRespectingVoids(unseen, capacities, voidSuits);
+      dealt = dealOnce();
     } else {
       ({ dealt, split } = samplePickerWorld());
     }
@@ -302,10 +349,16 @@ export function runPimc(scenario) {
       partner = partnerFixed;
     } else {
       partner = null;
+      // Skips the picker for the same reason `assignPartner` does: the picker
+      // is never their own partner, and letting them be one makes
+      // `pickerTeamOf` return the same seat twice and double-count its points.
       for (const seat of otherSeats) {
+        if (seat === picker) continue;
         if (hands[seat].some((c) => c.suit === calledSuit && c.rank === calledRank && !isTrump(c))) { partner = seat; break; }
       }
-      // else: the called ace was buried this sample -> secretly alone.
+      if (partner === null) {
+        throw new Error("sampled a world with no partner holding the called card — dealOnce should have placed it");
+      }
     }
 
     const g0 = buildBaseState(hands, partner, buriedCards);
