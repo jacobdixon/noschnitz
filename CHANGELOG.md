@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.0] - 2026-08-02 (`pending`)
+## [0.48.0] - 2026-08-02 (`39a8f65`)
 - **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
   mic chip in the header that mutes and shows how many people are on the call.
   Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
