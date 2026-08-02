@@ -1597,24 +1597,25 @@ const trick2 = [
   check("double-dummy: a Queen costs 19", best - value(C("Q", "H")) === 19,
     `cost ${best - value(C("Q", "H"))}`);
 
-  // The shipped default still gets this wrong, and that is recorded rather than
-  // hidden: FOLLOW_SUIT_ODDS measured worse in both harnesses and is off, so
-  // the Queen still goes. If this assertion ever flips, the flag was turned on
-  // or something else fixed the hand — either way this file should be re-read
-  // rather than quietly updated.
-  check("KNOWN, default off: the picker still spends a Queen here",
-    isPowerTrump(aiChooseCard(g, 0)), `played ${cid(aiChooseCard(g, 0))}`);
+  // The old estimate, kept as the contrast: it is what made this hand go wrong,
+  // and asserting it directly means a future change cannot quietly reintroduce
+  // the bias and still look fine here.
+  const RAW = { followSuitOdds: false };
+  check("the raw count reads this trick as two-thirds lost",
+    trickSecurity(g, 0, RAW) < 0.35, `security ${trickSecurity(g, 0, RAW).toFixed(3)}`);
+  check("and on that number the picker spends a Queen",
+    isPowerTrump(aiChooseCard(g, 0, RAW)), `played ${cid(aiChooseCard(g, 0, RAW))}`);
 
-  // And with the correction on, the root cause and the play both come right.
-  const FIX = { followSuitOdds: true };
-  check("with follow-suit odds on, security conditions on Bunny having to follow clubs",
-    trickSecurity(g, 0, FIX) > 0.6,
-    `security ${trickSecurity(g, 0, FIX).toFixed(3)} — raw count gives 0.324, truth is 0.643`);
+  // The root cause, asserted directly so a future change to the overtake gate
+  // cannot make the card assertions below pass for the wrong reason.
+  check("security conditions on Bunny having to follow clubs",
+    trickSecurity(g, 0) > 0.6,
+    `security ${trickSecurity(g, 0).toFixed(3)} — raw count gives 0.324, truth is 0.643`);
 
-  const pick = aiChooseCard(g, 0, FIX);
-  check("with follow-suit odds on, the picker does not overtake its partner with a Queen",
+  const pick = aiChooseCard(g, 0);
+  check("picker does not overtake its own partner with a Queen",
     !isPowerTrump(pick), `played ${cid(pick)}`);
-  check("with follow-suit odds on, it plays a card that was never going to win anyway",
+  check("picker plays a card that was never going to win anyway",
     cid(pick) === "AD" || cid(pick) === "10D", `played ${cid(pick)}`);
 }
 

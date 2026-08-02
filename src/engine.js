@@ -557,38 +557,39 @@ export const FORCED_FOLLOW = true;
 // Price a beater by whether its holder could legally PLAY it, not merely by
 // whether they hold it — see the long note in `trickSecurity`.
 //
-// MEASURED AND NOT SHIPPED. Default off, kept as a switch because the maths is
-// right and the hand that prompted it really is misplayed.
-//
 // The estimate it replaces is biased and provably so: on hand 1 trick 2 it
 // prices a trick at 0.324 that is honestly 0.643, because it lets an opponent
-// trump while holding cards of the led suit. Correcting that fixes the
-// reported hand — the picker stops spending a Queen, a 19-point double-dummy
-// error — and it fixes it at the root rather than by nudging the overtake gate.
+// trump while holding cards of the led suit. Correcting that fixes the reported
+// hand — the picker stops spending a Queen, a 19-point double-dummy error — and
+// fixes it at the root rather than by nudging the overtake gate.
 //
-// It still measures worse, in both harnesses, consistently:
+// Measured at 20,000 hands x 5 seeds, against the shipped default:
 //
-//   abtest        4,000 x 3 seeds, OLD behaviour as the variant in one seat:
-//                 +0.0039/seat/hand for the OLD code, ahead in 3 of 3
-//   coalitiontest 4,000 x 3 seeds, OLD behaviour in ALL defender seats:
-//                 -0.17pp picker win rate, i.e. defenders BETTER off with the
-//                 old estimate, in 3 of 3 seeds
+//   abtest        +0.0038/seat/hand, ahead in 5 of 5
+//   coalitiontest +0.02pp picker win rate, i.e. no defender-side effect
 //
-// Two independent harnesses, same sign, every seed. The likely reason is that
-// nothing downstream was calibrated against an unbiased number: SCHMEAR_
-// CONFIDENCE (0.85), OVERTAKE_MIN_GAIN (0.15) and the priceOf multipliers were
-// all swept while `trickSecurity` ran low, so each of them silently absorbed
-// part of the bias. Raising the estimate moves every one of those gates off
-// the point it was tuned to — most visibly the schmear gate, which fires on
-// `asIs >= 0.85` and so schmears MORE as soon as the number stops being
-// pessimistic.
+// This was FIRST MEASURED AT 4,000 x 3 AND REJECTED ON THAT BASIS, which was
+// wrong and is the most useful thing recorded here. At that size the harness's
+// run-to-run spread is about +/-0.005 — larger than the effect. The identical
+// variant measured -0.0052 (ahead 1 of 3), +0.0034 (2 of 3) and +0.0029 (3 of
+// 3) on three consecutive runs, so the first result read as a clear regression
+// and the seed count looked like corroboration. It was noise, in both
+// directions: with the flag defaulted ON, turning it OFF also measured "ahead
+// in 3 of 3". Two runs that each say "the variant wins" are not two results,
+// they are one broken measurement. Runs here cost eleven seconds; there is no
+// reason to decide anything at 4,000 x 3.
 //
-// So this is not "the correction is wrong", it is "the correction cannot land
-// alone". Re-sweeping SCHMEAR_CONFIDENCE and OVERTAKE_MIN_GAIN with this on is
-// the experiment that would settle it, and SCHMEAR_CONFIDENCE needs an opts
-// override before it can be swept at all. Until somebody does that, shipping
-// this trades a measured aggregate loss for one correct hand.
-export const FOLLOW_SUIT_ODDS = false;
+// The worry that motivated the rejection was real but did not survive testing:
+// SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN and the priceOf multipliers were all
+// swept while `trickSecurity` ran low, so each could have absorbed part of the
+// bias and been left stranded by an unbiased number. Sweeping both gates with
+// this on says otherwise — the curve is flat. schmearConfidence 0.85/0.88/
+// 0.90/0.93/0.95 gives +0.0038/+0.0045/+0.0038/+0.0043/+0.0048, and
+// overtakeMinGain 0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040,
+// every one of them inside the others' band. The gates are fine where they
+// are; only 0.08 falls away (-0.0001), which is a bound on how far the
+// overtake gate can drop, not an argument about this flag.
+export const FOLLOW_SUIT_ODDS = true;
 
 // Read a power-trump lead as evidence the seat is on the picker's team, and let
 // teammateProbability reweight its candidates by it. See partnerWeight.
@@ -1665,7 +1666,8 @@ export function heuristicCard(g, idx, opts = {}) {
   const useBelief = (opts.beliefSchmear ?? BELIEF_SCHMEAR) || (opts.beliefFloor ?? BELIEF_FLOOR) > 0;
   const ownership = useBelief && mateWinning ? teammateProbability(g, idx, winnerSoFar, opts) : 1;
   const scaled = (opts.beliefSchmear ?? BELIEF_SCHMEAR) ? asIs * ownership : asIs;
-  const trickLooksSafe = scaled >= SCHMEAR_CONFIDENCE && ownership >= (opts.beliefFloor ?? BELIEF_FLOOR);
+  const schmearBar = opts.schmearConfidence ?? SCHMEAR_CONFIDENCE;
+  const trickLooksSafe = scaled >= schmearBar && ownership >= (opts.beliefFloor ?? BELIEF_FLOOR);
 
   // Until the called ace falls, a defender's "teammate" is a guess — the seat
   // winning may well be the picker's partner, and paying points to the wrong

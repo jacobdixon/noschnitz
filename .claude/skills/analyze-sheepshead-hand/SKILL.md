@@ -64,16 +64,16 @@ see the picker's three Queens would expect. PIMC is deliberately the
 former, so **report the win rate next to the mean** — people reason about
 this game in wins, and a mean alone invites exactly this objection.
 
-**Known contamination, and it matters for how you report a result.** The
-rollout inherits a real bug in `heuristicCard`: when a teammate already
-has the trick secured, the shed branch picks the lowest-*point* card,
-which in a trump-heavy hand is a Queen. Measured on the reference hand,
-the picker sheds a Queen or Jack 64.8% of the time after the partner
-trumps in, against 7.3% when a defender still holds the trick. So any
-candidate whose effect is to SECURE a trick for its own side is scored
-too harshly. Until that is fixed, treat the gap between such a candidate
-and its alternatives as an upper bound, and say so rather than reporting
-the number flat.
+**The rollout is only as good as the engine, and that has bitten once.**
+PIMC drives every seat with `aiChooseCard`, so a real AI defect scores
+some candidates too harshly. On the reference hand the picker overtook
+its own partner with a Queen — a 19-point double-dummy error — which
+penalised specifically the candidate that SECURED a trick for its own
+side, because that is what triggered the overtake. That one is fixed
+(`FOLLOW_SUIT_ODDS`), but the shape recurs: when one candidate scores
+oddly against the others, check what the engine actually plays next
+rather than trusting the number. Tracing a couple of rollouts card by
+card is usually enough to see it.
 
 These can disagree, and when they do it's not a bug — it's information. The
 J♥ hand this skill was built from is the reference case: the exact solver
