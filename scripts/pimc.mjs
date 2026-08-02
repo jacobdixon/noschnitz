@@ -52,7 +52,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   ALL_CARDS, SUIT_SYM, cid, isTrump, effSuit, effSuitFor, cardPts, handStrength,
-  legalPlays, applyPlay, resolveTrick, aiChooseCard,
+  legalPlays, applyPlay, resolveTrick, aiChooseCard, aiBuryAndCall,
 } from "../src/engine.js";
 import { PICK_STRENGTH } from "../src/ai-runner.js";
 
@@ -234,31 +234,68 @@ export function runPimc(scenario) {
   const pickerHandIsSampled = picker !== player;
   const MAX_PICKER_REDEALS = 300;
 
+  // A sampled picker world has to survive two tests that a uniformly random
+  // deal fails badly, both of which cost the picker's side real points:
+  //
+  //   1. The pick itself was decided on the SIX cards dealt before the blind
+  //      (`aiWantsToPick` reads `g.hands[idx]`, and `aiTakeBlind` merges the
+  //      blind only afterwards). Testing all eight instead is a weaker bar and
+  //      lets through hands nobody would have picked with.
+  //   2. The eight then get split keep-six / bury-two by a PLAYER, not by the
+  //      shuffle. Splitting at random buries about 1.3 trump per hand, which
+  //      is the single largest distortion in this whole model — a picker who
+  //      throws away a Queen plays a crippled hand for the next six tricks.
+  //      `aiBuryAndCall` is the engine's own answer to "which two go", so use
+  //      it rather than approximating it here.
+  //
+  // Both were measured on the J-hearts scenario: fixing them moves the
+  // picker team's average from 35.1 to 47.9 out of 120, against 65.8 when the
+  // picker's true hand is pinned. The gap that remains after this is genuine
+  // uncertainty — the real picker held three Queens, and nothing the deciding
+  // player could see ruled that in or out.
+  function samplePickerWorld() {
+    let last = null;
+    for (let attempt = 0; attempt < MAX_PICKER_REDEALS; attempt++) {
+      const dealt = dealRespectingVoids(unseen, capacities, voidSuits);
+      const eight = [...pickerAlreadyPlayed, ...dealt[picker], ...dealt.buried];
+      // Which two of the eight came from the blind? The picker hadn't seen
+      // them when they decided, so the strength test belongs on the other six.
+      // Uniform over the eight is right because the six dealt and the two in
+      // the blind are exchangeable before anyone looks at them.
+      const order = shuffled(eight);
+      const preBlindSix = order.slice(2);
+      const split = aiBuryAndCall(eight);
+      last = { dealt, split };
+      if (handStrength(preBlindSix) < PICK_STRENGTH) continue;
+      // A world where the picker buried a card we WATCHED them play is not a
+      // world consistent with the evidence, so it doesn't get a vote.
+      if (split.buried.some((b) => pickerAlreadyPlayed.some((p) => cid(p) === cid(b)))) continue;
+      return { dealt, split };
+    }
+    // Past the cap, take the last world anyway rather than hang. The bury is
+    // still the engine's, so the expensive half of the correction survives;
+    // only the strength condition is given up, and at roughly a 6% acceptance
+    // rate reaching here at all is about a one-in-a-hundred-million event.
+    return last;
+  }
+
   for (let s = 0; s < samples; s++) {
-    let dealt;
+    let dealt, split = null;
     if (!pickerHandIsSampled) {
       dealt = dealRespectingVoids(unseen, capacities, voidSuits);
     } else {
-      let attempts = 0;
-      do {
-        dealt = dealRespectingVoids(unseen, capacities, voidSuits);
-        attempts++;
-      } while (
-        handStrength([...pickerAlreadyPlayed, ...dealt[picker], ...dealt.buried]) < PICK_STRENGTH
-        && attempts < MAX_PICKER_REDEALS
-      );
-      // Past the cap: keep the last deal even if it's a sub-threshold picker
-      // hand, rather than hang — this should be exceedingly rare (most
-      // random 8-card hands need only a handful of tries to clear 10), and a
-      // handful of under-strength samples among thousands won't move the
-      // average enough to matter.
+      ({ dealt, split } = samplePickerWorld());
     }
     const hands = [[], [], [], [], []];
     hands[player] = [...myRemainingHand];
     for (const seat of otherSeats) {
       hands[seat] = [...playedCardsOf(seat, publicPlays), ...(dealt[seat] || [])];
     }
-    const buriedCards = iAmPicker ? buried : (dealt.buried || []);
+    // `split.hand` already contains the picker's played cards — the bury chose
+    // from all eight — so it replaces the dealt-plus-played reconstruction
+    // above rather than adding to it.
+    if (split) hands[picker] = split.hand;
+    const buriedCards = iAmPicker ? buried : (split ? split.buried : dealt.buried || []);
 
     let partner;
     if (!partnerMustBeSampled) {
