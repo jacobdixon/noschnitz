@@ -19,6 +19,15 @@ questions:
   the AI's own play policy. This is a genuine Monte Carlo estimate (not
   exact), so it reports a standard error, not just a mean.
 
+These can disagree, and when they do it's not a bug — it's information. The
+J♥ hand this skill was built from is the reference case: the exact solver
+says the trick-2 trump-in was completely irrelevant, because in the *true*
+deal nobody left to act held a higher trump. PIMC scores it ~1.8 points and
+~3 percentage points of win rate behind simply banking a big heart, because
+the player could not know that in advance — three cards that beat the Jack
+were still unaccounted for. Neither number is the "real" answer on its own.
+Run both when you can; the contrast is usually the most useful part of it.
+
 One seat isn't dealt uniformly at random, and the reason is worth
 understanding before reading any number this produces. When the picker's
 hand is being sampled (i.e. the decision-maker isn't the picker), two
@@ -74,15 +83,6 @@ side, because that is what triggered the overtake. That one is fixed
 oddly against the others, check what the engine actually plays next
 rather than trusting the number. Tracing a couple of rollouts card by
 card is usually enough to see it.
-
-These can disagree, and when they do it's not a bug — it's information. The
-J♥ hand this skill was built from is the reference case: the exact solver
-said the trick-2 trump-in was completely irrelevant (nobody else happened to
-be holding a higher trump in the *true* deal), while PIMC said it scored
-~1.5 points worse on average than banking a big card into a trick the team
-was already very likely to win, because the player couldn't know in advance
-that no one behind them held a Queen. Run both when you can — the contrast
-is usually the most useful part of the answer.
 
 ## Step 1 — Transcribe the screenshot into a scenario file
 
