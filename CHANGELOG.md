@@ -6,6 +6,88 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.47.0] - 2026-08-02 (`pending`)
+- **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
+  demand and cached on the table. No client yet: this is the flag, the provider
+  adapter and `POST /api/tables/[id]/voice`. Nothing is reachable from the UI.
+
+- **Audio only, and not as a first step toward video.** The felt is a locked,
+  no-scroll viewport with the seat ring absolutely positioned, so video tiles
+  would mean redesigning the table. Hearing each other is also what the
+  interview said was doing the work — the game is an excuse to fill the quiet
+  spaces. `start_video_off`, no screenshare, no chat.
+
+- **Daily, not Jitsi, and the reason is worth recording.** `meet.jit.si` has
+  required an account to CREATE a room since August 2023 (Google/GitHub/
+  Facebook). Joining stays anonymous, but somebody has to create it — so the
+  first person at every table would hit a login wall, which breaks COM-1.3's
+  "no second signup" and the whole no-account premise of guest join. The Jitsi
+  paths that remain are JaaS (an 8x8 account, plus a JWT signed per participant
+  with an RSA key) or somebody's donated public instance.
+
+  Daily rooms can be **public**, so a participant joins with the room URL and no
+  token at all. That is the entire reason `api/_lib/voice.js` is 150 lines
+  instead of a key-management service, and it matches the trust model this
+  project already has: the table link IS the credential, so "anyone holding the
+  URL may join" is the same rule one layer down rather than a weakening. Free
+  tier is 10,000 participant-minutes a month — a games night is about 900.
+
+- **`VITE_VOICE` is beta-only, which is no longer a branch difference.** Since
+  the promotion, beta and production are built from the same commit —
+  `release.yml` fast-forwards beta on every green CI run — so "beta only" has to
+  be an ENVIRONMENT difference. `master` builds Vercel's Production; `beta`,
+  being a non-production branch, builds Preview. A Preview-scoped `VITE_VOICE`
+  therefore reaches beta and not www, which is exactly the arrangement
+  `VITE_MULTIPLAYER` had before it was promoted. Preview scope also covers PR
+  previews, which is useful rather than accidental.
+
+  Verified by building both ways: the production bundle is byte-identical
+  (`index-DdDM1lmD.js`, 204.70 kB) and neither build contains `api.daily.co`.
+
+- **The room name is an HMAC of the table code, not the code.** The code is a
+  bearer credential; a room name is a string handed to a third party that lands
+  in their URLs, logs and dashboard. `src/App.jsx` already redacts table codes
+  out of analytics for precisely this reason, and sending the same code to Daily
+  would undo that one file over. Keyed with `DAILY_API_KEY` rather than plainly
+  hashed, because an 8-character code from a 31-character alphabet is only
+  ~8.5e11 preimages — brute-forceable by anyone who obtained a room list. Keying
+  costs no new configuration, since the key is already required for any of this
+  to work.
+
+- **Two conditions the gate distinguishes, for the reason 0.45.1 exists.**
+  `VOICE=1` on the server and a provider key are checked separately, with
+  distinct codes (`voice-disabled` / `no-voice-provider`), and the second names
+  which credential it cannot see — names only, never values, asserted against
+  the serialized body. Flag on with the key missing is the failure that shows a
+  working "Join audio" button which 503s when tapped, in front of five people on
+  a games night.
+
+- **First writer wins on the room, as long as theirs is still fresh.** Usually
+  moot — the name is deterministic in the table id, so racing clients converge
+  by construction, one creating and one reading back. The case it guards is a
+  key rotation between two provisioning calls, which mints two genuinely
+  different rooms; last-writer-wins there splits a table across two calls, and
+  the people in the losing one can hear each other, which is what makes it hard
+  to notice. The freshness qualifier keeps renewal working, so a session running
+  past the 12h room TTL doesn't silently lose audio.
+
+- **Provisioning happens outside `mutate()`.** The CAS loop can call its
+  mutation function several times against different states, so a network call
+  inside it would be repeated per attempt. The slow, impure part runs once and
+  only its result goes through the loop.
+
+- `scripts/voicetest.mjs` (55 checks, wired into `npm test`) drives every branch
+  against an injected fake `fetch` — the create/read race, an expiring room, a
+  provider that says no, and a stranger trying to spend our quota. Both of the
+  load-bearing assertions were negative-controlled: removing the race guard
+  fails exactly one check, removing the at-table gate fails exactly two.
+
+- **`flagtest`'s structural check now accepts `requireVoice` as a gate.** It
+  matched the literal `requireMultiplayer(res` call, so a route gated through
+  the voice wrapper read as ungated. `requireVoice` calls it first and returns
+  false if it fails — and that implication is asserted in `voicetest` rather
+  than assumed, which is the only thing that makes accepting the wrapper safe.
+
 ## [0.46.0] - 2026-08-01 (`6ef0eba`)
 - **`ALONE_OFFER_STRENGTH` drops to 17, matching the AI's `ALONE_HANDSTRENGTH`.**
   The "Go alone" button now appears on every hand the AI would consider going

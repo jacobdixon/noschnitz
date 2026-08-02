@@ -26,10 +26,15 @@
    it isn't turned on here, and nothing you did is at fault.
    ========================================================================= */
 import { hasRealStore, storeEnvReport } from "./store.js";
+import { hasVoiceProvider, voiceEnvReport } from "./voice.js";
 import { fail } from "./http.js";
 
 export function multiplayerEnabled(env = process.env) {
   return env.MULTIPLAYER === "1";
+}
+
+export function voiceEnabled(env = process.env) {
+  return env.VOICE === "1";
 }
 
 /**
@@ -60,6 +65,41 @@ export function requireMultiplayer(res, env = process.env) {
       "no-store",
       "Multiplayer is enabled here but has no store configured.",
       storeEnvReport(env)
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Guard for the voice route, layered ON TOP of requireMultiplayer rather than
+ * replacing it — a voice room belongs to a table, so everything that makes a
+ * table reachable has to hold first.
+ *
+ * Two conditions again, and the same reasoning as the store: a flag can be on
+ * in an environment that has no credential behind it, and that combination
+ * fails in the most confusing way available. A client whose build flag is on,
+ * talking to a server whose flag is on but whose provider key is missing,
+ * shows a working "Join audio" button that 503s when tapped — on a games
+ * night, in front of five people. Refusing with a distinct code and naming the
+ * missing credential is the difference between a five-minute fix and an
+ * evening.
+ */
+export function requireVoice(res, env = process.env) {
+  if (!requireMultiplayer(res, env)) return false;
+  if (!voiceEnabled(env)) {
+    fail(res, 503, "voice-disabled", "Voice isn't available here yet.");
+    return false;
+  }
+  if (!hasVoiceProvider(env)) {
+    // Names only — see voiceEnvReport. DAILY_API_KEY is account-wide, so this
+    // body must never carry a value.
+    fail(
+      res,
+      503,
+      "no-voice-provider",
+      "Voice is enabled here but has no provider configured.",
+      voiceEnvReport(env)
     );
     return false;
   }
