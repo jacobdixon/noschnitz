@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.1] - 2026-08-02 (`PENDING`)
+## [0.48.1] - 2026-08-02 (`32621fe`)
 - **`pimc.mjs` handles a DEFENDER's viewpoint, which is a different information
   set and was quietly getting it wrong.** A defender cannot see the bury, so the
   two cards nobody ever sees have to be sampled — and two things broke on that:
