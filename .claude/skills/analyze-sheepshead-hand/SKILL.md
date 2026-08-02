@@ -44,12 +44,25 @@ ace is placed only where the rules allow it: never with the picker, and
 never in the bury, since `callOptions` treats a buried ace as held.
 
 All of these were found by the check worth repeating whenever a number
-looks wrong: compare the average against the hand's actual result and
-against a conditioned baseline from `simulate.mjs`. On the reference hand
-the fixes moved the picker team's average from 35 to 48 out of 120,
-against an actual result of 68 — and the gap that remains is real
-uncertainty, not a bug, since the true picker held three Queens and
-nothing visible ruled that in or out.
+looks wrong, and it is the single most valuable habit in this workflow:
+**build a forward-simulation baseline from `simulate.mjs`-style fresh
+deals, filtered to hands matching the position, and see whether it agrees
+with PIMC.** It shares no code with the sampler, so when the two land on
+the same number the model is doing its job, and when they don't there is
+a real defect to find. On the reference hand PIMC gives 51.3 average /
+30% win rate and the independent baseline gives 48.8 / 26.9% — agreement,
+after three separate bugs the same check had already exposed.
+
+That baseline also explains the objection this analysis will keep
+provoking, which is worth having ready. A mean near 50 looks impossible
+when the hand visibly ended 68 and a win. Filtering the baseline to a
+picker as strong as the real one (strength 15+ rather than the 13.4 a
+pick-worthy hand averages) moves it to 61.1 with a 51% win rate. Both
+numbers are correct and they answer different questions: the low one is
+what the seat should have expected, the high one is what a seat who could
+see the picker's three Queens would expect. PIMC is deliberately the
+former, so **report the win rate next to the mean** — people reason about
+this game in wins, and a mean alone invites exactly this objection.
 
 **Known contamination, and it matters for how you report a result.** The
 rollout inherits a real bug in `heuristicCard`: when a teammate already

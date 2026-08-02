@@ -371,25 +371,36 @@ export function runPimc(scenario) {
     }
   }
 
+  // The win rate is reported alongside the mean because they can disagree in
+  // ways that matter: Sheepshead pays on crossing the line, not on the margin,
+  // so a card that banks points in hands already lost can lead on average
+  // while winning less often than one that doesn't. `vals` are always the
+  // deciding player's OWN side's points, and the two sides need different
+  // numbers — the picker's team needs 61, the defenders 60, because a 60-60
+  // tie goes to the defenders (same asymmetry `scoreHand` documents).
+  const winLine = iAmOnPickerTeam ? 61 : 60;
   const results = [...totalsByCard.values()].map(({ card, vals }) => ({
     card, mean: mean(vals), stderr: stderr(vals), n: vals.length,
+    winRate: vals.filter((v) => v >= winLine).length / vals.length,
   })).sort((a, b) => b.mean - a.mean);
 
   return {
     player, playerName: names[player], decisionTeam: iAmOnPickerTeam ? "picker team" : "defenders",
-    actualCard, results, samples,
+    actualCard, results, samples, winLine,
   };
 }
 
-export function printReport({ player, playerName, decisionTeam, actualCard, results, samples }) {
-  console.log(`PIMC — ${playerName}'s decision (${decisionTeam}), ${samples} sampled worlds, common-random-numbers across candidates\n`);
+export function printReport({ playerName, decisionTeam, actualCard, results, samples, winLine }) {
+  console.log(`PIMC — ${playerName}'s decision (${decisionTeam}), ${samples} sampled worlds, common-random-numbers across candidates`);
+  console.log(`points are ${decisionTeam}'s own total out of 120; a win needs ${winLine}\n`);
   const best = results[0];
   for (const r of results) {
     const tag = cid(r.card) === cid(actualCard) ? "  <- actually played" : "";
     const gap = r.mean - best.mean;
     console.log(
       `  ${fmt(r.card).padEnd(5)} avg ${r.mean.toFixed(2).padStart(7)} pts` +
-      `  (±${r.stderr.toFixed(2)} SE, ${gap === 0 ? "best" : gap.toFixed(2).padStart(6) + " vs best"})${tag}`
+      `  (±${r.stderr.toFixed(2)} SE, ${gap === 0 ? "  best" : gap.toFixed(2).padStart(6) + " vs best"})` +
+      `   wins ${(100 * r.winRate).toFixed(1).padStart(5)}%${tag}`
     );
   }
 }
