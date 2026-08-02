@@ -22,6 +22,7 @@ import {
   handStrength, aiBuryAndCall, legalPlays, applyPlay, sortHand, assignPartner,
   isTrump, cid, freshHand, aiChooseCard, trickSecurity,
   callOptions, cardPts, ALONE_HANDSTRENGTH, ALONE_OFFER_STRENGTH, mayGoAlone,
+  SCHMEAR_TELL_ODDS, teammateProbability, resolveTrick,
 } from "../src/engine.js";
 import { createTable, joinTable, leaveTable, startHand, humanSeats } from "../src/table.js";
 import { advanceAI } from "../src/ai-runner.js";
@@ -918,6 +919,54 @@ for (let humans = 0; humans <= 5; humans++) {
   // component renders before a bury is chosen on the table screen, and a
   // crash-free `undefined` there has to mean "don't offer", not "offer".
   check("no hand is not an offer", !mayGoAlone(undefined) && !mayGoAlone(null) && !mayGoAlone([]));
+}
+
+/* ------------ The schmear tell: pinned inference, shipped OFF ------------- */
+// Constructed from the hand that produced it (scripts/hands/2026-08-02-hand1),
+// with the negative control the project's tuning notes ask for: at the shipped
+// odds of 1 the read does nothing and Gus plays the ten, and only the sweep
+// value changes his card. Asserting the INFERENCE rather than the shipped
+// behaviour is the point — SCHMEAR_TELL_ODDS is off because the read is almost
+// never actionable, not because it is wrong, and if it ever stops being right
+// this fails whether or not anything is playing on it.
+{
+  const P = (t) => ({ rank: t.slice(0, -1), suit: t.slice(-1) });
+  const plays = [
+    ["KD","QS","10D","8D","8S","JS"], ["10H","AD","QD","QH","9S","10C"],
+    ["AC","7D","QC","JH","AS","KC"], ["AH","JC","10S","7S","KS","8H"],
+    ["9H","9D","JD","7C","8C","9C"],
+  ].map((h) => h.map(P));
+  let g = assignPartner({
+    phase: "playing", handNum: 1, dealer: 2, hands: plays.map((h) => [...h]), blind: [],
+    buried: [P("KH"), P("7H")], picker: 0, partner: null, partnerRevealed: false,
+    calledSuit: "S", calledRank: "A", calledUnder: false, underCard: null,
+    calledAcePlayed: false, calledSuitLed: false, alone: false, doubler: 1,
+    played: [], trick: [], leader: 3, turn: 3, tricksDone: 0, trickCounts: [0,0,0,0,0],
+    ptsTaken: [0,0,0,0,0], lastTrick: null, trickHistory: [], selected: [],
+    scores: [0,0,0,0,0], message: null, result: null,
+  });
+  for (let t = 0; t < 2; t++) {
+    let p = g.leader;
+    for (let k = 0; k < 5; k++, p = (p + 1) % 5) g = applyPlay(g, p, plays[p][t]);
+    g = resolveTrick(g);
+  }
+  for (const p of [0, 1, 2]) g = applyPlay(g, p, plays[p][2]);
+
+  const GUS = 3, BUNNY = 2, BERNIE = 1, FONZIE = 4;
+  const off = { schmearTellOdds: 1 }, on = { schmearTellOdds: 8 };
+
+  check("shipped default leaves the belief uniform", 
+    Math.abs(teammateProbability(g, GUS, BUNNY, off) - 2 / 3) < 1e-9,
+    `${teammateProbability(g, GUS, BUNNY, off)}`);
+  check("the tell reads Bunny as the partner",
+    teammateProbability(g, GUS, BUNNY, on) < 0.5, `${teammateProbability(g, GUS, BUNNY, on)}`);
+  check("and does not implicate the seats that stayed quiet",
+    teammateProbability(g, GUS, BERNIE, on) > 2 / 3 && teammateProbability(g, GUS, FONZIE, on) > 2 / 3);
+  check("SCHMEAR_TELL_ODDS ships off", SCHMEAR_TELL_ODDS === 1, `${SCHMEAR_TELL_ODDS}`);
+  check("with the read off Gus pays the ten", cid(aiChooseCard(g, GUS, off)) === "10S",
+    cid(aiChooseCard(g, GUS, off)));
+  check("with the read on he sheds a spare instead", cardPts(aiChooseCard(g, GUS, on)) === 0,
+    cid(aiChooseCard(g, GUS, on)));
 }
 
 /* ------------------------------- Report --------------------------------- */

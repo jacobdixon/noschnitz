@@ -6,6 +6,43 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.49.0] - 2026-08-02 (`PENDING`)
+- **The schmear tell: a new evidence term in the partner belief, calibrated at
+  8:1, and shipped OFF because it is almost never actionable.** Every existing
+  term in `partnerWeight` is about LEADING a trick; this one is about paying
+  into somebody else's, and the two never overlap. It came from a reported hand
+  where a defender fed a Ten to the picker — worth 5.9 points by PIMC — because
+  `teammateProbability` told him the seat holding the trick was two-thirds
+  likely to be a teammate. It was the partner, and the partner had said so in
+  trick 1 by throwing an Ace onto a trick the picker had already trumped.
+- **The measurement changed the rule twice, which is the part worth keeping.**
+  The obvious version — "paid a fat card into a trick the picker was winning" —
+  measures at **1.3:1** against a 24.7% base rate, i.e. nothing. Two
+  restrictions fix it, and both are about telling a choice from an obligation:
+  the payer must be LAST to play (paying into a trick the picker leads *so far*
+  is a legitimate bet that a teammate behind you takes it), and it must be
+  **tricks 1-3** (late in the hand a seat may have nothing cheap left). That
+  lands at **8.3:1** over 6,159 hands, in the same class as the power-trump
+  lead. Restricting to Aces makes it *worse*, so the threshold stays at a Ten.
+- **Not shipped, and the funnel says why.** Over 92,970 self-play decisions at
+  odds 8, the belief moved for the seat winning the trick in 252 (0.27%), 30 of
+  those crossed `BELIEF_FLOOR`, and 10 changed a card. The gate is not refusing
+  the read — the situation is rare. `abtest` +0.0002/seat/hand ahead in 2 of 4;
+  `coalitiontest` -0.00pp with the defenders ahead in 1 of 4; null controls
+  exactly +0.0000. When it does fire it is right: all 10 changes were defenders,
+  shedding 6.5 fewer points each.
+  - Same shape as `PLAIN_TRUMP_LEAD_ODDS`, and worth saying plainly: a tell can
+    be strong, honest and worth nothing, because reading a table is not the same
+    as being able to do anything about it.
+- `aitest` pins the INFERENCE rather than the shipped behaviour, with the
+  negative control — at the shipped odds the read does nothing and the defender
+  still pays the Ten. If the read ever stops being right, that fails whether or
+  not anything is playing on it.
+- `belieftest` gained a `SCHMEAR_TELL_ODDS` env override for the sweep, and its
+  deduction-only arm now pins the new term off explicitly — the same trap the
+  file already documents for `trumpLeadRead`, which silently turned `plain` into
+  a comparison of the read against itself.
+
 ## [0.48.2] - 2026-08-02 (`f037452`)
 - **`pimc.mjs --partner NAME` prices a READ.** It restricts sampling to worlds
   where a named seat holds the called card. The harness has no theory of how

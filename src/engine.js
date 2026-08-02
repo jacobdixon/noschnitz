@@ -787,16 +787,117 @@ function trumpLeadKind(g, seat) {
   return kind;
 }
 
+// The fattest card a seat may DISCARD onto a trick the picker is winning
+// without it counting as a tell. Ten and up, so an Ace or a Ten trips it and a
+// King does not: a King is the card you are often just getting rid of, an Ace
+// is a decision.
+export const SCHMEAR_TELL_POINTS = 10;
+
+// Did this seat pay real points into a trick the PICKER was winning?
+//
+// The loudest signal at a live table and the one the belief could not hear.
+// Every existing evidence term is about LEADING; this one is about paying, and
+// the two never overlap. A defender who fattens the picker's trick has simply
+// made an error, so seeing it is strong evidence the seat is not a defender.
+//
+// Four restrictions. Each one removes a way to have been FORCED rather than to
+// have chosen, and the measurement is unsparing about which of them matter —
+// over 6,159 self-play hands, of every non-picker play after the lead (base
+// rate for "is the partner" 24.7%):
+//
+//   fat discard, picker ahead, any seat      5492 firings   30.7%   1.3:1
+//   ...restricted to the last two seats      2815           35.3%   1.7:1
+//   ...restricted to the last seat           1509           39.7%   2.0:1
+//   ...last seat, tricks 1-3                  279           73.1%   8.3:1
+//
+// So the naive rule is worth almost nothing and the restricted one is worth as
+// much as the power-trump lead. The restrictions:
+//
+//   - a DISCARD only. Following suit with an Ace can be the only legal card,
+//     and a rule that cannot tell obligation from generosity is reading noise.
+//   - LAST to play. Paying into a trick the picker is merely winning SO FAR is
+//     a legitimate defensive bet that a teammate behind you takes it; that bet
+//     is most of the 1.3:1 above, and it is not a tell. Only in the fifth seat
+//     is the trick unable to move.
+//   - TRICKS 1-3. This is the one that turns the rule from noise into evidence,
+//     and it is about being forced: in the last tricks a seat is down to two or
+//     three cards and may simply have nothing cheap left, so a fat discard says
+//     little. Early, with five cards in hand, it was a choice.
+//   - the picker, not the picker's TEAM. Using "the team was winning" would
+//     mean consulting who the partner is to work out who the partner is, and
+//     the answer would be whatever the belief already thought.
+//
+// Ace-only was measured too and is WORSE — 6.5:1 on half the firings — so the
+// threshold stays at a Ten. Once acquired the read persists for the rest of the
+// hand, which is the point: it is read in trick 1 and spent in trick 4.
+//
+// Public information throughout — the cards, the led suit, and who picked — so
+// this is viewer-independent, exactly as `trumpLeadKind` is, and every seat at
+// the table draws the same conclusion from it.
+export const SCHMEAR_TELL_LAST_TRICK = 2; // 0-based: tricks 1-3
+
+function schmearedToPicker(g, seat) {
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+  const upto = Math.min(tricks.length, SCHMEAR_TELL_LAST_TRICK + 1);
+  for (let ti = 0; ti < upto; ti++) {
+    const t = tricks[ti];
+    if (!t?.length) continue;
+    const i = t.findIndex((p) => p.player === seat);
+    if (i !== 4) continue;                                  // not the last seat
+    const play = t[i];
+    if (cardPts(play.actual ?? play.card) < SCHMEAR_TELL_POINTS) continue;
+    if (effSuit(play.card) === effSuit(t[0].card)) continue; // followed suit
+    if (trickWinner(t.slice(0, i)) === g.picker) return true;
+  }
+  return false;
+}
+
+// Odds multiplier for that tell.
+//
+// MEASURED AND NOT SHIPPED, default 1 (off). Calibrated at 8:1 and honest —
+// `belieftest` passes every bucket at 4 / 6 / 8 / 10 / 14 — and it is the read
+// that answers a real reported hand: a defender paid a Ten into the picker's
+// trick because the belief said the seat holding it was two-thirds likely to be
+// a teammate, and PIMC put that at 5.9 points. `aitest` pins the inference.
+//
+// It is simply almost never ACTIONABLE, and the funnel says why. Over 92,970
+// self-play decisions at odds 8:
+//
+//   belief moved for the seat winning the trick    252   (0.27% of decisions)
+//   ...of those, crossed BELIEF_FLOOR               30
+//   ...of those, actually changed the card          10   (0.011%)
+//
+// So the gate is not refusing the read — the SITUATION is rare. Everything
+// downstream agrees: abtest +0.0002/seat/hand ahead in 2 of 4 seeds,
+// coalitiontest -0.00pp with the defenders better in 1 of 4. Noise, against a
+// null control of exactly +0.0000.
+//
+// The same shape as PLAIN_TRUMP_LEAD_ODDS and for the same reason, which is
+// worth stating plainly: a tell can be strong, calibrated, and worth nothing,
+// because being able to read a table is not the same as being able to do
+// something about it. When it does fire it is right — all 10 changes were
+// defenders, shedding 6.5 fewer points on average. Left switchable for the day
+// something consults the belief in a spot that comes up more often.
+export const SCHMEAR_TELL_ODDS = 1;
+
 // How much more likely this seat is to be the partner than a seat we know
 // nothing about. A weight, not a probability — normalised across candidates
 // below, which is what keeps the result a distribution and therefore testable
 // against ground truth (`belieftest` asserts calibration per bucket).
+//
+// Terms multiply. They are close enough to independent to be worth it — one is
+// about opening a trick, the other about paying into somebody else's — and a
+// seat that has done both really is likelier than a seat that has done one.
 function partnerWeight(g, seat, opts = {}) {
-  if (!(opts.trumpLeadRead ?? TRUMP_LEAD_READ)) return 1;
-  const kind = trumpLeadKind(g, seat);
-  if (kind === "power") return opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
-  if (kind === "plain") return opts.plainTrumpLeadOdds ?? PLAIN_TRUMP_LEAD_ODDS;
-  return 1;
+  let w = 1;
+  if (opts.trumpLeadRead ?? TRUMP_LEAD_READ) {
+    const kind = trumpLeadKind(g, seat);
+    if (kind === "power") w *= opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
+    else if (kind === "plain") w *= opts.plainTrumpLeadOdds ?? PLAIN_TRUMP_LEAD_ODDS;
+  }
+  const schmearOdds = opts.schmearTellOdds ?? SCHMEAR_TELL_ODDS;
+  if (schmearOdds !== 1 && schmearedToPicker(g, seat)) w *= schmearOdds;
+  return w;
 }
 
 // How likely `target` is on `viewer`'s side, in [0,1].
