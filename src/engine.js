@@ -2240,6 +2240,32 @@ const GRADE_FROM_TRICK = 0;
 // reports no verdict rather than hanging the recap.
 const DD_NODE_BUDGET = 50_000_000;
 
+// The node budget bounds TIME. Nothing bounded MEMORY, and the transposition
+// table grows one entry per node — so at 50M nodes the table wants several
+// gigabytes and the heap limit arrives long before the budget does. That is not
+// theoretical: `minehands.mjs --selftest 30` died with "Ineffective mark-compacts
+// near heap limit" after ~6 minutes, having reached 8GB. A crash is strictly
+// worse than the ungraded hand the budget was designed to produce, and in the
+// browser it takes `grader.worker.js` down rather than returning no verdict.
+//
+// Clearing rather than evicting, because a transposition table is a cache and
+// correctness never depended on a hit — the only cost of dropping it is
+// re-search.
+//
+// Sized by measurement, on `--selftest 30`: at 3M entries peak RSS is 5.2GB, at
+// 750k it is 2.0GB, and both grade 30 of 30 hands in the same wall-clock. So the
+// smaller table costs nothing measurable and buys 2.6x the headroom — which
+// matters twice over, since a CI runner's default old-space is around 4GB and a
+// phone's worker heap is very much smaller than that.
+//
+// It rides on the `budget` object rather than a sixth recursion parameter
+// because that object already means "the resource limits for this pass" and is
+// already threaded everywhere the cap is needed. `budget.cap` overrides it,
+// which is what lets `gradetest` prove the clearing is harmless: a solve capped
+// at a handful of entries has to return the SAME value as an uncapped one, and
+// a table that corrupted results on eviction could not.
+export const DD_MEMO_CAP = 750_000;
+
 // Every card gets a bit, so a hand is a 32-bit mask and two orderings of the
 // same holding collide for free. Built as a nested lookup rather than keyed by
 // `cid` because the key function runs at every node of the search, and building
@@ -2308,6 +2334,7 @@ function ddFuture(g, alpha, beta, memo, budget) {
     }
     if (alpha >= beta) break;
   }
+  if (memo.size >= (budget.cap ?? DD_MEMO_CAP)) memo.clear();
   memo.set(key, { v: best, flag: best <= alpha0 ? -1 : best >= beta0 ? 1 : 0 });
   return best;
 }

@@ -40,13 +40,21 @@ import { readFileSync } from "node:fs";
 import {
   freshHand, assignPartner, applyPlay, resolveTrick, legalPlays, aiChooseCard,
   gradeAllPlays, cid, cardPts, isTrump, cardEquity, trickWinner, pickerTeamOf,
-  handStrength, aiBuryAndCall, makeDeck, NAMES,
+  handStrength, aiBuryAndCall, ALL_CARDS, NAMES,
 } from "../src/engine.js";
 
 const args = process.argv.slice(2);
 const selftest = args.includes("--selftest");
 const seatArg = args.indexOf("--seat");
 const WANT_SEAT = seatArg >= 0 ? Number(args[seatArg + 1]) : null;
+// An exact grade of every decision in a hand costs seconds, not milliseconds —
+// measured at ~24s a hand on a slow box — so a corpus of any size outlives any
+// job timeout. `--budget-min` stops taking new hands once the clock is spent and
+// says how far it got, which is the difference between a truncated run and a run
+// that looks complete. Unset means no limit, which is right at a terminal.
+const budgetArg = args.indexOf("--budget-min");
+const BUDGET_MS = budgetArg >= 0 ? Number(args[budgetArg + 1]) * 60_000 : Infinity;
+const startedAt = Date.now();
 
 /* ---------------------- rebuilding a recorded hand ------------------------ */
 // The record keeps play order, which is enough: dealing every card back to the
@@ -101,7 +109,7 @@ function features(sim, idx, card) {
 
 /* ------------------------------- the mine --------------------------------- */
 const rows = [];
-let handsSeen = 0, handsGraded = 0, decisionsSeen = 0, disagreements = 0;
+let handsSeen = 0, handsGraded = 0, decisionsSeen = 0, disagreements = 0, skippedForBudget = 0;
 
 function mineHand(rec) {
   handsSeen++;
@@ -169,7 +177,14 @@ function selfTestHands(n) {
   const out = [];
   for (let h = 0; out.length < n && h < n * 4; h++) {
     let g = freshHand(h % 5, [0, 0, 0, 0, 0], 1);
-    const d = [...makeDeck()];
+    // ALL_CARDS, not makeDeck() — makeDeck shuffles with Math.random, so
+    // starting from it made the seed above decorative and every run of this
+    // "fixed seed" self-test sampled a different 30 hands. That is how a
+    // control passes by luck: three runs of --selftest 30 gave nets of -37,
+    // -38 and -45 on identical code, which reads as an effect if you are
+    // comparing anything. ALL_CARDS is a fixed order, so the seed now decides
+    // the deal on its own.
+    const d = [...ALL_CARDS];
     for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
     g = { ...g, hands: [0, 1, 2, 3, 4].map((p) => d.slice(p * 6, (p + 1) * 6)), blind: d.slice(30) };
     while (g.phase === "picking" && g.passes < 5) {
@@ -209,12 +224,23 @@ if (selftest) {
   console.log(`self-test: ${n} hands where seat 0 plays a random legal card 25% of the time\n`);
   records = selfTestHands(n);
 } else {
-  const file = args.find((a) => !a.startsWith("--") && a !== String(WANT_SEAT));
+  // Skip the values belonging to the flags as well as the flags themselves, so
+  // the file can sit either side of them.
+  const taken = new Set([seatArg + 1, budgetArg + 1].filter((i) => i > 0));
+  const file = args.find((a, i) => !a.startsWith("--") && !taken.has(i));
   if (!file) { console.error("usage: node scripts/minehands.mjs <hands.json> [--seat N]"); process.exit(2); }
   records = JSON.parse(readFileSync(file, "utf8"));
 }
 
-for (const rec of records) mineHand(rec);
+// Newest first when the clock is bounded, because a truncated run should keep
+// the hands played on the build that is live now — an old hand is graded against
+// an engine that no longer exists, and is the first thing you would drop by
+// hand. Unbounded runs keep the file's own order, which is chronological.
+const order = BUDGET_MS === Infinity ? records : [...records].reverse();
+for (const rec of order) {
+  if (Date.now() - startedAt > BUDGET_MS) { skippedForBudget++; continue; }
+  mineHand(rec);
+}
 
 const better = rows.filter((r) => r.delta > 0);
 const worse = rows.filter((r) => r.delta < 0);
@@ -224,6 +250,10 @@ const netGain = (rs) => rs.reduce((s, r) => s + r.delta, 0);
 
 console.log(`${handsSeen} hands read · ${handsGraded} graded · ${decisionsSeen} decisions by the studied seat`);
 console.log(`${disagreements} disagreements with the engine\n`);
+if (skippedForBudget) {
+  console.log(`NOTE: ${skippedForBudget} of ${records.length} hands went unmined — the ${BUDGET_MS / 60_000}-minute budget ran out.`);
+  console.log(`      Newest hands were taken first, so what follows describes the most recent ${handsSeen}.\n`);
+}
 console.log(`  human's card cost less : ${better.length}  (+${netGain(better)} pts)`);
 console.log(`  engine's card cost less: ${worse.length}  (${netGain(worse)} pts)`);
 console.log(`  same cost either way   : ${level.length}`);
