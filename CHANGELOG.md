@@ -6,6 +6,72 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.47.0] - 2026-08-02 (`PENDING`)
+- **`trickSecurity` now prices a beater by whether its holder could legally
+  *play* it.** Holding a card that beats the trick is not the same as being
+  allowed to play it: a seat holding any card of the led suit must follow with
+  one, so an off-suit beater in that hand is a card it never gets to play.
+  `forcedPlay` already closed this for the two called-suit pins; ordinary
+  follow-suit was still priced as though every unseen card were reachable by
+  every seat still to act.
+
+  Found from a real hand. Clubs led, the partner trumped in with J-hearts, one
+  opponent left to act. Three unseen cards beat the Jack so the count read
+  0.324 — but two fail clubs were also unseen, and that opponent can only trump
+  holding neither. The honest number is `0.515 + 0.128 = 0.643`, twice as safe.
+  The picker read the trick as 68% lost, overtook his own partner with a Queen
+  to rescue it, and was holding two diamonds that could not win a trick all
+  night. Double-dummy, every Queen there costs **19** and both diamonds cost 0.
+
+  The overtake gate was never at fault: it correctly demanded 0.60 for an
+  unbeatable card and was handed 0.676 by a biased estimate. Beaters are now
+  split by whether the led suit is their effective suit, exact for one free
+  seat; several free seats need inclusion-exclusion because voidness is
+  per-seat, so those keep the old estimate rather than an approximation.
+
+  Measured at 20,000 hands × 5 seeds: **+0.0038/seat/hand, ahead in 5 of 5**
+  (`abtest`), and **+0.02pp** picker win rate in `coalitiontest`, i.e. no
+  defender-side effect. Both gates were re-swept with it on and the curve is
+  flat — `schmearConfidence` across 0.85/0.88/0.90/0.93/0.95 gives
+  +0.0038/+0.0045/+0.0038/+0.0043/+0.0048 and `overtakeMinGain` across
+  0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040 — so **the gates
+  stay where they are**. `SCHMEAR_CONFIDENCE` gains an `opts` override, which
+  sweeping it required and which null-tests to exactly +0.0000.
+
+  This was first measured at 4,000 × 3 and **rejected on that basis, wrongly**.
+  At that size the harness's run-to-run spread is about ±0.005, larger than the
+  effect: the identical variant gave −0.0052 (ahead 1 of 3), +0.0034 (2 of 3)
+  and +0.0029 (3 of 3) on three consecutive runs. The tell was that with the
+  flag defaulted *on*, turning it *off* also measured "ahead in 3 of 3" — two
+  runs that each say the variant wins are one broken measurement, not two
+  results. Runs cost eleven seconds; nothing should be decided at that size.
+
+- **New: PIMC decision analysis (`scripts/pimc.mjs`).** Answers "was this a good
+  decision given only what the player could see", as against the exact solver's
+  "was it a mistake given everything". It forgets what the seat could not know,
+  samples worlds consistent with the public evidence, and rolls each forward
+  with the engine's own policy. Reports mean, standard error and win rate per
+  legal card. `scripts/gradedecision.mjs` gives the full-hindsight grade from
+  the same scenario file, and `.claude/skills/analyze-sheepshead-hand` drives
+  both from a recap screenshot.
+
+  Four modelling bugs were found and fixed by validating it against a
+  forward-simulation baseline that shares no code with it — the habit worth
+  keeping. The picker's hand was being split keep-six/bury-two at random,
+  discarding 1.3 trump per hand; the pick threshold was applied to all eight
+  cards rather than the pre-blind six `aiWantsToPick` actually reads; and with
+  the partner unknown the called ace could be dealt to the picker or into the
+  bury, making the picker their own partner or secretly alone in 22% of worlds.
+  On the reference hand PIMC and the independent baseline now agree (51.3 / 30%
+  against 48.8 / 26.9%).
+
+- Repairs two `aiskilltest` fixtures that were pricing probabilities against
+  decks that cannot exist: one was 25 cards with the last opponent holding two
+  cards of the led suit, so in its own deal that seat had to follow suit and
+  could never take the trick the Queen was being spent to rescue; the other had
+  two played cards still sitting in hands plus a duplicated K-diamonds. Both are
+  now complete 32-card deals, asserted by `dealIsComplete()`.
+
 ## [0.46.0] - 2026-08-01 (`6ef0eba`)
 - **`ALONE_OFFER_STRENGTH` drops to 17, matching the AI's `ALONE_HANDSTRENGTH`.**
   The "Go alone" button now appears on every hand the AI would consider going
