@@ -39,6 +39,8 @@ import { HOUSE_RULES } from "./rules.js";
 import { idleMs, isBootable, AWAY_AFTER_MS, watcherNotices } from "./table.js";
 import * as api from "./api.js";
 import { useHandGrade } from "./useHandGrade.js";
+import { useVoice, VOICE_CONNECTED, VOICE_CONNECTING, VOICE_ERROR } from "./useVoice.js";
+import { VOICE_ENABLED } from "./flags.js";
 
 // Reserved height for the status + action block. Without it the felt reflows
 // every time a button appears or disappears, and the whole play area jumps as
@@ -558,6 +560,11 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
   // recap at the end of the next hand instead of on the summary.
   useEffect(() => { setShowRecap(false); }, [ended?.g?.handNum]);
   const serverNow = useServerNow(table);
+  // COM-1. Called unconditionally — hooks must be — but it returns an inert
+  // shape when the build flag is off, and `available` is what the UI branches
+  // on. `table?.you` rather than the mySeat computed below, because that one
+  // lives after this component's early returns and a hook cannot.
+  const voice = useVoice({ tableId, playerId, seat: table?.you });
   // Only meaningful once every card is down, and it walks the whole hand
   // double-dummy from trick 1 — off the main thread, see useHandGrade.
   const playGrades = useHandGrade(ended?.g, Boolean(ended));
@@ -866,12 +873,47 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
           </button>
         }
         status={
-          // A dot, not the word. Kept mounted and merely faded so a dropped
-          // connection can never reflow the header — but "reconnecting…" is
-          // 77px, and with the title now spelling out the game's name that was
-          // enough to ellipsise it to "Sheepshead — No ...". The dot costs ten
-          // pixels and says the same thing to anyone who notices it; the word
-          // survives as the tooltip and the accessible name.
+          <>
+          {/* The mic rides in the title row rather than the rules row, which
+              has no give at all (the rules run to 255px of the 339px a 375px
+              phone gives). Rendered only once audio is actually in play, so
+              the header a non-participant sees is byte-for-byte the one it
+              has always been — and on production this whole branch is
+              eliminated, not merely unrendered. */}
+          {VOICE_ENABLED && voice.status !== "idle" && (
+            <button
+              onClick={voice.status === VOICE_CONNECTED ? voice.toggleMute : undefined}
+              disabled={voice.status !== VOICE_CONNECTED}
+              title={
+                voice.status === VOICE_CONNECTING ? "Connecting audio…"
+                  : voice.status === VOICE_ERROR ? (voice.error || "Audio failed")
+                  : voice.muted ? "Unmute" : "Mute"
+              }
+              aria-label={
+                voice.status === VOICE_CONNECTED
+                  ? (voice.muted ? "Unmute microphone" : "Mute microphone")
+                  : "Audio status"
+              }
+              style={{
+                flexShrink: 0, display: "flex", alignItems: "center", gap: 4,
+                background: "transparent", border: "none", padding: "2px 6px",
+                cursor: voice.status === VOICE_CONNECTED ? "pointer" : "default",
+                fontFamily: "inherit", fontSize: 11, fontWeight: 700,
+                color: voice.status === VOICE_ERROR ? felt.red
+                  : voice.muted ? felt.creamDim : felt.brass,
+                opacity: voice.status === VOICE_CONNECTING ? 0.5 : 1,
+              }}
+            >
+              <span aria-hidden="true">{voice.muted ? "🔇" : "🎙"}</span>
+              {voice.status === VOICE_CONNECTED && voice.count > 0 && <span>{voice.count}</span>}
+            </button>
+          )}
+          {/* A dot, not the word. Kept mounted and merely faded so a dropped
+              connection can never reflow the header — but "reconnecting…" is
+              77px, and with the title now spelling out the game's name that was
+              enough to ellipsise it to "Sheepshead — No ...". The dot costs ten
+              pixels and says the same thing to anyone who notices it; the word
+              survives as the tooltip and the accessible name. */}
           <span
             title={connected ? "Connected" : "Reconnecting…"}
             aria-label={connected ? "Connected" : "Reconnecting"}
@@ -881,8 +923,23 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
               background: felt.red, opacity: connected ? 0 : 1, transition: "opacity .3s",
             }}
           />
+          </>
         }
         menuItems={[
+          // COM-1.1, and opt-in on purpose. Joining is a tap and never
+          // automatic: mobile Safari only grants a microphone from a gesture,
+          // and a link somebody texted you should not demand one before you
+          // have decided to be in the conversation. On production the whole
+          // entry is eliminated with the flag, so the menu is unchanged.
+          ...(VOICE_ENABLED
+            ? [{
+                label: voice.status === VOICE_CONNECTED ? "Leave audio"
+                  : voice.status === VOICE_CONNECTING ? "Connecting audio…"
+                  : voice.status === VOICE_ERROR ? "Retry audio"
+                  : "Join audio",
+                onSelect: voice.status === VOICE_CONNECTED ? voice.leave : voice.join,
+              }]
+            : []),
           { label: "Invite others", onSelect: () => setModal("invite") },
           { label: "Trump order", onSelect: () => setModal("trump") },
           { label: "Scores", onSelect: () => setModal("scores") },

@@ -6,6 +6,71 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.0] - 2026-08-02 (`pending`)
+- **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
+  mic chip in the header that mutes and shows how many people are on the call.
+  Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
+  microphone from a user gesture, and a link somebody texted you should not
+  demand one before you have decided to be in the conversation.
+
+- **Production carries no audio code, and that is now enforced rather than
+  asserted.** `scripts/voicebuildtest.mjs` builds both ways and greps the actual
+  bundles, wired into `npm test`. It is **bidirectional** on purpose: every
+  token must be absent flag-off AND present flag-on, because grepping for a
+  token and finding zero passes just as convincingly when the token is
+  misspelled, when the build silently failed, or when the feature was deleted.
+  Measured at v0.48.0: 0 flag-off against 95 flag-on for `daily`.
+
+  `Verify production` gains the deployed half of the same check — a new
+  `voice: absent|present` input, defaulting to absent. The build test stops a
+  regression being merged; the workflow catches a variable set on the wrong
+  Vercel scope, which no test can see.
+
+- **That guard immediately caught a real leak, which is the reason it exists.**
+  The first draft gated the UI on `voice.available`, a runtime property of the
+  hook's return — and Rollup cannot fold a property access, so the menu entry
+  and the mic chip survived into the production bundle. Worse, the first
+  verification MISSED it: building without `VITE_MULTIPLAYER` eliminates all of
+  `TableScreen`, so the audio inside it looked absent for the wrong reason.
+  Production is flag-on for multiplayer, so that was never the right baseline.
+  The test now builds production's real shape.
+
+  Fixes: the UI branches on the `VOICE_ENABLED` module constant, and `useVoice`
+  returns its inert shape **before** its hooks rather than after. Returning late
+  is the obvious shape and leaves every callback in the bundle — it is how
+  `toggleMute` shipped to production in the first draft. The early return reads
+  like a rules-of-hooks violation and is not one: the rule is that hook order be
+  consistent across renders, and `VOICE_ENABLED` is compile-time, so within any
+  build this hook either always runs its hooks or never does.
+
+- **The Daily SDK is its own lazy chunk** — 261kB, `import()`ed inside the join
+  handler, so even on beta nobody downloads it until they tap the button. Pinned
+  separately in the build test, because a refactor to a static import would keep
+  every token check passing while making all five people at a table fetch it.
+
+- **A stale join is cancellable.** `join()` awaits twice — the server, then the
+  SDK — and either gap is long enough to unmount or to leave. A continuation
+  past that point constructs a call object into a dead component, which leaves a
+  **live microphone** with nothing on screen to stop it. A generation counter,
+  bumped by every teardown, invalidates whatever join is in flight.
+
+- No camera is ever requested: `videoSource: false` at join on top of the room's
+  `start_video_off`. Both, because they fail differently — the room property is
+  what a second client would honour, the join option is what stops this browser
+  lighting a camera indicator even for an instant.
+
+- `userName` is set to the seat index, never the playerId — that is a bearer
+  token and the string is visible to every other participant. Nothing reads it
+  yet; it is there so a future speaking indicator (COM-2.1) has a seat to point
+  at. Deliberately no participant-to-seat mapping in this change: it needs an
+  identity join between two systems, and getting it wrong lights up the wrong
+  player.
+
+- **Note for whoever adds the next API route:** `api/tables/[id]/voice.js` takes
+  the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
+  The seat actions were already folded into one route for this reason. The next
+  one has to fold too.
+
 ## [0.47.0] - 2026-08-02 (`0131bb1`)
 - **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
   demand and cached on the table. No client yet: this is the flag, the provider
