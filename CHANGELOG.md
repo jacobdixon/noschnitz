@@ -29,9 +29,11 @@ corresponds to the entries below.
   seat; several free seats need inclusion-exclusion because voidness is
   per-seat, so those keep the old estimate rather than an approximation.
 
-  Measured at 20,000 hands × 5 seeds: **+0.0038/seat/hand, ahead in 5 of 5**
-  (`abtest`), and **+0.02pp** picker win rate in `coalitiontest`, i.e. no
-  defender-side effect. Both gates were re-swept with it on and the curve is
+  Measured at 20,000 hands × 5 seeds, and re-measured after merging master so
+  the numbers describe the code that actually ships: **+0.0042/seat/hand,
+  ahead in 5 of 5** (`abtest`), and **−0.04pp** picker win rate in
+  `coalitiontest` with the old behaviour in every defender seat, i.e. no
+  defender-side effect either way. Both gates were re-swept with it on and the curve is
   flat — `schmearConfidence` across 0.85/0.88/0.90/0.93/0.95 gives
   +0.0038/+0.0045/+0.0038/+0.0043/+0.0048 and `overtakeMinGain` across
   0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040 — so **the gates
