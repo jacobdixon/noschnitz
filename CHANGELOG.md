@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.2] - 2026-08-02 (`PENDING`)
+## [0.48.2] - 2026-08-02 (`f037452`)
 - **`pimc.mjs --partner NAME` prices a READ.** It restricts sampling to worlds
   where a named seat holds the called card. The harness has no theory of how
   somebody played and cannot derive this — it is supplied by hand, and that is
