@@ -554,6 +554,42 @@ export const DEDUCE_PARTNER = false;
 // goes through trickSecurity, not only the branch the hand came from.
 export const FORCED_FOLLOW = true;
 
+// Price a beater by whether its holder could legally PLAY it, not merely by
+// whether they hold it — see the long note in `trickSecurity`.
+//
+// MEASURED AND NOT SHIPPED. Default off, kept as a switch because the maths is
+// right and the hand that prompted it really is misplayed.
+//
+// The estimate it replaces is biased and provably so: on hand 1 trick 2 it
+// prices a trick at 0.324 that is honestly 0.643, because it lets an opponent
+// trump while holding cards of the led suit. Correcting that fixes the
+// reported hand — the picker stops spending a Queen, a 19-point double-dummy
+// error — and it fixes it at the root rather than by nudging the overtake gate.
+//
+// It still measures worse, in both harnesses, consistently:
+//
+//   abtest        4,000 x 3 seeds, OLD behaviour as the variant in one seat:
+//                 +0.0039/seat/hand for the OLD code, ahead in 3 of 3
+//   coalitiontest 4,000 x 3 seeds, OLD behaviour in ALL defender seats:
+//                 -0.17pp picker win rate, i.e. defenders BETTER off with the
+//                 old estimate, in 3 of 3 seeds
+//
+// Two independent harnesses, same sign, every seed. The likely reason is that
+// nothing downstream was calibrated against an unbiased number: SCHMEAR_
+// CONFIDENCE (0.85), OVERTAKE_MIN_GAIN (0.15) and the priceOf multipliers were
+// all swept while `trickSecurity` ran low, so each of them silently absorbed
+// part of the bias. Raising the estimate moves every one of those gates off
+// the point it was tuned to — most visibly the schmear gate, which fires on
+// `asIs >= 0.85` and so schmears MORE as soon as the number stops being
+// pessimistic.
+//
+// So this is not "the correction is wrong", it is "the correction cannot land
+// alone". Re-sweeping SCHMEAR_CONFIDENCE and OVERTAKE_MIN_GAIN with this on is
+// the experiment that would settle it, and SCHMEAR_CONFIDENCE needs an opts
+// override before it can be swept at all. Until somebody does that, shipping
+// this trades a measured aggregate loss for one correct hand.
+export const FOLLOW_SUIT_ODDS = false;
+
 // Read a power-trump lead as evidence the seat is on the picker's team, and let
 // teammateProbability reweight its candidates by it. See partnerWeight.
 //
@@ -1070,16 +1106,68 @@ export function trickSecurity(g, viewer, opts = {}) {
   if (forcedTakes) return 0;
   if (!free.length) return acePrice;
 
-  const beaters = unseen.filter(takesIt).length;
-  if (!beaters) return acePrice;
+  const beaterCards = unseen.filter(takesIt);
+  if (!beaterCards.length) return acePrice;
 
   // How many unknown cards those opponents hold between them.
   const k = free.reduce((s, p) => s + g.hands[p].length, 0);
   if (!k) return acePrice;
-  if (beaters + k > unseen.length) return 0;
 
+  // Holding a beater is not the same as being ALLOWED to play it. `forcedPlay`
+  // above closes this for the two called-suit pins, which are the cases the
+  // rules settle outright; ordinary follow-suit was left priced as though every
+  // unseen card were reachable by every seat still to act. It is not — a seat
+  // holding any card of the led suit must follow with one, so an off-suit
+  // beater in that hand is a card it will never get to play.
+  //
+  // Reported from hand 1, trick 2: clubs led, the partner trumped in with
+  // J-hearts, and the only opponent left was Bunny. Three unseen cards beat the
+  // Jack, so the raw count read 0.324 — but two fail clubs were also unseen,
+  // and Bunny can only trump when holding neither. The honest number is
+  //
+  //     P(holds a club) + P(void) x P(no beater | void) = 0.515 + 0.128 = 0.643
+  //
+  // Twice as safe as the count claimed. The picker read the trick as 68% likely
+  // to be lost and overtook his own partner with a Queen to rescue it, holding
+  // A-diamonds and 10-diamonds that could not win a trick all night. That is a
+  // 19-point error double-dummy, and the overtake gate never had a chance: it
+  // correctly demanded 0.60 for an unbeatable card and was handed 0.676.
+  //
+  // Split the beaters by whether the led suit is their effective suit. A beater
+  // OF the led suit is playable whenever it is held. An off-suit one needs the
+  // seat void, so it only counts when no led-suit card is there to block it:
+  //
+  //     P(safe) = P(no led-suit beater)
+  //             - P(no led-suit card at all) + P(no led-suit card and no beater)
+  //
+  // Exact for one free seat, which is the common shape and the reported one.
+  // Voidness is per-seat, so several free seats need inclusion-exclusion rather
+  // than the pooled draw below; that is left alone rather than approximated,
+  // and those positions keep the old estimate.
+  const useFollowOdds = (opts.followSuitOdds ?? FOLLOW_SUIT_ODDS) && free.length === 1;
+  if (useFollowOdds) {
+    const U = unseen.length;
+    const n = g.hands[free[0]].length;
+    // C(a, n) / C(U, n), as a product so nothing overflows or needs factorials.
+    const frac = (a) => {
+      if (a < n) return 0;
+      let r = 1;
+      for (let i = 0; i < n; i++) r *= (a - i) / (U - i);
+      return r;
+    };
+    const led = effSuit(g.trick[0].card);
+    const ledBeaters = beaterCards.filter((c) => effSuit(c) === led).length;
+    const ledBlockers = unseen.filter((c) => effSuit(c) === led && !takesIt(c)).length;
+    const offBeaters = beaterCards.length - ledBeaters;
+    const safe =
+      frac(U - ledBeaters) - frac(U - ledBeaters - ledBlockers) +
+      frac(U - ledBeaters - ledBlockers - offBeaters);
+    return Math.max(0, Math.min(1, safe)) * acePrice;
+  }
+
+  if (beaterCards.length + k > unseen.length) return 0;
   let safe = 1;
-  for (let i = 0; i < k; i++) safe *= (unseen.length - beaters - i) / (unseen.length - i);
+  for (let i = 0; i < k; i++) safe *= (unseen.length - beaterCards.length - i) / (unseen.length - i);
   return safe * acePrice;
 }
 
