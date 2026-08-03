@@ -51,16 +51,27 @@ corresponds to the entries below.
   like: at 1.0 — fire whenever the trick is less than certain — the rule is
   worse than never firing at all.
 
-  **The aggregate does not establish this, and the entry says so on purpose.**
-  It fires on 0.83% of contested decisions (~0.08/hand, 77% of them the picker,
-  withholding 7.7 points on average), which the whole-hand average dilutes about
-  twelvefold. Pooled across configurations, gate 0.5 is favoured in 13 of 20
-  sub-samples — not significant. A firing-restricted paired harness (same deals,
-  conditioned on the rule having changed a card, null-tests to zero firings)
-  reads **+0.11 per firing ± 0.11** over 568 firings, whose implied whole-hand
-  effect of +0.00054 agrees with the abtest range. So: positive-leaning at about
-  1 SE, resting — as `SCHMEAR_KEEP_EQUITY` already does — on the pinned hand and
-  on the mechanism rather than on the aggregate.
+  **The whole-hand aggregate cannot see this, and that is a property of the
+  rule, not evidence against it.** It fires on 0.83% of contested decisions
+  (~0.08/hand, 77% of them the picker, withholding 7.7 points on average), which
+  the per-hand average dilutes about twelvefold: pooled across configurations,
+  gate 0.5 is favoured in only 13 of 20 abtest sub-samples, which is nothing.
+  Measured instead on the decisions it actually changes — a paired harness over
+  the same deals, conditioned on the rule having changed a card, which is an
+  event fixed at the decision point rather than by the outcome, and which
+  null-tests to zero firings:
+
+      +0.0666 per firing +/- 0.0317 SE   (3,629 firings, 30,000 hands x 22)
+      2.10 SE from zero, 95% CI [0.004, 0.129], sign test 14+/6- (p = 0.058)
+
+  Positive, and about 2 SE — real but small, and worth reading next to the first
+  pass at this, which said +0.11 ± 0.11 over 568 firings. The estimate fell as
+  the sample grew, which is what a noisy first look regresses to and a reminder
+  that the honest number here was always the bigger run. Implied whole-hand
+  effect +0.00038/seat/hand, consistent with the sweep. As with
+  `SCHMEAR_KEEP_EQUITY`, the case rests on the pinned hand and the mechanism as
+  much as on this — but unlike that one, the aggregate does now point the same
+  way rather than merely failing to object.
 
 - **`scripts/abtest.mjs` deals are not reproducible across runs, and the null
   test cannot detect it.** `dealWith` takes its 32 cards from `freshHand`, which
