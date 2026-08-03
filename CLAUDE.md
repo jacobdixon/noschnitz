@@ -307,6 +307,39 @@ corpus ranking contaminated by clairvoyant decisions that would have been
 reported as engine errors. Run the evals.
 
 ## Conventions established this session (keep following them)
+- **Open a pull request whenever there is finished work to check in, without being
+  asked, and merge it once the tests pass.** Standing order as of 2026-08-03.
+  `master` is protected and takes no direct pushes, so a branch with no PR is not
+  "work in review", it is work parked where nothing will ever pick it up. Do not
+  wait to be told; the default agent instruction elsewhere ("no PR unless asked")
+  is overridden here.
+
+  "Once the tests pass" means the repo's own suites, and what counts is
+  spelled out because the failure modes differ:
+
+  - `npm test` green locally is the bar for merging — every suite, 0 failures,
+    plus `npm run build`. For engine/AI changes add the measurement the change
+    is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
+    the question), and check its null control really came back zero.
+  - **Prefer CI's verdict when there is one, but a check that never queued is
+    not a failing check.** Actions genuinely lags here, sometimes twenty minutes
+    and several pushes (see "Things a session will try and cannot do"). Waiting
+    for it is right; treating its absence as a red light is not. Merging on a
+    green local run while CI is still missing is acceptable — say so in the PR
+    when you do it, so the record shows what the merge actually rested on.
+  - **Do not merge over a red check, ever**, and do not merge to "see if it
+    passes on master". Red is the one state that blocks, because of the next
+    point.
+  - **Watch `master` after the merge, not just before it.** `Release` is gated
+    on CI *succeeding* on `master`, and a marginal test can pass on a PR and
+    fail on `master` for the identical commit — which does not merely fail a
+    check, it silently withholds the beta deploy and leaves production
+    unverified. The merge is not the end of the job; a green `Release` run is.
+
+  Anything genuinely irreversible or outward-facing beyond this — a production
+  variable flip, a rollback, a repo-settings change — is still a human action
+  and still gets asked about. This order covers merging ordinary work, not
+  deploying by other means.
 - **Watch every PR you open, without being asked.** Subscribe to its activity as
   soon as it exists, and stay subscribed until it is merged or closed. A PR here is
   not finished when it is opened: CI going red on `master` is what silently withholds
@@ -315,7 +348,10 @@ reported as engine errors. Run the evals.
   CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
   with a self check-in about an hour out and re-arm it quietly while the PR is open.
   Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
-  what is broken and why it is not yours to fix — never in silence.
+  what is broken and why it is not yours to fix — never in silence. The awkward case is CI
+  never *starting*: Actions can lag badly here (see "Things a session will try and
+  cannot do"), so a missing check is not a failing one. Keep waiting and verify
+  locally rather than announcing a blocker.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
@@ -544,9 +580,29 @@ Genuinely open:
      server's token is unset and when the one given is wrong, deliberately, so a 404
      tells you nothing about which.
    - **Mining is bounded by `--budget-min`, not by how many hands you ask for.** An
-     exact grade of every decision costs seconds a hand — ~24s on a slow box — so a
+     exact grade of every decision costs seconds a hand — ~24s on a slow box, and
+     **measured at ~16s/hand on a GitHub runner (131 hands in 35 minutes)** — so a
      thousand hands is hours, not minutes. It takes the newest first when the clock is
-     bounded and reports what it did not reach.
+     bounded and reports what it did not reach. The `--selftest 30` preamble is a
+     further ~7 minutes on a runner; that is the price of checking the instrument
+     before believing it, and it is why the self-test is not in `npm test`.
+   - **Next session's cleanup list, in the order that pays.** The collection and
+     analysis path works end to end now, so what is left is coverage and rigor:
+     1. **Point mining at www** and re-census. Beta is historical; www is where play is.
+     2. **Record multiplayer hands** (the parent item above). 131 solo hands over four
+        days is the ceiling on what solo collection produces; a five-seat table produces
+        five perspectives on every hand. Needs dedup and consent, per `handLog.js`.
+     3. **Give `minehands` a significance story.** It reports a signed total and nothing
+        about spread, so a net built from two heavy tails reads the same as a real edge.
+        It should report the per-decision distribution, or bootstrap a CI, so that "+72"
+        cannot be quoted as a finding. This is the gap that made the 2026-08-02 run
+        need a human to say "that is noise."
+     4. **Make the feature table honest about double-counting** — either report
+        decisions-per-cluster distinctly from features-per-cluster, or drop features
+        that only co-occur with a stronger one.
+     5. **Consider grading from trick 2** for cluster-hunting. Trick 1 dominates the
+        current table and is the position where DD bias is largest; excluding it would
+        tell you whether anything survives without it.
    - **What the corpus can answer is narrower than it looks.** Every record is one
      human against four AI seats, so a cluster is evidence about the engine and never
      about a table. And per the census, a corpus whose newest `version` is several
@@ -558,6 +614,47 @@ Genuinely open:
      census; the default is beta because that is where the history is, and it should
      move to www once www has more. Do not merge the two without reading the version
      field — they are hands against different builds, which is what that field is for.
+   - **THE CORPUS HAS BEEN MINED ONCE, 2026-08-02, and the answer was "no signal".**
+     131 hands off beta, 126 gradeable, 445 real decisions, 142 disagreements with the
+     engine. Net **+72 points to the human over 142 disagreements** — which is noise,
+     and the shape of it is the point: **87 of the 142 (61%) cost exactly the same
+     either way.** Of the 55 that mattered, the human was better 31 times at +9.2 avg
+     and the engine 24 times at −8.9. 31-vs-24 is within one SD of a coin flip
+     (expected 27.5, SD 3.7). Both sides make real mistakes at the same rate and size.
+     - **Read that as a genuine result, not a failed experiment.** "No large systematic
+       gap against a competent human" is worth knowing, and it is the strongest claim
+       55 decisions can support. Finding subtler stuff needs an order of magnitude more
+       hands, which is why the multiplayer-recording item above is the real unlock.
+     - **The one lead, and why it is probably a mirage.** `trick=1` had the highest win
+       share of any feature (38%, 13 of 34) and the three biggest single-decision gaps
+       in the corpus were all trick 1, all second-or-third to act with an opponent
+       holding, all the engine picking the wrong trump weight — twice under-committing
+       (a beatable queen or a jack where the boss card was right), once over-committing
+       (burning a queen where a discard was right). Opposite errors, so not one rule.
+       **Trick 1 is exactly where double-dummy flatters the human**, since nothing is
+       known yet and DD judges with all five hands visible. Trick 1 topping the table is
+       what the bias alone would produce. Cheap to check, do not assume it survives.
+     - **The feature table double-counts and will fool you.** Every decision emits seven
+       features, so one big-delta decision lights up seven rows. Most of that table is
+       the same handful of decisions viewed from different angles. Read the examples
+       under it, not the row totals.
+   - **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+     then nothing. Not a bug: the promotion moved players to www, whose hands go to a
+     different database. **Point the next run at `source: www.noschnitz.com`.** Beta's
+     corpus is now a fixed historical artifact spanning nine engine versions
+     (0.31.0 → 0.45.2), which is itself a limit on what it can say.
+   - **Whatever `total` says is an undercount.** The tail-drop bug (fixed in the same PR
+     that added this workflow) was live for the entire beta collection window, so every
+     device that stopped mid-batch silently kept up to four hands.
+
+   - **Two independent passes now agree that double-dummy flatters the human, and
+     that is the same fact from two directions.** The mining run above reasoned it
+     out — trick 1 tops its table because nothing is known yet and DD judges with
+     all five hands visible — and the cost ranking below measured it: DD
+     overstates cost about 2.3x on average and errs in BOTH directions. So the
+     "no signal" result is if anything understated; some of the human's 31 wins
+     are the bias, not the human.
+
 3b. **The engine's own error classes are now measurable without the corpus.**
    `npm run pimcmine -- --selfplay N` deals clean engine-vs-engine hands and
    ranks decision shapes by cost under uncertainty. First run, 425 decisions:
@@ -621,3 +718,37 @@ doesn't spend a turn rediscovering them.
   Compare each branch tip against the head SHA its PR merged instead. On that API note:
   every PR in this repo reports `merged: false`; `merged_at` is the field that tells the
   truth.
+
+- **GitHub Actions can take many minutes and several pushes to start on a session's PR.
+  Do not conclude that it never will.** On #120 (2026-08-02) the PR opened at 23:09 and
+  `ci.yml` — `on: pull_request`, and the check the merge rules require — had still not
+  queued a run after pushes at 23:15 and 23:23. Vercel built and reported success on
+  every one of them, so events were plainly reaching GitHub; `mergeable_state` sat at
+  `blocked` on a required check that did not exist. It finally queued at 23:29, on the
+  fourth push, twenty minutes after the PR opened.
+
+  Recorded mainly for the wrong conclusion drawn in between, which was written into this
+  file and had to be taken back out an hour later. Every CI run in this repo's history
+  shows `actor: jacobdixon (User)`, while a session's commits arrive through the agent
+  git proxy and its PR is opened by the GitHub App — and GitHub genuinely does suppress
+  workflow triggers for app-authored events. That is a tidy, checkable-looking story
+  which fits every observation available at the time, and it is **wrong**: the run that
+  eventually started came through the same proxy under the same identity as the ones
+  that did not. An explanation that accounts for the evidence is not the same as a
+  demonstrated cause, and this file is the wrong place to put the difference.
+
+  So when the check is missing rather than red: keep waiting, push again if there is
+  something real to push, and check by head SHA rather than trusting one poll. Verify
+  locally in the meantime and say in the PR that you did. Only after a genuinely long
+  silence is it worth telling anyone a human has to push — and if this does turn out to
+  recur, adding `workflow_dispatch:` to `ci.yml` would make it self-service, since
+  without it `actions_run_trigger` has nothing to call.
+
+- **`node_modules` is empty in a fresh session, and the failures that causes look like
+  real ones.** Nothing installs dependencies for you. Until `npm install` is run,
+  `npm run build` dies with `vite: not found`, `npm run lint` dies on a missing
+  `globals`, and `handstest`/`narrationtest`/`flagtest`/`pacingtest`/`e2etest`/`soaktest`
+  all fail with `ERR_MODULE_NOT_FOUND` for `@upstash/redis`. Every one of those reads as
+  a broken repo or a broken change. `npm install` works fine through the proxy and takes
+  well under a minute, so run it before believing any of it — and if a suite still fails,
+  confirm it against a clean tree (`git stash`) before treating it as yours.

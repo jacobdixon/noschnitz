@@ -6,9 +6,9 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.55.0] - 2026-08-03 (`6b7b254`)
+## [0.57.0] - 2026-08-03 (`6b7b254`)
 - **Project memory brought in line with the session.** CLAUDE.md's clairvoyance
-  section said "Not fixed, deliberately", which stopped being true in 0.54.0 —
+  section said "Not fixed, deliberately", which stopped being true in 0.56.0 —
   a handoff doc that describes a fixed bug as open is worse than one that omits
   it. Rewritten around how it was FOUND, since that is the transferable part: not
   by reading the code, but by a number that could only be true if something was
@@ -30,7 +30,7 @@ corresponds to the entries below.
   with leading the most expensive shape. Flagged as a hypothesis, not a finding:
   the buckets overlap and have no error bars yet.
 
-## [0.54.1] - 2026-08-03 (`a85a6e7`)
+## [0.56.1] - 2026-08-03 (`a85a6e7`)
 - **`pimc`'s summary line stated the opposite of what happened when the played
   card won more often.** The win-rate delta was wrapped in `Math.abs`, so a card
   that cost points while WINNING more often — trading wins for schneider margin,
@@ -42,7 +42,7 @@ corresponds to the entries below.
     margin, not wins". The last is the one that was unsayable before, and it is
     the interesting one.
 
-## [0.54.0] - 2026-08-03 (`2f102cd`)
+## [0.56.0] - 2026-08-03 (`2f102cd`)
 - **The AI no longer sees your last two cards.** `solveEndgameCard` solved the
   real deal — `endgameValue` recurses over `g.hands`, all five of them — so from
   `tricksDone >= 4` every AI seat played the endgame with perfect information,
@@ -58,7 +58,7 @@ corresponds to the entries below.
   - **Cost, measured rather than estimated: +0.0430 stake per seat per hand,
     ahead in 3 of 3 seeds** (`abtest --opt endgameClairvoyant=true`). That is
     what the clairvoyance was worth and what removing it gives up — consistent
-    with the ~1.6 card points a hand priced in 0.53.2, and about 24x what
+    with the ~1.6 card points a hand priced in 0.55.2, and about 24x what
     `BELIEF_FLOOR` gained. A real strength loss, taken deliberately: an opponent
     that can see your hand is not a difficulty setting, it is a different game,
     and a player who suspects it will never un-suspect it.
@@ -72,7 +72,7 @@ corresponds to the entries below.
   reintroducing the real layout would fail nothing else, because playing better
   with more information looks exactly like playing better.
 
-## [0.53.2] - 2026-08-03 (`f6dfa71`)
+## [0.55.2] - 2026-08-03 (`f6dfa71`)
 - **The endgame clairvoyance now has a price: about 1.6 points a hand.** Measured
   over 60 self-play hands — playing the best card under uncertainty instead of
   the clairvoyant one costs 0.42 points per endgame decision on the real deal,
@@ -86,7 +86,7 @@ corresponds to the entries below.
     the behaviour without pricing it. Reproduce with
     `npm run pimcmine -- --selfplay N`.
 
-## [0.53.1] - 2026-08-03 (`5d4c220`)
+## [0.55.1] - 2026-08-03 (`5d4c220`)
 - **The hand-analysis skill now says to answer the question and stop**, which the
   evaluation says is its most valuable instruction rather than a matter of tone.
   The failure mode is not getting a hand wrong, it is not stopping: a question
@@ -102,7 +102,7 @@ corresponds to the entries below.
     deliverable. The closing pointer now says an engine change is a job started
     deliberately, not drifted into from an answer about a hand.
 
-## [0.53.0] - 2026-08-03 (`7c19df8`)
+## [0.55.0] - 2026-08-03 (`7c19df8`)
 - **`npm run pimc` leads with the answer somebody actually asked for.** Before
   the diagnostics it now prints every legal card with the DECIDING SEAT's own
   side's average points out of 120 and how often that side wins the hand, then a
@@ -130,7 +130,7 @@ corresponds to the entries below.
     uncertainty there. That was the case the baseline got wrong — it reported a
     phantom 2.70-point engine bug from a clairvoyant decision.
 
-## [0.52.1] - 2026-08-03 (`5ec31ac`)
+## [0.54.1] - 2026-08-03 (`5ec31ac`)
 - **`pimcmine` was mislabelling what the endgame clairvoyance is worth, and now
   measures it.** It reported the clairvoyant decisions' own PIMC cost as "the
   value of seeing the other hands". That is not what the number is: it is how
@@ -144,7 +144,7 @@ corresponds to the entries below.
     stop seeing your last two cards" decision needs. Now computed and reported
     per decision and per hand, flagged as an UPPER bound because a real
     uncertainty player would not find PIMC's best card every time either.
-- Correction to the 0.51.1 reading, recorded because it was acted on: on the
+- Correction to the 0.53.1 reading, recorded because it was acted on: on the
   biased estimator `holder=our side` was the one shape where double-dummy
   UNDERstated cost, by +0.19, which made it the obvious place to look next.
   Cross-fitted it is +0.02 — neutral. The hypothesis was an artefact of the
@@ -152,7 +152,7 @@ corresponds to the entries below.
   everywhere (2.09 against 0.89 overall, negative on 17 of 18 shapes) rather
   than having a pocket where it is too kind.
 
-## [0.52.0] - 2026-08-03 (`9173952`)
+## [0.54.0] - 2026-08-03 (`9173952`)
 - **`.claude/skills/hand-analysis/` — the hand-analysis procedure, saved so it
   runs the same way every time somebody asks whether a play was right.** It
   triggers on a recap screenshot, on "was that the right lead", on "what did that
@@ -172,7 +172,7 @@ corresponds to the entries below.
   calibrate a belief before playing on it — including the outcome nobody expects,
   that a tell can calibrate at 8:1 and still be worth nothing.
 
-## [0.51.1] - 2026-08-03 (`bbcad41`)
+## [0.53.1] - 2026-08-03 (`bbcad41`)
 - **`pimcmine`'s cost estimate is cross-fitted, because the obvious one is
   biased upward and the bias is not small.** Regret is a MAX over cards of means
   estimated from a finite sample, so whichever card's sampling error ran highest
@@ -192,7 +192,7 @@ corresponds to the entries below.
     zero instead of exactly zero, which would have quietly cost the one property
     that makes it a control.
 
-## [0.51.0] - 2026-08-03 (`634333c`)
+## [0.53.0] - 2026-08-03 (`634333c`)
 - **The AI plays the last two tricks with perfect information, and now there is
   a test that says so.** `aiChooseCard` dispatches tricks 5-6 to
   `solveEndgameCard`, which recurses over `g.hands` — all five of them — so from
@@ -226,11 +226,11 @@ corresponds to the entries below.
   except one population will report that population's artefacts as its headline,
   because they are the largest numbers it produces.
 
-## [0.50.0] - 2026-08-03 (`f21cf4f`)
+## [0.52.0] - 2026-08-03 (`f21cf4f`)
 - **`scripts/pimcmine.mjs` — rank the corpus by what mistakes actually COST,
   and Actions → "Mine hands" grew an `analysis: cost-ranking` mode to run it
   where the corpus is reachable.** `minehands.mjs` ranks by exact double-dummy
-  cost, and 0.48.x established that ruler is mis-calibrated in both directions
+  cost, and 0.50.x established that ruler is mis-calibrated in both directions
   at once: inside a single trick of one hand it scored a 4.3-point error at zero
   and a 0.9-point error at six. That is the right tool for "did this seat find
   the best card" and the wrong one for "which mistakes are worth fixing", so
@@ -265,7 +265,7 @@ corresponds to the entries below.
   `minehands.mjs --selftest 25` is byte-identical before and after, and both
   published PIMC results reproduce exactly.
 
-## [0.49.0] - 2026-08-02 (`5066c23`)
+## [0.51.0] - 2026-08-02 (`5066c23`)
 - **The schmear tell: a new evidence term in the partner belief, calibrated at
   8:1, and shipped OFF because it is almost never actionable.** Every existing
   term in `partnerWeight` is about LEADING a trick; this one is about paying
@@ -302,7 +302,7 @@ corresponds to the entries below.
   file already documents for `trumpLeadRead`, which silently turned `plain` into
   a comparison of the read against itself.
 
-## [0.48.2] - 2026-08-02 (`f037452`)
+## [0.50.2] - 2026-08-02 (`f037452`)
 - **`pimc.mjs --partner NAME` prices a READ.** It restricts sampling to worlds
   where a named seat holds the called card. The harness has no theory of how
   somebody played and cannot derive this — it is supplied by hand, and that is
@@ -330,13 +330,13 @@ corresponds to the entries below.
   place for it and `belieftest` is the harness that would calibrate it — this is
   a candidate weight, measurable the same way `TRUMP_LEAD_ODDS` was.
 
-## [0.48.1] - 2026-08-02 (`32621fe`)
+## [0.50.1] - 2026-08-02 (`32621fe`)
 - **`pimc.mjs` handles a DEFENDER's viewpoint, which is a different information
   set and was quietly getting it wrong.** A defender cannot see the bury, so the
   two cards nobody ever sees have to be sampled — and two things broke on that:
   - The buried points were being added as a constant taken from the REAL bury.
     For the picker that is correct and the numbers are unchanged (verified
-    bit-for-bit against 0.48.0); for anyone else it silently fed the viewer two
+    bit-for-bit against 0.50.0); for anyone else it silently fed the viewer two
     cards' worth of knowledge they do not have, and the bury lands on the
     picker's side of the schneider line, so it moves the answer.
   - Worlds that put the called ace in the picker's hand or in the bury were
@@ -362,7 +362,7 @@ corresponds to the entries below.
     chance of being schneidered goes 31.6% → 34.3%. `aiChooseCard` throws the
     10♠ too.
 
-## [0.48.0] - 2026-08-02 (`924ae24`)
+## [0.50.0] - 2026-08-02 (`924ae24`)
 - **`scripts/pimc.mjs` — the determinized search from AI_PERFECT_PLAY.md §A,
   aimed at one decision instead of at the engine.** Sample complete deals of the
   unseen cards consistent with what the deciding seat knew, run the existing
@@ -398,6 +398,167 @@ corresponds to the entries below.
     2.2 points behind the 8♦, so this is an engine finding and not only a human
     one.
 
+## [0.49.0] - 2026-08-03 (`f708d16`)
+- **The AI no longer bleeds with a fat trump when a cheaper one is available.**
+  "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
+  on the diamonds that reads exactly backwards on price: A-D and 10-D rank below
+  every Jack while carrying 11 and 10 points, so the weakest trump in a hand is
+  routinely the fattest card in it. Both bleed paths — the picker's and the
+  defender's all-trump line — picked that card. New `bleedTrump` skips a fat
+  trump when a cheaper one exists and the fat one can still be beaten; a fat
+  trump nothing can beat is still a fine lead and stays eligible.
+
+  This is the bleed half of an objection the engine already sustained on the
+  press path (`leadDonatesPoints`, 0.44.0). The two have separate switches on
+  purpose — `guardFatTrumpBleed` and `guardFatTrumpLead` — because an A/B that
+  moves both at once cannot attribute either.
+
+  Found in a real hand, now pinned as `scripts/scenarios/hand8-fonzie-ad.mjs`
+  with a constructed assertion and a negative control in `aiskilltest`: a
+  defender with every Queen already gone held A-D and three Jacks, so the only
+  card left in the deck that could beat anything of theirs was the J-H. The
+  engine led A-D — weakest of the four by power, dearest by ten points — into a
+  lone picker who, on the evidence visible at the time, held that J-H about 83%
+  of the time. PIMC scores J-D ahead by 7.4 points and 30 points of schneider
+  rate over 12,000 sampled worlds.
+
+  Measured at **+0.252 per firing on 0.37% of hands, ahead in 5 of 5 seeds**
+  (100,000 hands). The whole-hand aggregate is -0.0009/seat/hand, which is
+  noise, and that is the point — see the new harness below.
+- **New harness `scripts/firingtest.mjs` (`npm run firingtest`).** `abtest`
+  measures a variant over every hand, which is the wrong denominator for a rule
+  that touches few. A guard firing on half a percent of hands and worth five
+  points when it does moves the whole-hand aggregate by about 0.03 — noise at
+  any sample size this project runs — so `abtest` reports "no effect" for a
+  change that is plainly correct. This splits the population by whether the
+  option actually changed a card, and reports firing rate, per-firing delta and
+  the `abtest` number side by side so the two are compared rather than confused.
+
+  Two rules in `engine.js` were already tuned this way with throwaway scripts
+  rebuilt from scratch each time (see the notes in `aiskilltest`). This is that
+  script, kept. It null-tests to exactly zero on both columns with nothing
+  firing, and `npm test` asserts it.
+- **PIMC reports a schneider rate next to the win rate.** The win rate goes flat
+  at exactly the decisions where it is least useful: in a hand already decided,
+  every candidate reads 100% and the ranking silently falls back to a mean whose
+  units nobody is paid in. Schneider is the boundary still live in those hands,
+  and it doubles the stake, so it gets its own column. It uses the same one-point
+  asymmetry as the win line (`scoreHand`): the picker's team is schneidered at
+  <= 30 and the defenders at <= 29, so schneidering the *other* side needs 90 as
+  a defender and 91 as a picker. On the hand above, all four legal leads won 100%
+  of sampled worlds while the schneider rate ranged from 49.5% to 89.9% — the
+  entire content of the decision was invisible in the old report.
+- **New scenario `hand8-fonzie-ad.mjs`**, transcribed from a recap screenshot and
+  verified against the printed score before anything was run. Worth keeping as a
+  reference case for the exact/PIMC disagreement this workflow exists to surface:
+  double-dummy all four leads are *identical* (29 to the picker, schneider either
+  way), while PIMC separates them by 8.3 points, because the deciding seat could
+  not know where the one outstanding higher trump was.
+- **Standing order added to `CLAUDE.md`: open a PR for finished work without
+  being asked, and merge it once the tests pass.** `master` is protected and
+  takes no direct pushes, so a branch with no PR is work parked where nothing
+  picks it up. Spells out that a check which never queued is not a failing check,
+  that a red check always blocks, and that `master` gets watched *after* the
+  merge too — `Release` is gated on CI succeeding there.
+
+## [0.48.1] - 2026-08-02 (`897fd68`)
+- **The collected corpus was mined for the first time, and the answer was "no signal".**
+  Docs only, no code change. 131 hands off beta, 126 gradeable, 445 real decisions,
+  142 disagreements with the engine, net **+72 points to the human** — noise, and the
+  shape says why: **87 of the 142 disagreements (61%) cost exactly the same either
+  way.** Of the 55 that mattered the human was better 31 times at +9.2 average and the
+  engine 24 times at −8.9, and 31-vs-24 sits inside one standard deviation of a coin
+  flip. Both sides make real mistakes at the same rate and the same size.
+  - Recorded as a result rather than a dead end. "No large systematic gap against a
+    competent human" is the strongest claim 55 decisions support, and it is worth
+    knowing before anyone re-tunes anything on a hunch.
+  - The one lead — `trick=1`, highest win share at 38%, and the three largest
+    single-decision gaps in the corpus — is filed **with the reason to distrust it**:
+    trick 1 is precisely where double-dummy flatters the human, because nothing is
+    known yet and DD judges with every hand visible. Trick 1 topping that table is what
+    the bias alone would produce.
+  - Also filed: the feature table double-counts, because every decision emits seven
+    features and one big-delta decision lights up seven rows.
+- **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+  then nothing. The promotion moved players to www, whose hands go to a different
+  database. Next run should read www; beta's corpus is now a fixed historical artifact
+  spanning nine engine versions.
+- **Mining cost measured on a real runner**: ~16s a hand, 131 hands in 35 minutes, plus
+  ~7 minutes for the `--selftest 30` preamble. The old note said ~24s from a slow box.
+- Next-session cleanup list written into CLAUDE.md, ordered by what pays: point mining
+  at www, record multiplayer hands, **give `minehands` a significance story** (it
+  reports a signed total and nothing about spread, so a net built from two heavy tails
+  reads exactly like a real edge — that gap is why this run needed a human to say "that
+  is noise"), fix the double-counting, and try grading from trick 2 to see whether any
+  cluster survives without the position DD is worst at.
+
+## [0.48.0] - 2026-08-02 (`ba00fa9`)
+- **`trickSecurity` now prices a beater by whether its holder could legally
+  *play* it.** Holding a card that beats the trick is not the same as being
+  allowed to play it: a seat holding any card of the led suit must follow with
+  one, so an off-suit beater in that hand is a card it never gets to play.
+  `forcedPlay` already closed this for the two called-suit pins; ordinary
+  follow-suit was still priced as though every unseen card were reachable by
+  every seat still to act.
+
+  Found from a real hand. Clubs led, the partner trumped in with J-hearts, one
+  opponent left to act. Three unseen cards beat the Jack so the count read
+  0.324 — but two fail clubs were also unseen, and that opponent can only trump
+  holding neither. The honest number is `0.515 + 0.128 = 0.643`, twice as safe.
+  The picker read the trick as 68% lost, overtook his own partner with a Queen
+  to rescue it, and was holding two diamonds that could not win a trick all
+  night. Double-dummy, every Queen there costs **19** and both diamonds cost 0.
+
+  The overtake gate was never at fault: it correctly demanded 0.60 for an
+  unbeatable card and was handed 0.676 by a biased estimate. Beaters are now
+  split by whether the led suit is their effective suit, exact for one free
+  seat; several free seats need inclusion-exclusion because voidness is
+  per-seat, so those keep the old estimate rather than an approximation.
+
+  Measured at 20,000 hands × 5 seeds, and re-measured after merging master so
+  the numbers describe the code that actually ships: **+0.0042/seat/hand,
+  ahead in 5 of 5** (`abtest`), and **−0.04pp** picker win rate in
+  `coalitiontest` with the old behaviour in every defender seat, i.e. no
+  defender-side effect either way. Both gates were re-swept with it on and the curve is
+  flat — `schmearConfidence` across 0.85/0.88/0.90/0.93/0.95 gives
+  +0.0038/+0.0045/+0.0038/+0.0043/+0.0048 and `overtakeMinGain` across
+  0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040 — so **the gates
+  stay where they are**. `SCHMEAR_CONFIDENCE` gains an `opts` override, which
+  sweeping it required and which null-tests to exactly +0.0000.
+
+  This was first measured at 4,000 × 3 and **rejected on that basis, wrongly**.
+  At that size the harness's run-to-run spread is about ±0.005, larger than the
+  effect: the identical variant gave −0.0052 (ahead 1 of 3), +0.0034 (2 of 3)
+  and +0.0029 (3 of 3) on three consecutive runs. The tell was that with the
+  flag defaulted *on*, turning it *off* also measured "ahead in 3 of 3" — two
+  runs that each say the variant wins are one broken measurement, not two
+  results. Runs cost eleven seconds; nothing should be decided at that size.
+
+- **New: PIMC decision analysis (`scripts/pimc.mjs`).** Answers "was this a good
+  decision given only what the player could see", as against the exact solver's
+  "was it a mistake given everything". It forgets what the seat could not know,
+  samples worlds consistent with the public evidence, and rolls each forward
+  with the engine's own policy. Reports mean, standard error and win rate per
+  legal card. `scripts/gradedecision.mjs` gives the full-hindsight grade from
+  the same scenario file, and `.claude/skills/analyze-sheepshead-hand` drives
+  both from a recap screenshot.
+
+  Four modelling bugs were found and fixed by validating it against a
+  forward-simulation baseline that shares no code with it — the habit worth
+  keeping. The picker's hand was being split keep-six/bury-two at random,
+  discarding 1.3 trump per hand; the pick threshold was applied to all eight
+  cards rather than the pre-blind six `aiWantsToPick` actually reads; and with
+  the partner unknown the called ace could be dealt to the picker or into the
+  bury, making the picker their own partner or secretly alone in 22% of worlds.
+  On the reference hand PIMC and the independent baseline now agree (51.3 / 30%
+  against 48.8 / 26.9%).
+
+- Repairs two `aiskilltest` fixtures that were pricing probabilities against
+  decks that cannot exist: one was 25 cards with the last opponent holding two
+  cards of the led suit, so in its own deal that seat had to follow suit and
+  could never take the trick the Queen was being spent to rescue; the other had
+  two played cards still sitting in hands plus a duplicated K-diamonds. Both are
+  now complete 32-card deals, asserted by `dealIsComplete()`.
 ## [0.47.0] - 2026-08-01 (`a29d0d4`)
 - **The collected corpus can be read and mined without a browser, from Actions
   → "Mine hands".** `minehands.mjs` has existed since 0.32.0 and found a real
