@@ -34,7 +34,7 @@
    approximation — read the points column as the primary result.
 
    Usage:
-     node scripts/pimc.mjs <hand.json> --trick N --seat NAME [options]
+     node scripts/pimcsolve.mjs <hand.json> --trick N --seat NAME [options]
        --worlds n     sampled deals (default 300)
        --seed n       RNG seed (default 1)
        --no-passes    drop the passer-strength filter

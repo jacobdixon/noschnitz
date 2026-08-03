@@ -10,7 +10,7 @@ played there, which ones do best, and by how much?* Produce a short table of
 every legal card with the average points and win rate it leads to — averaged
 over many deals consistent with **what that seat could see at the time**.
 
-`npm run pimc` does the simulation. Your job is to get the hand in, check it
+`npm run pimcsolve` does the simulation. Your job is to get the hand in, check it
 reconstructed correctly, and hand back something quotable.
 
 ## Answer the question and stop
@@ -63,7 +63,7 @@ decision and passed) is real information the sampler uses; omit it if unknown.
 **2. Run it.**
 
 ```
-npm run pimc -- scripts/hands/<file>.json --trick 3 --seat Gus --worlds 1200 --seed 1
+npm run pimcsolve -- scripts/hands/<file>.json --trick 3 --seat Gus --worlds 1200 --seed 1
 ```
 
 The output opens with the table to quote — every legal card, that seat's own

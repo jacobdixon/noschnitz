@@ -17,7 +17,7 @@
     "pacingtest": "node scripts/pacingtest.mjs",
     "aiskilltest": "node scripts/aiskilltest.mjs",
     "abtest": "node scripts/abtest.mjs",
-    "pimc": "node scripts/pimc.mjs",
+    "pimcsolve": "node scripts/pimcsolve.mjs",
     "pimcmine": "node scripts/pimcmine.mjs",
     "clairvoyancetest": "node scripts/clairvoyancetest.mjs",
     "gradetest": "node scripts/gradetest.mjs",

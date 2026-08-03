@@ -35,7 +35,7 @@
    approximation — read the points column as the primary result.
 
    Usage:
-     node scripts/pimc.mjs <hand.json> --trick N --seat NAME [options]
+     node scripts/pimcsolve.mjs <hand.json> --trick N --seat NAME [options]
        --worlds n     sampled deals (default 300)
        --seed n       RNG seed (default 1)
        --no-passes    drop the passer-strength filter
@@ -47,7 +47,7 @@ import { readFileSync } from "node:fs";
 import { cid, aiChooseCard, gradeAllPlays, pickerTeamOf } from "../src/engine.js";
 import {
   analyse, seatDelta, mean, pairedDiff, show, normalizeSpec,
-} from "./lib/pimc.js";
+} from "./lib/pimcsolve.js";
 
 /* --------------------------------- main --------------------------------- */
 const argv = process.argv.slice(2);
@@ -56,7 +56,7 @@ const flag = (name, def) => {
   return i < 0 ? def : argv[i + 1];
 };
 if (!argv.length || argv[0].startsWith("--")) {
-  console.error("usage: node scripts/pimc.mjs <hand.json> --trick N --seat NAME [--worlds n] [--seed n] [--no-passes]");
+  console.error("usage: node scripts/pimcsolve.mjs <hand.json> --trick N --seat NAME [--worlds n] [--seed n] [--no-passes]");
   process.exit(1);
 }
 const spec = normalizeSpec(JSON.parse(readFileSync(argv[0], "utf8")));

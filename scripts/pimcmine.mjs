@@ -43,7 +43,7 @@
    ========================================================================= */
 import { readFileSync } from "node:fs";
 import { cid, pickerTeamOf, gradeAllPlays, legalPlays, applyPlay, resolveTrick, aiChooseCard } from "../src/engine.js";
-import { analyse, show, specFromRecord } from "./lib/pimc.js";
+import { analyse, show, specFromRecord } from "./lib/pimcsolve.js";
 import { rebuild, features, selfTestHands } from "./lib/handlog.js";
 
 const args = process.argv.slice(2);

@@ -43,7 +43,7 @@ play the card with the best average. This replaces the entire heuristic stack
 with search, and it converges toward correct imperfect-information play as
 the sampling gets smarter.
 
-**This exists now, offline: `npm run pimc` (`scripts/pimc.mjs`, 0.48.0).** Not in
+**This exists now, offline: `npm run pimcsolve` (`scripts/pimcsolve.mjs`, 0.48.0).** Not in
 the engine — it analyses ONE decision from a logged hand, which is the cheap half
 and the half that produces evidence. Point it at a recap and it prints the PIMC
 average next to the exact solve of the real deal, which is the comparison that
