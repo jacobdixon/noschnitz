@@ -6,6 +6,48 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.3] - 2026-08-03 (`PENDING`)
+A card played under rendered **face up** on a multiplayer table (#113). Two
+defects, one cause, so they are fixed together.
+
+- **The felt lost the flag that hides it.** Playing under is a secrecy feature:
+  the card goes down as the placeholder 6 of the called suit, and `felt.jsx`
+  draws it face down off `t.under`. The table cannot render server state
+  directly — the server resolves every AI seat inside one request — so
+  `buildPlaySequence` in `src/usePacedTrick.js` rebuilds the play sequence for
+  the paced reveal, copying a fixed set of fields per play. `under` was not one
+  of them, so the placeholder was drawn face up, for every viewer, in both the
+  live trick and the `trickHistory` replay. Solo hands raw `g` to `Felt` and
+  never rebuilds anything, which is why it was table-only.
+
+  `actual` is deliberately still not carried. The felt draws every under card
+  face down for everyone, including the picker who knows perfectly well what it
+  is; revealing the face belongs to Last Trick and the recap, which have their
+  own entitlement rule. Carrying it would put the real card one careless render
+  away from the table for no gain.
+
+- **The picker's own stand-in spoke a different language, and that is the half
+  nobody filed.** Tapping a card puts a stand-in on the felt before the server
+  answers. For an under play the stand-in held the REAL card while the server
+  echoes the PLACEHOLDER, so the two share no id: `displayState`'s dedup missed
+  it and the retirement check in `TableScreen` could never fire, because it
+  matches against `revealedIds`, which only ever contains the placeholder. The
+  stand-in survived until the next hand — so the picker watched their own under
+  card sit face up next to the placeholder, six cards in a five-card trick.
+
+  Fixed by standing in with `underFace(g)` when `isUnderCard` says so, flagged
+  `under` so it goes down face down immediately. Both the dedup and the
+  retirement then work unchanged; no edit was needed at either site.
+
+- **The reason no test caught it: no fixture had ever played a card under.**
+  `pacingtest`'s hand builder dropped `callKind` and `underCard` from
+  `aiBuryAndCall`, so every hand it dealt called an ace or a ten. The builder now
+  carries them, and the suite deals until it finds a hand where the designated
+  card was genuinely played — the placeholder under test is the one `applyPlay`
+  really produces, not a constructed one. Eight assertions, including a negative
+  control that no ordinary play acquires the flag. Confirmed failing on the
+  unchanged source first.
+
 ## [0.58.2] - 2026-08-03 (`d9fce44`)
 > Numbering note: this and 0.58.1 were written as 0.49.0/0.49.1, renumbered to
 > 0.49.1/0.49.2 when #124 took 0.49.0, and renumbered again on merge because
