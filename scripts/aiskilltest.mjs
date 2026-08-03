@@ -1659,6 +1659,145 @@ const trick2 = [
     isPowerTrump(aiChooseCard(g, 0)), `played ${cid(aiChooseCard(g, 0))}`);
 }
 
+/* -------------------------------------------------------------------------
+   Reported 2026-08-03 (hand 4, v0.48.0): the picker overtakes a partner's
+   K-diamonds lead with A-diamonds from THIRD seat, hangs 11 points in front of
+   two unplayed defenders, and a defender takes the trick with Q-hearts for 21.
+
+   The cause is structural rather than a bad read. In the trump order the two
+   point-fat trump sit BELOW every Jack and Queen:
+
+       Q♣ Q♠ Q♥ Q♦ J♣ J♠ J♥ J♦ A♦ 10♦ K♦ 9♦ 8♦ 7♦
+                                 ▲   ▲
+                                11   10 points
+
+   so `cheapest(winners)` — which sorts by power, the right axis for keeping
+   winning strength back — picks the most EXPENSIVE card in the pile whenever
+   A♦ or 10♦ is the low winner. J♦ and A♦ are adjacent in that order, so a seat
+   holding both always has two winners with an identical beater set: the same
+   cards beat them, they hold the trick with the same probability, and the only
+   difference between them is 9 points of exposure.
+
+   Note the exact solver scores A♦, J♦ and 7♦ at cost 0 on the real deal — the
+   defence had the hand whatever she played, so double-dummy cannot anchor this
+   one. The anchor is PIMC over 10,000 worlds consistent with what she could
+   see (scripts/scenarios/hand4-patty-ad.mjs): 7♦ 57.62 ± 0.25 and 40.5% wins,
+   J♦ 57.27 and 41.4%, A♦ 54.94 and 36.7%. The played card is ~11 SE behind.
+   That is why this is asserted here and not as a double-dummy cost.
+   ------------------------------------------------------------------------- */
+{
+  const g = position({
+    hands: [
+      [C("A", "C"), C("10", "S"), C("9", "S"), C("K", "S")],                    // partner, led K♦
+      [C("8", "C"), C("8", "H"), C("10", "H"), C("9", "C")],                    // sloughed 7♥
+      [C("A", "D"), C("K", "C"), C("7", "S"), C("7", "D"), C("J", "D")],        // picker, to act
+      [C("Q", "D"), C("9", "D"), C("8", "S"), C("10", "D"), C("K", "H")],       // yet to act
+      [C("Q", "H"), C("7", "C"), C("A", "S"), C("Q", "S"), C("9", "H")],        // yet to act
+    ],
+    trick: [
+      { player: 0, card: C("K", "D") },
+      { player: 1, card: C("7", "H") },
+    ],
+    played: [C("J", "H"), C("J", "S"), C("J", "C"), C("Q", "C"), C("8", "D")],
+    buried: [C("A", "H"), C("10", "C")],
+    picker: 2, partner: 0, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 2,
+  });
+
+  check("fixture is a complete 32-card deal", dealIsComplete(g));
+  const legal = legalPlays(g, 2);
+  check("trump was led, so only the picker's three trump are legal",
+    legal.length === 3 && legal.every(isTrump), `legal=${legal.map(cid).join(",")}`);
+  check("two of them beat the K♦",
+    legal.filter((c) => trumpPower(c) > trumpPower(C("K", "D"))).length === 2);
+
+  // The heart of it: these two winners are interchangeable.
+  check("A♦ and J♦ have the same beaters, so rank buys nothing here",
+    cardEquity(g, 2, C("A", "D")) === 3 && cardEquity(g, 2, C("J", "D")) === 3,
+    `A♦=${cardEquity(g, 2, C("A", "D"))} J♦=${cardEquity(g, 2, C("J", "D"))}`);
+  check("and they hold the trick with the same probability",
+    Math.abs(securityAfterPlay(g, 2, C("A", "D")) - securityAfterPlay(g, 2, C("J", "D"))) < 1e-9);
+  check("which is nowhere near safe — two defenders still to act",
+    securityAfterPlay(g, 2, C("A", "D")) < 0.2,
+    `security ${securityAfterPlay(g, 2, C("A", "D")).toFixed(3)}`);
+  check("so the fat one costs 9 more points for nothing",
+    cardPts(C("A", "D")) - cardPts(C("J", "D")) === 9);
+
+  check("the picker overtakes with the CHEAP twin, not the 11-point Ace",
+    cid(aiChooseCard(g, 2)) === cid(C("J", "D")), `played ${cid(aiChooseCard(g, 2))}`);
+}
+
+/* Negative control 1 — same shape, but the trick is already safe.
+   The picker is last to act, so nothing can take the trick off her whatever
+   she plays. Spending the fat trump is then correct: it banks 11 points into a
+   trick she is certain of AND keeps the stronger card back. The rule must not
+   fire on security, only on its absence. */
+{
+  const g = position({
+    hands: [
+      [C("Q", "S"), C("Q", "D"), C("10", "D"), C("10", "S")],
+      [C("A", "C"), C("8", "C"), C("7", "C"), C("8", "H")],                     // void in trump
+      [C("A", "D"), C("J", "D"), C("K", "C"), C("10", "C"), C("9", "C")],       // picker, last
+      [C("Q", "H"), C("7", "D"), C("K", "H"), C("10", "H")],
+      [C("A", "S"), C("K", "S"), C("9", "S"), C("8", "S")],                     // void in trump
+    ],
+    trick: [
+      { player: 0, card: C("K", "D") },
+      { player: 1, card: C("7", "H") },
+      { player: 3, card: C("9", "D") },
+      { player: 4, card: C("9", "H") },
+    ],
+    played: [C("J", "H"), C("J", "S"), C("J", "C"), C("Q", "C"), C("8", "D")],
+    buried: [C("A", "H"), C("7", "S")],
+    picker: 2, partner: 1, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 2,
+  });
+
+  check("negative control 1: fixture is a complete 32-card deal", dealIsComplete(g));
+  check("negative control 1: A♦ and J♦ are still interchangeable as winners",
+    cardEquity(g, 2, C("A", "D")) === cardEquity(g, 2, C("J", "D")));
+  check("negative control 1: but the trick cannot move — nobody is left to act",
+    securityAfterPlay(g, 2, C("A", "D")) > 0.999,
+    `security ${securityAfterPlay(g, 2, C("A", "D")).toFixed(3)}`);
+  check("negative control 1: so the picker banks the fat trump as before",
+    cid(aiChooseCard(g, 2)) === cid(C("A", "D")), `played ${cid(aiChooseCard(g, 2))}`);
+}
+
+/* Negative control 2 — insecure trick, but the winners are NOT interchangeable.
+   J♣ is beaten by three cards and A♦ by four, so the Jack is genuinely the
+   stronger card and burning it to save points would be the overkill the
+   cheapest-winner rule exists to prevent. Unequal equity must switch the whole
+   thing off, whatever the security is. */
+{
+  const g = position({
+    hands: [
+      [C("Q", "C"), C("10", "D"), C("10", "S"), C("K", "S")],
+      [C("A", "C"), C("8", "C"), C("7", "C"), C("8", "H")],                     // void in trump
+      [C("A", "D"), C("J", "C"), C("K", "C"), C("10", "C"), C("9", "C")],       // picker, to act
+      [C("Q", "H"), C("J", "D"), C("9", "D"), C("K", "H"), C("10", "H")],
+      [C("Q", "D"), C("A", "S"), C("9", "S"), C("8", "S"), C("9", "H")],
+    ],
+    trick: [
+      { player: 0, card: C("K", "D") },
+      { player: 1, card: C("7", "H") },
+    ],
+    played: [C("J", "H"), C("J", "S"), C("8", "D"), C("Q", "S"), C("7", "D")],
+    buried: [C("A", "H"), C("7", "S")],
+    picker: 2, partner: 1, partnerRevealed: false,
+    calledSuit: "C", calledAcePlayed: false, tricksDone: 1, leader: 0, turn: 2,
+  });
+
+  check("negative control 2: fixture is a complete 32-card deal", dealIsComplete(g));
+  check("negative control 2: the trick is still wide open",
+    securityAfterPlay(g, 2, C("A", "D")) < 0.5,
+    `security ${securityAfterPlay(g, 2, C("A", "D")).toFixed(3)}`);
+  check("negative control 2: J♣ is strictly stronger than A♦ here",
+    cardEquity(g, 2, C("J", "C")) === 3 && cardEquity(g, 2, C("A", "D")) === 4,
+    `J♣=${cardEquity(g, 2, C("J", "C"))} A♦=${cardEquity(g, 2, C("A", "D"))}`);
+  check("negative control 2: so the cheapest winner still wins it, Ace and all",
+    cid(aiChooseCard(g, 2)) === cid(C("A", "D")), `played ${cid(aiChooseCard(g, 2))}`);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error("\nFAIL:");

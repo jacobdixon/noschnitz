@@ -6,6 +6,77 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.49.0] - 2026-08-03 (`_pending_`)
+- **The cheapest-winner rule now measures "cheapest" in points when rank is
+  provably free.** Taking a trick with the weakest card that wins it is right,
+  but `power` is the wrong axis for deciding what to *risk*: the trump order
+  puts the two point-fat trump below every Jack and Queen —
+
+      Q♣ Q♠ Q♥ Q♦ J♣ J♠ J♥ J♦ A♦ 10♦ K♦ 9♦ 8♦ 7♦
+                                ▲   ▲
+                               11   10 points
+
+  so whenever A♦ or 10♦ is the low winner, "cheapest by rank" is the most
+  expensive card in the pile. J♦ and A♦ are *adjacent* there, which makes the
+  pair that triggers it also the pair where rank is worth nothing: with nothing
+  outstanding between them the same cards beat both, so they hold the trick with
+  identical probability and are equally good to keep. Only the 9 points differ.
+
+  Two guards keep this narrow. Equal `cardEquity` means an equal beater set, so
+  reordering inside that group surrenders no winning strength at all — this is
+  **not** the strength-for-points trade of the three rules already measured and
+  rejected in that branch, all of which reached for *more* strength. And
+  spending the fat twin is genuinely right once the trick is safe, because the
+  points are then banked rather than donated, so `OVERTAKE_SPEND_SECURITY`
+  leaves that case exactly as it was. It is the same trump principle `shedCard`
+  applies when the trick is lost; the winners branch simply had no equivalent.
+
+  Reported from hand 4 (2026-08-03): the picker overtook her partner's K♦ lead
+  from third seat with A♦ while holding J♦, and a defender took the trick with
+  Q♥ for 21. The exact solver scores all three legal cards at **cost 0** — the
+  defence had that hand regardless — so double-dummy cannot anchor this one.
+  PIMC over 10,000 worlds consistent with what she could actually see says J♦ is
+  worth **+2.3 points and +4.7pp of win rate** over A♦ (~11 SE). Pinned in
+  `scripts/aiskilltest.mjs` with two negative controls (a secure trick, which
+  must still spend the Ace; and unequal-equity winners, which must be
+  unchanged), and the position is `scripts/scenarios/hand4-patty-ad.mjs`.
+
+  `OVERTAKE_SPEND_SECURITY = 0.5` is swept, not chosen — 20,000 hands x 4 seeds
+  per point, variant in one seat against four with the rule off:
+
+      gate    0.2     0.35    0.5     0.65    0.85    0.95    1.0
+      mean  -0.0002 +0.0005 +0.0009 +0.0007 +0.0001 +0.0000 -0.0005
+
+  Unimodal with both ends negative, which is what a gate doing real work looks
+  like: at 1.0 — fire whenever the trick is less than certain — the rule is
+  worse than never firing at all.
+
+  **The aggregate does not establish this, and the entry says so on purpose.**
+  It fires on 0.83% of contested decisions (~0.08/hand, 77% of them the picker,
+  withholding 7.7 points on average), which the whole-hand average dilutes about
+  twelvefold. Pooled across configurations, gate 0.5 is favoured in 13 of 20
+  sub-samples — not significant. A firing-restricted paired harness (same deals,
+  conditioned on the rule having changed a card, null-tests to zero firings)
+  reads **+0.11 per firing ± 0.11** over 568 firings, whose implied whole-hand
+  effect of +0.00054 agrees with the abtest range. So: positive-leaning at about
+  1 SE, resting — as `SCHMEAR_KEEP_EQUITY` already does — on the pinned hand and
+  on the mechanism rather than on the aggregate.
+
+- **`scripts/abtest.mjs` deals are not reproducible across runs, and the null
+  test cannot detect it.** `dealWith` takes its 32 cards from `freshHand`, which
+  has already shuffled them with unseeded `Math.random()`, then applies its
+  seeded Fisher-Yates on top; shuffling an already-randomised array composes
+  with that randomness instead of replacing it, so the seed does not pin the
+  deal. The A/B itself is unaffected — both arms get the same `start`, so the
+  pairing that gives the harness its sensitivity is intact — but "ahead in k of
+  n seeds" is a **fresh draw every invocation**, not a fixed population. Found
+  the expensive way: a 4-of-4 result at gate 0.5 failed to replicate as 4-of-8
+  on the identical command. Note the exact-zero null test says nothing about
+  this, since identical policies play identically on whatever deal they are
+  given. Not fixed here — fixing it changes every historical number in this
+  file — but it is why a k-of-n from one run should be re-run before it is
+  believed.
+
 ## [0.48.0] - 2026-08-02 (`ba00fa9`)
 - **`trickSecurity` now prices a beater by whether its holder could legally
   *play* it.** Holding a card that beats the trick is not the same as being
