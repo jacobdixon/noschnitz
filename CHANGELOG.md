@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.1] - 2026-08-03
+## [0.49.1] - 2026-08-03 (`d9fce44`)
 - **The tuning harnesses were not seeded, and had not been for a long time.**
   `dealWith` in `abtest.mjs`, `coalitiontest.mjs` and `undertest.mjs` took the 32
   cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
