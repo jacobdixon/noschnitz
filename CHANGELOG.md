@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.0] - 2026-08-03 (`fe83387`)
+## [0.50.0] - 2026-08-03 (`pending`)
 Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
 change; it was developed as two and the halves are kept separate below.
 
@@ -156,6 +156,100 @@ change; it was developed as two and the halves are kept separate below.
   the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
   The seat actions were already folded into one route for this reason. The next
   one has to fold too.
+
+## [0.49.0] - 2026-08-03 (`f708d16`)
+- **The AI no longer bleeds with a fat trump when a cheaper one is available.**
+  "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
+  on the diamonds that reads exactly backwards on price: A-D and 10-D rank below
+  every Jack while carrying 11 and 10 points, so the weakest trump in a hand is
+  routinely the fattest card in it. Both bleed paths — the picker's and the
+  defender's all-trump line — picked that card. New `bleedTrump` skips a fat
+  trump when a cheaper one exists and the fat one can still be beaten; a fat
+  trump nothing can beat is still a fine lead and stays eligible.
+
+  This is the bleed half of an objection the engine already sustained on the
+  press path (`leadDonatesPoints`, 0.44.0). The two have separate switches on
+  purpose — `guardFatTrumpBleed` and `guardFatTrumpLead` — because an A/B that
+  moves both at once cannot attribute either.
+
+  Found in a real hand, now pinned as `scripts/scenarios/hand8-fonzie-ad.mjs`
+  with a constructed assertion and a negative control in `aiskilltest`: a
+  defender with every Queen already gone held A-D and three Jacks, so the only
+  card left in the deck that could beat anything of theirs was the J-H. The
+  engine led A-D — weakest of the four by power, dearest by ten points — into a
+  lone picker who, on the evidence visible at the time, held that J-H about 83%
+  of the time. PIMC scores J-D ahead by 7.4 points and 30 points of schneider
+  rate over 12,000 sampled worlds.
+
+  Measured at **+0.252 per firing on 0.37% of hands, ahead in 5 of 5 seeds**
+  (100,000 hands). The whole-hand aggregate is -0.0009/seat/hand, which is
+  noise, and that is the point — see the new harness below.
+- **New harness `scripts/firingtest.mjs` (`npm run firingtest`).** `abtest`
+  measures a variant over every hand, which is the wrong denominator for a rule
+  that touches few. A guard firing on half a percent of hands and worth five
+  points when it does moves the whole-hand aggregate by about 0.03 — noise at
+  any sample size this project runs — so `abtest` reports "no effect" for a
+  change that is plainly correct. This splits the population by whether the
+  option actually changed a card, and reports firing rate, per-firing delta and
+  the `abtest` number side by side so the two are compared rather than confused.
+
+  Two rules in `engine.js` were already tuned this way with throwaway scripts
+  rebuilt from scratch each time (see the notes in `aiskilltest`). This is that
+  script, kept. It null-tests to exactly zero on both columns with nothing
+  firing, and `npm test` asserts it.
+- **PIMC reports a schneider rate next to the win rate.** The win rate goes flat
+  at exactly the decisions where it is least useful: in a hand already decided,
+  every candidate reads 100% and the ranking silently falls back to a mean whose
+  units nobody is paid in. Schneider is the boundary still live in those hands,
+  and it doubles the stake, so it gets its own column. It uses the same one-point
+  asymmetry as the win line (`scoreHand`): the picker's team is schneidered at
+  <= 30 and the defenders at <= 29, so schneidering the *other* side needs 90 as
+  a defender and 91 as a picker. On the hand above, all four legal leads won 100%
+  of sampled worlds while the schneider rate ranged from 49.5% to 89.9% — the
+  entire content of the decision was invisible in the old report.
+- **New scenario `hand8-fonzie-ad.mjs`**, transcribed from a recap screenshot and
+  verified against the printed score before anything was run. Worth keeping as a
+  reference case for the exact/PIMC disagreement this workflow exists to surface:
+  double-dummy all four leads are *identical* (29 to the picker, schneider either
+  way), while PIMC separates them by 8.3 points, because the deciding seat could
+  not know where the one outstanding higher trump was.
+- **Standing order added to `CLAUDE.md`: open a PR for finished work without
+  being asked, and merge it once the tests pass.** `master` is protected and
+  takes no direct pushes, so a branch with no PR is work parked where nothing
+  picks it up. Spells out that a check which never queued is not a failing check,
+  that a red check always blocks, and that `master` gets watched *after* the
+  merge too — `Release` is gated on CI succeeding there.
+
+## [0.48.1] - 2026-08-02 (`897fd68`)
+- **The collected corpus was mined for the first time, and the answer was "no signal".**
+  Docs only, no code change. 131 hands off beta, 126 gradeable, 445 real decisions,
+  142 disagreements with the engine, net **+72 points to the human** — noise, and the
+  shape says why: **87 of the 142 disagreements (61%) cost exactly the same either
+  way.** Of the 55 that mattered the human was better 31 times at +9.2 average and the
+  engine 24 times at −8.9, and 31-vs-24 sits inside one standard deviation of a coin
+  flip. Both sides make real mistakes at the same rate and the same size.
+  - Recorded as a result rather than a dead end. "No large systematic gap against a
+    competent human" is the strongest claim 55 decisions support, and it is worth
+    knowing before anyone re-tunes anything on a hunch.
+  - The one lead — `trick=1`, highest win share at 38%, and the three largest
+    single-decision gaps in the corpus — is filed **with the reason to distrust it**:
+    trick 1 is precisely where double-dummy flatters the human, because nothing is
+    known yet and DD judges with every hand visible. Trick 1 topping that table is what
+    the bias alone would produce.
+  - Also filed: the feature table double-counts, because every decision emits seven
+    features and one big-delta decision lights up seven rows.
+- **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+  then nothing. The promotion moved players to www, whose hands go to a different
+  database. Next run should read www; beta's corpus is now a fixed historical artifact
+  spanning nine engine versions.
+- **Mining cost measured on a real runner**: ~16s a hand, 131 hands in 35 minutes, plus
+  ~7 minutes for the `--selftest 30` preamble. The old note said ~24s from a slow box.
+- Next-session cleanup list written into CLAUDE.md, ordered by what pays: point mining
+  at www, record multiplayer hands, **give `minehands` a significance story** (it
+  reports a signed total and nothing about spread, so a net built from two heavy tails
+  reads exactly like a real edge — that gap is why this run needed a human to say "that
+  is noise"), fix the double-counting, and try grading from trick 2 to see whether any
+  cluster survives without the position DD is worst at.
 
 ## [0.48.0] - 2026-08-02 (`ba00fa9`)
 - **`trickSecurity` now prices a beater by whether its holder could legally

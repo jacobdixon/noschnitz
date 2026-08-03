@@ -1506,6 +1506,41 @@ function leadDonatesPoints(g, idx, card, opts = {}) {
   return isTrump(card) && cardPts(card) >= FAT_TRUMP_POINTS && cardEquity(g, idx, card) > 0;
 }
 
+// Which trump to bleed with, once the decision to lead trump has been made.
+//
+// "Weakest trump" has always meant weakest by trick-taking POWER, and for the
+// diamonds that reads exactly backwards on price: A-D and 10-D rank below every
+// Jack while carrying 11 and 10 points, so the weakest trump in a hand is
+// routinely the fattest card in it. Leading it is not a bleed, it is a
+// donation — the identical objection `leadDonatesPoints` already sustains on
+// the press path, applied to the path that actually picks the card.
+//
+// Found in a real hand (scripts/scenarios/hand8-fonzie-ad.mjs): a defender with
+// every Queen already gone held A-D and three Jacks, so the only card left that
+// could beat anything of theirs was the J-H. The bleed rule sent A-D — weakest
+// of the four by power, dearest by ten points — into a lone picker who, on the
+// evidence visible at the time, held that J-H about 83% of the time. J-D does
+// the identical flushing job for two points and leaves A-D protected behind two
+// untouchable Jacks. PIMC scores the difference at 7.4 points and 30 points of
+// schneider rate over 12,000 sampled worlds.
+//
+// A fat trump nothing can beat is still a fine lead, and stays eligible: the
+// equity test is what separates "donation" from "banking eleven points on a
+// trick we were always going to win".
+//
+// `opts.guardFatTrumpBleed === false` disables it, for measurement. It is
+// deliberately a DIFFERENT switch from `guardFatTrumpLead`: the two guard the
+// two halves of one idea, and an A/B that moves both at once cannot attribute
+// either.
+function bleedTrump(g, idx, trumps, opts = {}) {
+  if (opts.guardFatTrumpBleed === false) return trumps[trumps.length - 1];
+  const cheap = trumps.filter(
+    (c) => cardPts(c) < FAT_TRUMP_POINTS || cardEquity(g, idx, c) === 0,
+  );
+  const pool = cheap.length ? cheap : trumps;
+  return pool[pool.length - 1];
+}
+
 export function aiChooseCard(g, idx, opts = {}) {
   // Last two tricks: solve exactly rather than using heuristics, and let the
   // heuristics settle any tie the solve leaves behind — see solveEndgameCard.
@@ -1582,7 +1617,7 @@ export function heuristicCard(g, idx, opts = {}) {
         // leading the top trump, +0.007 for always leading the weakest).
         return isPowerTrump(trumps[0]) || cardEquity(g, idx, trumps[0]) <= 1
           ? trumps[0]
-          : trumps[trumps.length - 1];
+          : bleedTrump(g, idx, trumps, opts);
       }
       // Reached only with a hand of pure fail, so the trump-lead rule above has
       // already declined to fire. Note this makes the picker's "call for the
@@ -1611,7 +1646,8 @@ export function heuristicCard(g, idx, opts = {}) {
       const nonCalled = fails.filter((c) => c.suit !== g.calledSuit);
       if (nonCalled.length) return nonCalled.sort((a, b) => cardPts(a) - cardPts(b))[0];
       if (fails.length) return fails.sort((a, b) => cardPts(a) - cardPts(b))[0];
-      return trumps.length ? trumps[trumps.length - 1] : legal[0];
+      // Reached on an all-trump hand, where leading trump is not a choice.
+      return trumps.length ? bleedTrump(g, idx, trumps, opts) : legal[0];
     }
   }
 

@@ -379,20 +379,29 @@ export function runPimc(scenario) {
   // numbers — the picker's team needs 61, the defenders 60, because a 60-60
   // tie goes to the defenders (same asymmetry `scoreHand` documents).
   const winLine = iAmOnPickerTeam ? 61 : 60;
+  // The win rate goes flat at exactly the decisions where the hand is already
+  // decided — every candidate reads 100%, and the ranking then rests on a mean
+  // whose units nobody is paid in. Schneider is the boundary still live in
+  // those hands, and it doubles the hand, so it gets its own column. Same
+  // asymmetry as the win line, one point tighter on each side (see scoreHand):
+  // the picker's team is schneidered at <= 30, the defenders at <= 29, so
+  // schneidering the OTHER side needs 90 as a defender and 91 as a picker.
+  const schneiderLine = iAmOnPickerTeam ? 91 : 90;
   const results = [...totalsByCard.values()].map(({ card, vals }) => ({
     card, mean: mean(vals), stderr: stderr(vals), n: vals.length,
     winRate: vals.filter((v) => v >= winLine).length / vals.length,
+    schneiderRate: vals.filter((v) => v >= schneiderLine).length / vals.length,
   })).sort((a, b) => b.mean - a.mean);
 
   return {
     player, playerName: names[player], decisionTeam: iAmOnPickerTeam ? "picker team" : "defenders",
-    actualCard, results, samples, winLine,
+    actualCard, results, samples, winLine, schneiderLine,
   };
 }
 
-export function printReport({ playerName, decisionTeam, actualCard, results, samples, winLine }) {
+export function printReport({ playerName, decisionTeam, actualCard, results, samples, winLine, schneiderLine }) {
   console.log(`PIMC — ${playerName}'s decision (${decisionTeam}), ${samples} sampled worlds, common-random-numbers across candidates`);
-  console.log(`points are ${decisionTeam}'s own total out of 120; a win needs ${winLine}\n`);
+  console.log(`points are ${decisionTeam}'s own total out of 120; a win needs ${winLine}, a schneider ${schneiderLine}\n`);
   const best = results[0];
   for (const r of results) {
     const tag = cid(r.card) === cid(actualCard) ? "  <- actually played" : "";
@@ -400,7 +409,8 @@ export function printReport({ playerName, decisionTeam, actualCard, results, sam
     console.log(
       `  ${fmt(r.card).padEnd(5)} avg ${r.mean.toFixed(2).padStart(7)} pts` +
       `  (±${r.stderr.toFixed(2)} SE, ${gap === 0 ? "  best" : gap.toFixed(2).padStart(6) + " vs best"})` +
-      `   wins ${(100 * r.winRate).toFixed(1).padStart(5)}%${tag}`
+      `   wins ${(100 * r.winRate).toFixed(1).padStart(5)}%` +
+      `   schneider ${(100 * r.schneiderRate).toFixed(1).padStart(5)}%${tag}`
     );
   }
 }

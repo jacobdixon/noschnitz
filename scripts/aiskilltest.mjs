@@ -1507,6 +1507,61 @@ const trick2 = [
 }
 
 {
+  // The BLEED half of the same idea, from a real hand — see
+  // scripts/scenarios/hand8-fonzie-ad.mjs and the note above `bleedTrump`.
+  //
+  // Fonzie (seat 4, defending a lone picker) holds nothing but trump, so the
+  // defender lead branch falls through to its all-trump line and the only
+  // question is WHICH trump. Every Queen has already fallen, so the single card
+  // left in the deck that beats anything Fonzie holds is the J-H. A-D is the
+  // weakest of his four by power and the dearest by ten points, which is
+  // exactly the trap: "lead the weakest trump" reads backwards on the diamonds.
+  const g = position({
+    hands: [
+      [C("7", "S"), C("A", "C"), C("8", "H"), C("10", "H")],   // You
+      [C("7", "C"), C("10", "C"), C("K", "H"), C("8", "C")],   // Miller
+      [C("K", "C"), C("K", "S"), C("8", "S"), C("9", "S")],    // Gus
+      [C("J", "H"), C("7", "D"), C("8", "D"), C("10", "D")],   // Patty — picker, alone
+      [C("A", "D"), C("J", "D"), C("J", "S"), C("J", "C")],    // Fonzie — on lead
+    ],
+    played: [
+      C("9", "H"), C("7", "H"), C("Q", "H"), C("Q", "C"), C("9", "D"),
+      C("Q", "D"), C("Q", "S"), C("K", "D"), C("A", "H"), C("A", "S"),
+    ],
+    buried: [C("10", "S"), C("9", "C")],
+    picker: 3, partner: null,
+    calledSuit: null, calledAcePlayed: true, tricksDone: 2, leader: 4, turn: 4,
+  });
+
+  check("Fonzie holds only trump, so the all-trump lead line is what's live",
+    legalPlays(g, 4).every(isTrump) && legalPlays(g, 4).length === 4);
+  check("A-D is the WEAKEST of the four by power — why the old rule chose it",
+    [...legalPlays(g, 4)].sort((a, b) => trumpPower(a) - trumpPower(b))[0].rank === "A");
+  check("and the dearest of them by ten points",
+    cardPts(C("A", "D")) === 11 && cardPts(C("J", "D")) === 2);
+  check("the J-H is the only unaccounted card that beats A-D",
+    cardEquity(g, 4, C("A", "D")) === 1);
+  check("while the two black Jacks are boss, which is what protects A-D later",
+    cardEquity(g, 4, C("J", "C")) === 0 && cardEquity(g, 4, C("J", "S")) === 0);
+
+  // NEGATIVE CONTROL. If this ever passes alongside the assertion below, the
+  // position has stopped reproducing the bug and the case is worthless.
+  check("with the bleed guard disabled it still donates the fat ace, as it used to",
+    cid(aiChooseCard(g, 4, { guardFatTrumpBleed: false })) === "AD",
+    `led ${cid(aiChooseCard(g, 4, { guardFatTrumpBleed: false }))}`);
+
+  const pick = aiChooseCard(g, 4);
+  check("bleeds with J-D instead, keeping A-D behind two untouchable Jacks",
+    cid(pick) === "JD", `led ${cid(pick)}`);
+
+  // The two switches guard different halves and must stay independent —
+  // otherwise an A/B that moves one cannot attribute the result.
+  check("the press guard's switch does not reach the bleed path",
+    cid(aiChooseCard(g, 4, { guardFatTrumpLead: false })) === "JD",
+    `led ${cid(aiChooseCard(g, 4, { guardFatTrumpLead: false }))}`);
+}
+
+{
   // And the guard must not leak into the measured trump-lead rule. A lone fat
   // trump is still led — pulling trump is worth more than the points it risks,
   // which is the +0.019/seat/hand result the leading block documents. This
