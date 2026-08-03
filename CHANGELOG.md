@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.53.1] - 2026-08-03 (`PENDING`)
+## [0.53.1] - 2026-08-03 (`5d4c220`)
 - **The hand-analysis skill now says to answer the question and stop**, which the
   evaluation says is its most valuable instruction rather than a matter of tone.
   The failure mode is not getting a hand wrong, it is not stopping: a question
