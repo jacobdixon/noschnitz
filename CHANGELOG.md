@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.51.1] - 2026-08-03 (`PENDING`)
+## [0.51.1] - 2026-08-03 (`bbcad41`)
 - **`pimcmine`'s cost estimate is cross-fitted, because the obvious one is
   biased upward and the bias is not small.** Regret is a MAX over cards of means
   estimated from a finite sample, so whichever card's sampling error ran highest
