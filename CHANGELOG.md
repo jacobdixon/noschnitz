@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.54.1] - 2026-08-03 (`PENDING`)
+## [0.54.1] - 2026-08-03 (`a85a6e7`)
 - **`pimc`'s summary line stated the opposite of what happened when the played
   card won more often.** The win-rate delta was wrapped in `Math.abs`, so a card
   that cost points while WINNING more often — trading wins for schneider margin,
