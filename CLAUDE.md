@@ -306,6 +306,34 @@ Unchanged rules:
   Read the sign and the seed count, not one number — a change worth keeping is
   consistent across seeds. It null-tests to exactly `+0.0000`, which is what makes a
   small result trustworthy.
+  - **The null test proves the PAIRING, not reproducibility, and for a long time
+    those deals were not reproducible at all.** Until 0.49.1 `dealWith` seeded-shuffled
+    the cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
+    RNG — and a Fisher-Yates composes with the shuffle underneath instead of replacing
+    it. So "seed 3" named a fresh population every run. The null test cannot catch
+    this in any of these harnesses, because two identical arms play identically
+    whatever deal they are handed and still difference to exactly zero. Fixed in all
+    three (`abtest`, `coalitiontest`, `undertest`) by shuffling from `ALL_CARDS`.
+    **Any seed-level number recorded before 0.49.1 was a fresh draw and will not
+    reproduce**, which is exactly how a 4-of-4 sweep result in 0.49.0 evaporated to
+    4-of-8 on re-run. The paired comparison between arms was never affected, so the
+    conclusions those numbers supported still stand — only their reproducibility was
+    ever wrong. `undertest` was the sharper risk: it *asserts*, so it could have
+    passed on a PR and failed on master for the same commit, which per the deploy
+    section withholds the beta deploy rather than merely going red.
+- **`scripts/firingtest.mjs` is the harness for a rule that fires rarely, and
+  reaching for `abtest` first will tell you there is no effect when there is one.**
+  It is the same paired A/B, scored only on the hands where the variant actually
+  changed a card — divergence in the seat's play sequence, an event settled at the
+  decision point rather than by the outcome, so the restriction is not circular.
+  Built in 0.49.0 for a rule firing on 0.83% of decisions, which `abtest` diluted
+  about twelvefold into noise (+0.0009 in 4 of 4, then +0.0002 in 4 of 8 on re-run);
+  restricted to firings the same change reads +0.0666 ± 0.0317 over 3,629 of them.
+  The two agree once the dilution is undone, and that agreement is the check worth
+  running — they share the deal code but not the denominator. Its control arm forces
+  the variant's own keys off rather than inheriting the shipped default, so it
+  measures the same thing before and after you change a constant. Null-test it by
+  passing a variant that cannot fire: 0 firings, exactly `+0.0000`.
 - **`scripts/coalitiontest.mjs` is the second harness, and you need it for any rule
   about co-operating with teammates.** A one-seat A/B structurally cannot see those:
   one defender can stand down while the other two still contest the trick, so that seat

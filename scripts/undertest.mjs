@@ -22,14 +22,23 @@
    a hand that cannot be played honestly.
    ========================================================================= */
 import {
-  callOptions, legalPlays, applyPlay, resolveTrick, trickWinner, cardPts, cid,
-  isTrump, viewFor, freshHand, aiBuryAndCall, aiChooseCard, assignPartner,
-  handStrength, sortHand, scoreHand, chooseUnderCard,
+  ALL_CARDS, callOptions, legalPlays, applyPlay, resolveTrick, trickWinner,
+  cardPts, cid, isTrump, viewFor, freshHand, aiBuryAndCall, aiChooseCard,
+  assignPartner, handStrength, sortHand, scoreHand, chooseUnderCard,
 } from "../src/engine.js";
 
 // Deterministic deals, so a failure here is reproducible. freshHand() shuffles
 // off its own RNG; this replays a seeded shuffle over the same 32 cards, the
 // way the A/B harness does.
+//
+// The shuffle base is ALL_CARDS, a fixed canonical order, and that detail is
+// what makes the sentence above TRUE — see the note in abtest.mjs. Until
+// 2026-08-03 this reshuffled the cards as freshHand left them, which composes
+// with makeDeck's unseeded shuffle instead of replacing it, so these deals were
+// re-drawn on every run. That mattered more here than in the A/B harnesses:
+// this file asserts, so an assertion that holds for most deals but not all was
+// free to pass locally and fail on master, and a marginal test in this repo
+// withholds the beta deploy rather than merely going red (see CLAUDE.md).
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -41,7 +50,7 @@ function mulberry32(a) {
 function dealWith(seed) {
   const g = freshHand(seed % 5, [0, 0, 0, 0, 0], 1);
   const rand = mulberry32(seed + 1);
-  const deck = [...g.hands.flat(), ...g.blind];
+  const deck = [...ALL_CARDS];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];

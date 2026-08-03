@@ -16,7 +16,7 @@
    Usage: node scripts/coalitiontest.mjs <hands> [--seeds n] [--opt k=v ...]
    ========================================================================= */
 import {
-  freshHand, assignPartner, applyPlay, resolveTrick,
+  ALL_CARDS, freshHand, assignPartner, applyPlay, resolveTrick,
   handStrength, aiBuryAndCall, aiChooseCard, scoreHand,
 } from "../src/engine.js";
 
@@ -28,9 +28,14 @@ function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+// Shuffles from ALL_CARDS, a fixed canonical order, NOT from the cards as
+// freshHand left them — see the long note on the same function in abtest.mjs.
+// Reshuffling an already-shuffled array composes with the unseeded shuffle
+// underneath rather than replacing it, which made these deals unreproducible
+// across runs while looking seeded.
 function dealWith(rand, dealer) {
   const g = freshHand(dealer, [0, 0, 0, 0, 0], 1);
-  const deck = [...g.hands.flat(), ...g.blind];
+  const deck = [...ALL_CARDS];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];

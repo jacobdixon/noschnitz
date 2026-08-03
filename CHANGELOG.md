@@ -6,6 +6,61 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.49.1] - 2026-08-03
+- **The tuning harnesses were not seeded, and had not been for a long time.**
+  `dealWith` in `abtest.mjs`, `coalitiontest.mjs` and `undertest.mjs` took the 32
+  cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
+  RNG — and ran its seeded Fisher-Yates over that. A shuffle over an already
+  shuffled array composes with the one underneath rather than replacing it: the
+  seeded stream chooses positions, and which card sat at each position was
+  already random. So "seed 3" named a different population on every run. All
+  three now shuffle from `ALL_CARDS`, a fixed canonical order, and re-running any
+  of them reproduces byte-identically.
+
+  **The null test could never have caught this**, which is why it survived: two
+  identical arms play the same cards whatever deal they are handed, so the
+  difference is exactly `+0.0000` either way. That number validates the pairing
+  between arms and says nothing about reproducibility — a distinction CLAUDE.md
+  now makes explicitly, because it previously cited the exact zero as the reason
+  small results were trustworthy.
+
+  What it cost in 0.49.0: a sweep point that read "ahead in 4 of 4 seeds" and
+  then came back 4 of 8 when re-run, which looked like the effect evaporating and
+  was really a fresh draw. The paired comparison between arms was never affected,
+  so conclusions already drawn from these harnesses stand — only their
+  reproducibility was ever wrong. `undertest.mjs` was the sharper risk of the
+  three, because it *asserts*: an assertion true of most deals but not all could
+  pass on a PR and fail on `master` for the identical commit, and a marginal test
+  here withholds the beta deploy rather than merely going red.
+
+- **New harness: `scripts/firingtest.mjs`** (`npm run firingtest`), for rules
+  that fire rarely enough that `abtest` structurally cannot see them. Same paired
+  A/B, scored only on hands where the variant actually changed a card. The
+  restriction is on divergence in the seat's play sequence — settled at the
+  decision point by the position, not by how the hand ended — so it conditions on
+  the decision rather than the outcome. Its control arm forces the variant's own
+  keys off instead of inheriting the shipped default, so it measures the same
+  quantity before and after a constant changes. Null-tests to 0 firings and
+  exactly `+0.0000`.
+
+- **Corrected: the 0.49.0 measurement was understated, and one of the two numbers
+  reported for it was confounded.** The throwaway version of the harness above
+  gave the *variant* seat the rule and left the other four on the shipped default
+  — which by then was already `0.5`, so the test arm had the rule live in all
+  five seats while the control had it off in all five, and only one seat's
+  divergence was being watched. Rebuilt as a true one-seat A/B on the fixed
+  sampler, `OVERTAKE_SPEND_SECURITY = 0.5` measures:
+
+      +0.2095 per firing +/- 0.0466 SE   (2,999 firings, 30,000 hands x 22)
+      4.49 SE from zero, ahead in 20 of 22 seeds
+
+  against the `+0.0666 +/- 0.0317` recorded under 0.49.0. Implied whole-hand
+  effect **+0.00099/seat/hand**, which lands on the `+0.0009` the original 4-seed
+  abtest sweep reported — so that first sweep was right, and the 4-of-8 re-run
+  that appeared to contradict it was the unlucky draw. The rule is a clearly
+  positive change, not the marginal one 0.49.0 claims; that entry is left as
+  written rather than edited, because the sequence is the useful part.
+
 ## [0.49.0] - 2026-08-03 (`e85447a`)
 - **The cheapest-winner rule now measures "cheapest" in points when rank is
   provably free.** Taking a trick with the weakest card that wins it is right,

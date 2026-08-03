@@ -22,7 +22,7 @@
      node scripts/abtest.mjs 4000 --seeds 3 --opt overtakeMinGain=0.10
    ========================================================================= */
 import {
-  freshHand, assignPartner, applyPlay, resolveTrick,
+  ALL_CARDS, freshHand, assignPartner, applyPlay, resolveTrick,
   handStrength, aiBuryAndCall, aiChooseCard, scoreHand,
 } from "../src/engine.js";
 
@@ -36,11 +36,23 @@ function mulberry32(a) {
   };
 }
 
-// freshHand deals off makeDeck()'s own shuffle, so to replay a deal we shuffle
-// the hands ourselves from a seeded stream and overwrite what it produced.
+// freshHand deals off makeDeck()'s own unseeded shuffle, so to replay a deal we
+// shuffle from a seeded stream and overwrite what it produced.
+//
+// The base of that shuffle must be ALL_CARDS — a fixed canonical order — and
+// NOT the cards as freshHand left them. Fisher-Yates over an already-shuffled
+// array composes with the shuffle underneath it instead of replacing it: the
+// seeded stream picks *positions*, and which card sits at each position was
+// already randomised by makeDeck. This read as seeded for a long time and was
+// not, and the null test cannot catch it, because two identical arms play the
+// same cards whatever deal they are handed and still difference to exactly
+// zero. What it cost: a real 4-seed sweep result that looked consistent at
+// "ahead in 4 of 4" and then failed to reproduce, because re-running drew a
+// fresh population rather than the same one. Found 2026-08-03; the pairing
+// between arms was never affected, only reproducibility across runs.
 function dealWith(rand, dealer) {
   const g = freshHand(dealer, [0, 0, 0, 0, 0], 1);
-  const deck = [...g.hands.flat(), ...g.blind];
+  const deck = [...ALL_CARDS];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
