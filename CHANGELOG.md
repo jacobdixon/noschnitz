@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.1] - 2026-08-02
+## [0.48.1] - 2026-08-02 (`897fd68`)
 - **The collected corpus was mined for the first time, and the answer was "no signal".**
   Docs only, no code change. 131 hands off beta, 126 gradeable, 445 real decisions,
   142 disagreements with the engine, net **+72 points to the human** — noise, and the
