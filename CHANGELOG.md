@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.51.0] - 2026-08-03 (`PENDING`)
+## [0.51.0] - 2026-08-03 (`634333c`)
 - **The AI plays the last two tricks with perfect information, and now there is
   a test that says so.** `aiChooseCard` dispatches tricks 5-6 to
   `solveEndgameCard`, which recurses over `g.hands` — all five of them — so from
