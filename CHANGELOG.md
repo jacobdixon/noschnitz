@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.3] - 2026-08-03 (`PENDING`)
+## [0.58.3] - 2026-08-03 (`07d965e`)
 A card played under rendered **face up** on a multiplayer table (#113). Two
 defects, one cause, so they are fixed together.
 
