@@ -368,6 +368,43 @@ reported as engine errors. Run the evals.
   Read the sign and the seed count, not one number — a change worth keeping is
   consistent across seeds. It null-tests to exactly `+0.0000`, which is what makes a
   small result trustworthy.
+  - **The null test proves the PAIRING, not reproducibility, and for a long time
+    those deals were not reproducible at all.** Until 0.58.2 `dealWith` seeded-shuffled
+    the cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
+    RNG — and a Fisher-Yates composes with the shuffle underneath instead of replacing
+    it. So "seed 3" named a fresh population every run. The null test cannot catch
+    this in any of these harnesses, because two identical arms play identically
+    whatever deal they are handed and still difference to exactly zero. Fixed in all
+    four (`abtest`, `coalitiontest`, `undertest`, `firingtest`) by shuffling from
+    `ALL_CARDS`.
+    **Any seed-level number recorded before 0.58.2 was a fresh draw and will not
+    reproduce**, which is exactly how a 4-of-4 sweep result in 0.58.1 evaporated to
+    4-of-8 on re-run. The paired comparison between arms was never affected, so the
+    conclusions those numbers supported still stand — only their reproducibility was
+    ever wrong. `undertest` was the sharper risk: it *asserts*, so it could have
+    passed on a PR and failed on master for the same commit, which per the deploy
+    section withholds the beta deploy rather than merely going red.
+- **`scripts/firingtest.mjs` is the harness for a rule that fires rarely, and
+  reaching for `abtest` first will tell you there is no effect when there is one.**
+  Same paired A/B, split by whether the option actually changed a card. The probe
+  runs against the CONTROL line of play — at each decision it asks whether the
+  variant *would* have chosen differently — which counts the decisions the seat
+  really faced; once the arms diverge, "would it differ here" has stopped being a
+  question about the same hand. It prints the whole-hand `abtest` number beside
+  the per-firing one on purpose, so the two get compared instead of confused.
+  Read the per-firing figure WITH the firing rate: a big effect on a rule firing
+  twice in ten thousand hands is still a rounding error.
+  - **It was built twice on the same day, by two people who did not know the
+    other was doing it** (0.49.0 for `guardFatTrumpBleed`, 0.58.1 for
+    `OVERTAKE_SPEND_SECURITY`), which is the strongest argument that the
+    denominator objection is real and not a rationalisation for a weak result.
+    Both landed per-firing effects of the same size, +0.252 and +0.210, on rules
+    whose whole-hand aggregates were flat or negative noise. **If a change you
+    believe in reads as nothing in `abtest`, check the firing rate before
+    concluding anything** — 0.58.1 spent an entire measurement pass concluding
+    "not established" from a diluted number that was, undiluted, a 4.5 SE effect.
+  - Null-test it by passing a variant that cannot fire: 0 firings, exactly
+    `+0.0000`. `npm test` asserts that.
 - **`scripts/coalitiontest.mjs` is the second harness, and you need it for any rule
   about co-operating with teammates.** A one-seat A/B structurally cannot see those:
   one defender can stand down while the other two still contest the trick, so that seat

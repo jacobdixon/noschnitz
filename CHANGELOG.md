@@ -6,6 +6,171 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.2] - 2026-08-03 (`d9fce44`)
+> Numbering note: this and 0.58.1 were written as 0.49.0/0.49.1, renumbered to
+> 0.49.1/0.49.2 when #124 took 0.49.0, and renumbered again on merge because
+> `master` reached 0.58.0 while the PR was open. Their commit subjects carry the
+> older numbers; the entries here are authoritative. Worth reading #124 (0.49.0)
+> alongside 0.58.1 below — the same insight, found independently on two different
+> code paths the same day, which is the most useful thing about either of them.
+
+- **The tuning harnesses were not seeded, and had not been for a long time.**
+  `dealWith` in `abtest.mjs`, `coalitiontest.mjs`, `undertest.mjs` **and
+  `firingtest.mjs`** (the last arriving from #124 while this was in flight) took
+  the 32 cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
+  RNG — and ran its seeded Fisher-Yates over that. A shuffle over an already
+  shuffled array composes with the one underneath rather than replacing it: the
+  seeded stream chooses positions, and which card sat at each position was
+  already random. So "seed 3" named a different population on every run. All
+  four now shuffle from `ALL_CARDS`, a fixed canonical order, and re-running any
+  of them reproduces byte-identically.
+
+  **The null test could never have caught this**, which is why it survived: two
+  identical arms play the same cards whatever deal they are handed, so the
+  difference is exactly `+0.0000` either way. That number validates the pairing
+  between arms and says nothing about reproducibility — a distinction CLAUDE.md
+  now makes explicitly, because it previously cited the exact zero as the reason
+  small results were trustworthy.
+
+  What it cost in 0.58.1: a sweep point that read "ahead in 4 of 4 seeds" and
+  then came back 4 of 8 when re-run, which looked like the effect evaporating and
+  was really a fresh draw. The paired comparison between arms was never affected,
+  so conclusions already drawn from these harnesses stand — only their
+  reproducibility was ever wrong. `undertest.mjs` was the sharper risk of the
+  three, because it *asserts*: an assertion true of most deals but not all could
+  pass on a PR and fail on `master` for the identical commit, and a marginal test
+  here withholds the beta deploy rather than merely going red.
+
+- **`scripts/firingtest.mjs` was built twice, independently, on the same day.**
+  #124 needed it for `guardFatTrumpBleed` (0.37% of hands) and this branch needed
+  it for `OVERTAKE_SPEND_SECURITY` (0.83% of decisions); neither knew about the
+  other. #124's landed first and is the one kept — its firing probe runs against
+  the CONTROL line of play, asking at each decision whether the option *would*
+  have chosen differently, which counts the decisions the seat actually faced;
+  the version here diffed the two arms' play sequences, which stops being a
+  question about the same hand once they diverge. It also prints the whole-hand
+  abtest number beside the per-firing one, so the two are compared rather than
+  confused. Only the seeding fix above is carried over onto it.
+
+  That two independent attempts at the same problem produced the same harness,
+  the same denominator objection and per-firing effects of the same size
+  (+0.252 there, +0.210 here) is better evidence that the instrument is right
+  than either measurement is on its own.
+
+- **Corrected: the 0.58.1 measurement was understated, and one of the two numbers
+  reported for it was confounded.** The throwaway version of that harness gave
+  the *variant* seat the rule and left the other four on the shipped default
+  — which by then was already `0.5`, so the test arm had the rule live in all
+  five seats while the control had it off in all five, and only one seat's
+  divergence was being watched. Rebuilt as a true one-seat A/B on the fixed
+  sampler, `OVERTAKE_SPEND_SECURITY = 0.5` measures:
+
+      +0.2095 per firing +/- 0.0466 SE   (2,999 firings, 30,000 hands x 22)
+      4.49 SE from zero, ahead in 20 of 22 seeds
+
+  against the `+0.0666 +/- 0.0317` recorded under 0.58.1. Implied whole-hand
+  effect **+0.00099/seat/hand**, which lands on the `+0.0009` the original 4-seed
+  abtest sweep reported — so that first sweep was right, and the 4-of-8 re-run
+  that appeared to contradict it was the unlucky draw. The rule is a clearly
+  positive change, not the marginal one 0.58.1 claims; that entry is left as
+  written rather than edited, because the sequence is the useful part.
+
+  That number was taken against the engine as it stood BEFORE #124. `bleedTrump`
+  moves fat trump on the leading path and this rule moves it on the overtake
+  path — different code, same two cards — so the two could in principle interact.
+  Re-run on the merged engine, with #124's harness:
+
+      +0.210 per firing, ahead in 20 of 22 seeds, fires on 0.47% of hands
+      whole-hand aggregate +0.0010/seat/hand   (30,000 hands x 22)
+
+  Unchanged: the same mean and the same 20-of-22 split as the pre-merge run, so
+  the two guards do not interact — they touch the same two cards on paths that
+  never both apply to one decision. 20 of 22 is a sign test at p ≈ 6e-5 on its
+  own, without leaning on the SE. (The per-seed figures were piped through
+  `tail` when this ran, so the ± could not be recomputed from the log; the
+  pre-merge run of the identical measurement gave ± 0.0466.)
+
+## [0.58.1] - 2026-08-03 (`e85447a`)
+- **The cheapest-winner rule now measures "cheapest" in points when rank is
+  provably free.** Taking a trick with the weakest card that wins it is right,
+  but `power` is the wrong axis for deciding what to *risk*: the trump order
+  puts the two point-fat trump below every Jack and Queen —
+
+      Q♣ Q♠ Q♥ Q♦ J♣ J♠ J♥ J♦ A♦ 10♦ K♦ 9♦ 8♦ 7♦
+                                ▲   ▲
+                               11   10 points
+
+  so whenever A♦ or 10♦ is the low winner, "cheapest by rank" is the most
+  expensive card in the pile. J♦ and A♦ are *adjacent* there, which makes the
+  pair that triggers it also the pair where rank is worth nothing: with nothing
+  outstanding between them the same cards beat both, so they hold the trick with
+  identical probability and are equally good to keep. Only the 9 points differ.
+
+  Two guards keep this narrow. Equal `cardEquity` means an equal beater set, so
+  reordering inside that group surrenders no winning strength at all — this is
+  **not** the strength-for-points trade of the three rules already measured and
+  rejected in that branch, all of which reached for *more* strength. And
+  spending the fat twin is genuinely right once the trick is safe, because the
+  points are then banked rather than donated, so `OVERTAKE_SPEND_SECURITY`
+  leaves that case exactly as it was. It is the same trump principle `shedCard`
+  applies when the trick is lost; the winners branch simply had no equivalent.
+
+  Reported from hand 4 (2026-08-03): the picker overtook her partner's K♦ lead
+  from third seat with A♦ while holding J♦, and a defender took the trick with
+  Q♥ for 21. The exact solver scores all three legal cards at **cost 0** — the
+  defence had that hand regardless — so double-dummy cannot anchor this one.
+  PIMC over 10,000 worlds consistent with what she could actually see says J♦ is
+  worth **+2.3 points and +4.7pp of win rate** over A♦ (~11 SE). Pinned in
+  `scripts/aiskilltest.mjs` with two negative controls (a secure trick, which
+  must still spend the Ace; and unequal-equity winners, which must be
+  unchanged), and the position is `scripts/scenarios/hand4-patty-ad.mjs`.
+
+  `OVERTAKE_SPEND_SECURITY = 0.5` is swept, not chosen — 20,000 hands x 4 seeds
+  per point, variant in one seat against four with the rule off:
+
+      gate    0.2     0.35    0.5     0.65    0.85    0.95    1.0
+      mean  -0.0002 +0.0005 +0.0009 +0.0007 +0.0001 +0.0000 -0.0005
+
+  Unimodal with both ends negative, which is what a gate doing real work looks
+  like: at 1.0 — fire whenever the trick is less than certain — the rule is
+  worse than never firing at all.
+
+  **The whole-hand aggregate cannot see this, and that is a property of the
+  rule, not evidence against it.** It fires on 0.83% of contested decisions
+  (~0.08/hand, 77% of them the picker, withholding 7.7 points on average), which
+  the per-hand average dilutes about twelvefold: pooled across configurations,
+  gate 0.5 is favoured in only 13 of 20 abtest sub-samples, which is nothing.
+  Measured instead on the decisions it actually changes — a paired harness over
+  the same deals, conditioned on the rule having changed a card, which is an
+  event fixed at the decision point rather than by the outcome, and which
+  null-tests to zero firings:
+
+      +0.0666 per firing +/- 0.0317 SE   (3,629 firings, 30,000 hands x 22)
+      2.10 SE from zero, 95% CI [0.004, 0.129], sign test 14+/6- (p = 0.058)
+
+  Positive, and about 2 SE — real but small, and worth reading next to the first
+  pass at this, which said +0.11 ± 0.11 over 568 firings. The estimate fell as
+  the sample grew, which is what a noisy first look regresses to and a reminder
+  that the honest number here was always the bigger run. Implied whole-hand
+  effect +0.00038/seat/hand, consistent with the sweep. As with
+  `SCHMEAR_KEEP_EQUITY`, the case rests on the pinned hand and the mechanism as
+  much as on this — but unlike that one, the aggregate does now point the same
+  way rather than merely failing to object.
+
+- **`scripts/abtest.mjs` deals are not reproducible across runs, and the null
+  test cannot detect it.** `dealWith` takes its 32 cards from `freshHand`, which
+  has already shuffled them with unseeded `Math.random()`, then applies its
+  seeded Fisher-Yates on top; shuffling an already-randomised array composes
+  with that randomness instead of replacing it, so the seed does not pin the
+  deal. The A/B itself is unaffected — both arms get the same `start`, so the
+  pairing that gives the harness its sensitivity is intact — but "ahead in k of
+  n seeds" is a **fresh draw every invocation**, not a fixed population. Found
+  the expensive way: a 4-of-4 result at gate 0.5 failed to replicate as 4-of-8
+  on the identical command. Note the exact-zero null test says nothing about
+  this, since identical policies play identically on whatever deal they are
+  given. Not fixed here — fixing it changes every historical number in this
+  file — but it is why a k-of-n from one run should be re-run before it is
+  believed.
 ## [0.58.0] - 2026-08-03 (`de21287`)
 Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
 change; it was developed as two and the halves are kept separate below.

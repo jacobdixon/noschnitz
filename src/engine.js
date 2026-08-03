@@ -1581,6 +1581,32 @@ export const SCHMEAR_CONFIDENCE = 0.85;
 // his partner's third-best trump onto his own second-best, and lost both.
 export const OVERTAKE_MIN_GAIN = 0.15;
 
+// How safe a trick has to be before the cheapest-winner rule will take it with
+// a POINT-FAT card rather than an equally-strong cheap one. See the call site
+// at the end of the winners branch for what "equally strong" means and why the
+// two guards make this a different change from the three rejected there.
+//
+// Only bites when a seat holds two winners with an identical beater set, which
+// in practice is almost always A♦ alongside J♦ or 10♦ alongside K♦ — adjacent
+// in the trump order, 9 and 6 points apart. At or above 1 it never fires, which
+// is the null control; scripts/aiskilltest.mjs pins both a firing case and a
+// secure case that must stay unchanged.
+//
+// Swept in scripts/abtest.mjs rather than chosen, 20,000 hands x 4 seeds per
+// point, variant in one seat against four with the rule off:
+//
+//     gate    0.2     0.35    0.5     0.65    0.85    0.95    1.0
+//     mean  -0.0002 +0.0005 +0.0009 +0.0007 +0.0001 +0.0000 -0.0005
+//     seeds    1/4     3/4     4/4     3/4     3/4     3/4     1/4
+//
+// Unimodal with both ends negative and the peak in the interior, which is what
+// a gate that is doing real work looks like. 1.0 — fire whenever the trick is
+// less than certain — is actively WORSE than never firing: spending the fat
+// twin into a trick you will probably win is correct, because the points are
+// then banked rather than donated. 0.2 is negative for the same reason from
+// the other side, refusing to bank on tricks that were safe enough.
+export const OVERTAKE_SPEND_SECURITY = 0.5;
+
 // Minimum believed chance the trick is already ours before the overtake brake
 // above applies WITHOUT proof. Above 1 disables it.
 //
@@ -1792,6 +1818,7 @@ export function aiChooseCard(g, idx, opts = {}) {
 // so this is the single point that has to honour it.
 export function heuristicCard(g, idx, opts = {}) {
   const overtakeGate = opts.overtakeMinGain ?? OVERTAKE_MIN_GAIN;
+  const spendFatGate = opts.spendFatSecurity ?? OVERTAKE_SPEND_SECURITY;
 
   const legal = opts.restrictTo ?? legalPlays(g, idx);
   if (legal.length === 1) return legal[0];
@@ -2241,7 +2268,51 @@ export function heuristicCard(g, idx, opts = {}) {
     // and until something does, this position is not decidable from the cards.
     // That is the fix, and it belongs with the belief layer, not here.
     const cheapest = (cards) => [...cards].sort((a, b) => power(a) - power(b))[0];
-    return cheapest(winners);
+    const pick = cheapest(winners);
+
+    // ...with one correction, on the axis "cheapest" is measured in.
+    //
+    // `power` is the right axis for what this rule is FOR — spend the least
+    // winning strength, keep the rest back for later tricks. It is the wrong
+    // axis for deciding what to RISK, because the trump order puts the two
+    // point-fat trump below every Jack and Queen:
+    //
+    //     Q♣ Q♠ Q♥ Q♦ J♣ J♠ J♥ J♦ A♦ 10♦ K♦ 9♦ 8♦ 7♦
+    //                               ▲   ▲
+    //                              11   10 points
+    //
+    // so whenever A♦ or 10♦ is the low winner, "cheapest by rank" is the most
+    // expensive card in the pile. J♦ and A♦ are adjacent there, which makes
+    // the pair that triggers it also the pair where rank is provably worthless:
+    // with nothing outstanding between them, the same cards beat both, so they
+    // hold the trick with the same probability and are equally good to keep.
+    // The only thing that separates them is 9 points of exposure.
+    //
+    // Hence the two guards. Equal `cardEquity` means equal beater set (trump is
+    // totally ordered), so reordering inside that group gives up no strength at
+    // all — this is not the strength-for-points trade the three rejected rules
+    // above tried to make, and it needs no read on anyone. And spending the fat
+    // twin is genuinely right once the trick is safe, because the points are
+    // then banked rather than donated, so the security gate leaves that case
+    // exactly as it was. Same trump principle `shedCard` already applies when
+    // the trick is lost; the winners branch simply had no equivalent.
+    //
+    // Reported from hand 4 (2026-08-03): the picker overtook her partner's K♦
+    // from third seat with A♦, holding J♦, and a defender took 21 with Q♥.
+    // Double-dummy scores every legal card at 0 there — the defence had the
+    // hand regardless — so the measurement is PIMC over worlds consistent with
+    // what she could see: J♦ is worth +2.3 points and +4.7pp of win rate over
+    // A♦ (10,000 samples, ~11 SE). Pinned in scripts/aiskilltest.mjs with both
+    // controls, and the position is scripts/scenarios/hand4-patty-ad.mjs.
+    if (winners.length > 1 && securityAfterPlay(g, idx, pick) < spendFatGate) {
+      const unseen = unaccountedFor(g, idx);
+      const eq = cardEquity(g, idx, pick, unseen);
+      const twins = winners.filter((c) => cardEquity(g, idx, c, unseen) === eq);
+      if (twins.length > 1) {
+        return twins.sort((a, b) => cardPts(a) - cardPts(b) || power(a) - power(b))[0];
+      }
+    }
+    return pick;
   }
   // Can't win it. This is where a seat whose own side owns the trick used to
   // land after failing the safety bar with nothing able to overtake — the exact

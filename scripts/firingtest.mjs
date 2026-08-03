@@ -40,7 +40,7 @@
      node scripts/firingtest.mjs 20000 --seeds 4 --opt guardFatTrumpBleed=false
    ========================================================================= */
 import {
-  freshHand, assignPartner, applyPlay, resolveTrick, cid,
+  ALL_CARDS, freshHand, assignPartner, applyPlay, resolveTrick, cid,
   handStrength, aiBuryAndCall, aiChooseCard, scoreHand,
 } from "../src/engine.js";
 
@@ -54,9 +54,13 @@ function mulberry32(a) {
   };
 }
 
+// Shuffles from ALL_CARDS, a fixed canonical order, NOT from the cards as
+// freshHand left them — see the long note on dealWith in abtest.mjs. Shuffling
+// an already-shuffled array composes with the unseeded shuffle underneath
+// instead of replacing it, which left every "seed" naming a fresh population.
 function dealWith(rand, dealer) {
   const g = freshHand(dealer, [0, 0, 0, 0, 0], 1);
-  const deck = [...g.hands.flat(), ...g.blind];
+  const deck = [...ALL_CARDS];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
