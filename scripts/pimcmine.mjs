@@ -159,6 +159,13 @@ function mineHand(rec, seats) {
               seat: idx, clairvoyant,
               human: idx === (rec.humanSeat ?? -1),
               pimcCost, naiveCost, ddCost: d.cost, engineCost, engineCard: cid(engineCard),
+              // What playing the UNCERTAINTY-best card would have cost on the
+              // real deal. For a clairvoyant endgame decision this is the value
+              // of the clairvoyance itself, which the seat's own PIMC cost is
+              // not: that one says how much worse the clairvoyant card LOOKS
+              // when scored under uncertainty, a different quantity that answers
+              // no question anybody has.
+              ddCostOfPimcBest: d.costs.find((c) => cid(c.card) === cid(bestCard))?.cost ?? null,
               excess: engineCost === null ? null : pimcCost - engineCost,
               card: cid(play.card), pimcBest: cid(bestCard), ddBest: cid(d.bestCard),
               feats: features(sim, idx, play.card),
@@ -228,8 +235,11 @@ if (!rows.length) { console.log("\nNothing priced outside the clairvoyant endgam
 
 console.log(`\n${seen.length} decisions priced; ${clair.length} of them from tricks 5-6, where the engine solves the real deal and is NOT under uncertainty.`);
 if (clair.length) {
-  console.log(`  those ${clair.length} are excluded from everything below. Their mean DD cost is ${mean(clair, "ddCost").toFixed(2)} — zero by construction, it played the double-dummy card —`);
-  console.log(`  and their mean PIMC cost ${mean(clair, "pimcCost").toFixed(2)} is the value of seeing the other hands, not an error to fix.`);
+  const priced = clair.filter((r) => r.ddCostOfPimcBest !== null);
+  console.log(`  those ${clair.length} are excluded from everything below. Their mean DD cost is ${mean(clair, "ddCost").toFixed(2)} — zero by construction, it played the double-dummy card.`);
+  console.log(`  What the clairvoyance is WORTH: playing the best card under uncertainty instead would cost ${mean(priced, "ddCostOfPimcBest").toFixed(2)} pts/decision on the real deal,`);
+  console.log(`  about ${(mean(priced, "ddCostOfPimcBest") * clair.length / handsPriced).toFixed(1)} pts/hand over the ${(clair.length / handsPriced).toFixed(1)} endgame decisions a hand. That is the price of removing it, and an UPPER bound —`);
+  console.log(`  a real uncertainty player would not play PIMC's best card every time either.`);
 }
 console.log(`\n  mean PIMC cost per decision : ${mean(rows, "pimcCost").toFixed(2)} pts   (cross-fitted)`);
 console.log(`    the same, uncorrected     : ${mean(rows, "naiveCost").toFixed(2)} pts   — winner's curse, do not quote this one`);

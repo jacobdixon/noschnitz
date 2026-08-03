@@ -6,6 +6,28 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.52.1] - 2026-08-03 (`PENDING`)
+- **`pimcmine` was mislabelling what the endgame clairvoyance is worth, and now
+  measures it.** It reported the clairvoyant decisions' own PIMC cost as "the
+  value of seeing the other hands". That is not what the number is: it is how
+  much worse the clairvoyant card LOOKS when scored under uncertainty, which
+  answers no question anybody has. The seat is not under uncertainty — that is
+  the entire point of excluding those decisions.
+  - The quantity that matters is the **double-dummy cost of the uncertainty-best
+    card**: what an honest endgame would give up on the real deal. Since the
+    clairvoyant card's own DD cost is zero by construction, that difference is
+    exactly the price of the information, and it is the input the "should the AI
+    stop seeing your last two cards" decision needs. Now computed and reported
+    per decision and per hand, flagged as an UPPER bound because a real
+    uncertainty player would not find PIMC's best card every time either.
+- Correction to the 0.51.1 reading, recorded because it was acted on: on the
+  biased estimator `holder=our side` was the one shape where double-dummy
+  UNDERstated cost, by +0.19, which made it the obvious place to look next.
+  Cross-fitted it is +0.02 — neutral. The hypothesis was an artefact of the
+  winner's curse, and the corrected picture is that DD overstates almost
+  everywhere (2.09 against 0.89 overall, negative on 17 of 18 shapes) rather
+  than having a pocket where it is too kind.
+
 ## [0.52.0] - 2026-08-03 (`9173952`)
 - **`.claude/skills/hand-analysis/` — the hand-analysis procedure, saved so it
   runs the same way every time somebody asks whether a play was right.** It
