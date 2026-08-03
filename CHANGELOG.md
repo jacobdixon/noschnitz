@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.53.0] - 2026-08-03 (`PENDING`)
+## [0.53.0] - 2026-08-03 (`7c19df8`)
 - **`npm run pimc` leads with the answer somebody actually asked for.** Before
   the diagnostics it now prints every legal card with the DECIDING SEAT's own
   side's average points out of 120 and how often that side wins the hand, then a
