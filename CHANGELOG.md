@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.50.0] - 2026-08-03 (`PENDING`)
+## [0.50.0] - 2026-08-03 (`f21cf4f`)
 - **`scripts/pimcmine.mjs` — rank the corpus by what mistakes actually COST,
   and Actions → "Mine hands" grew an `analysis: cost-ranking` mode to run it
   where the corpus is reachable.** `minehands.mjs` ranks by exact double-dummy
