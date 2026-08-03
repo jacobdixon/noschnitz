@@ -368,6 +368,17 @@ the hand, using the AI's own policy as a consistent yardstick across all six tri
 (cheap, deterministic, no separate heuristic-vs-exact blending needed since
 `aiChooseCard` already dispatches to the exact solver for the last two tricks).
 
+## Analyzing a reported hand — use the skill
+
+`.claude/skills/hand-analysis/SKILL.md` is the procedure, and it triggers on its
+own when somebody asks whether a play was right. The one thing worth repeating
+here because it is the easy mistake: **the recap's double-dummy grade and PIMC
+answer different questions**, and the grade is the wrong one for "how bad was
+that". It solves the deal that happened, with every hand visible, so it forgives
+a bad decision that got lucky and convicts a sound one that did not — measured
+over 425 decisions it called 15% of decisions clean that cost a point or more,
+and 9% mistakes that cost nothing. Report the PIMC number.
+
 ## The AI sees your last two cards
 
 `aiChooseCard` dispatches tricks 5-6 to `solveEndgameCard`, which recurses over

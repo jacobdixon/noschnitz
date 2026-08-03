@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.52.0] - 2026-08-03 (`PENDING`)
+- **`.claude/skills/hand-analysis/` — the hand-analysis procedure, saved so it
+  runs the same way every time somebody asks whether a play was right.** It
+  triggers on a recap screenshot, on "was that the right lead", on "what did that
+  cost", and on grading or reviewing play generally.
+- The thing it exists to prevent is one confusion: **the recap's double-dummy
+  grade and PIMC answer different questions**, and the grade is the wrong one for
+  "how bad was that". Measured over 425 decisions it called 15% of decisions
+  clean that cost a point or more and 9% mistakes that cost under half a point.
+  Reporting a DD cost as the size of a mistake is the default failure here, and
+  it is confident and wrong rather than obviously wrong.
+- It also carries the traps this week produced, each of which cost real time
+  before it was understood: tricks 5-6 cannot be analysed as mistakes at all
+  because the engine is clairvoyant there; regret is a max over noisy means and
+  so is biased upward unless cross-fitted; a defender's information set excludes
+  the bury and most sampled worlds with it. And the discipline for acting on a
+  hand — reproduce, pin with a negative control, measure on both harnesses,
+  calibrate a belief before playing on it — including the outcome nobody expects,
+  that a tell can calibrate at 8:1 and still be worth nothing.
+
 ## [0.51.1] - 2026-08-03 (`bbcad41`)
 - **`pimcmine`'s cost estimate is cross-fitted, because the obvious one is
   biased upward and the bias is not small.** Regret is a MAX over cards of means
