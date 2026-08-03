@@ -286,7 +286,10 @@ Unchanged rules:
   CI *success*, new pushes, or merge-conflict transitions, so pair the subscription
   with a self check-in about an hour out and re-arm it quietly while the PR is open.
   Drive it to green: a CI-failure wake ends with a pushed fix or a comment saying
-  what is broken and why it is not yours to fix — never in silence.
+  what is broken and why it is not yours to fix — never in silence. The awkward case is CI
+  never *starting*: Actions can lag badly here (see "Things a session will try and
+  cannot do"), so a missing check is not a failing one. Keep waiting and verify
+  locally rather than announcing a blocker.
 - **Version + changelog on every shippable change**: bump `package.json` version
   (semver), add a `## [X.Y.Z]` entry to `CHANGELOG.md` describing what changed and
   why, commit, fill in the real commit hash into the changelog in a small follow-up
@@ -330,16 +333,19 @@ Unchanged rules:
   with a negative control. Several correct-looking diagnoses measured as pure noise;
   measure before believing.
 - **"What should the AI do?" and "what should we OFFER a human?" are different
-  questions and get different numbers.** `ALONE_HANDSTRENGTH` (17) is the AI's bar for
-  going alone; `ALONE_OFFER_STRENGTH` (18) is when the button is worth showing a
-  person. They sit next to each other in `engine.js` and look like a typo — they are
-  not. The AI decides while it still holds all eight and buries to match the plan
-  (banking points instead of protecting a call); a human decides *after* the bury is
-  spent, which is strictly worse, so the human's bar is a point higher. Measured over
-  20,239 pickers who had a partner available: alone is behind by 1.9 points/hand at
-  17, negative in 4 of 4 seeds, and only turns positive at 18. **If the AI bar is ever
-  re-tuned, re-measure the offer bar in the same pass** rather than assuming it
-  follows.
+  questions, and the answer here is a PRODUCT call sitting on top of a measurement —
+  do not read the two as one number.** `ALONE_HANDSTRENGTH` and
+  `ALONE_OFFER_STRENGTH` are both **17** as of 0.46.0, and `aitest` asserts they are
+  *equal* rather than ordered, so moving one without considering the other fails
+  loudly. That is deliberately not what the measurement alone would say: over 20,239
+  pickers who had a partner available, alone is behind by 1.9 points/hand at 17,
+  negative in 4 of 4 seeds, and only turns positive at 18 — which is why the offer bar
+  sat at 18 from 0.44.0. It moved because a person watching an opponent go alone on a
+  hand their own screen refuses to offer reads as the game knowing something it will
+  not tell them, and consistency was judged worth ~0.08 points per picked hand of
+  bounded exposure. **If the win rate on human picks moves, 18 is the first thing to
+  put back**, and if the AI bar is ever re-tuned, re-measure the offer bar in the same
+  pass rather than assuming it follows.
   - The harness for that is the general shape to reuse for any "is this option worth
     offering" question: identical deal AND identical bury in both arms, differing only
     in the decision under test, every seat on the unchanged engine, scored on the
@@ -440,6 +446,29 @@ Genuinely open:
    seats, so it needs dedup, and `handLog.js` says in its own header that collecting
    other people's play needs their consent. Worth doing properly, not hastily, and
    never in the hours before a games night.
+   - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
+     `workflow_dispatch`). A session cannot fetch it — `beta.noschnitz.com` is a 403
+     CONNECT policy denial, the same wall as the deploy checks — so this exists for the
+     same reason `verify-beta.yml` does. It needs `HANDS_READ_TOKEN` as an **Actions
+     secret**, which is a separate thing from the Vercel environment variable of the
+     same name; copy the value across. `GET /api/hands` answers 404 both when the
+     server's token is unset and when the one given is wrong, deliberately, so a 404
+     tells you nothing about which.
+   - **Mining is bounded by `--budget-min`, not by how many hands you ask for.** An
+     exact grade of every decision costs seconds a hand — ~24s on a slow box — so a
+     thousand hands is hours, not minutes. It takes the newest first when the clock is
+     bounded and reports what it did not reach.
+   - **What the corpus can answer is narrower than it looks.** Every record is one
+     human against four AI seats, so a cluster is evidence about the engine and never
+     about a table. And per the census, a corpus whose newest `version` is several
+     releases old means collection broke — not that nobody played.
+   - **There are TWO corpora since the promotion, and reading the wrong one looks
+     exactly like nobody playing.** Preview and Production hold separate Upstash
+     databases by design, so beta has everything up to 2026-07-31 and www has real
+     play from then on. The workflow takes the host as an input and stamps it on the
+     census; the default is beta because that is where the history is, and it should
+     move to www once www has more. Do not merge the two without reading the version
+     field — they are hands against different builds, which is what that field is for.
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,
@@ -492,3 +521,37 @@ doesn't spend a turn rediscovering them.
   Compare each branch tip against the head SHA its PR merged instead. On that API note:
   every PR in this repo reports `merged: false`; `merged_at` is the field that tells the
   truth.
+
+- **GitHub Actions can take many minutes and several pushes to start on a session's PR.
+  Do not conclude that it never will.** On #120 (2026-08-02) the PR opened at 23:09 and
+  `ci.yml` — `on: pull_request`, and the check the merge rules require — had still not
+  queued a run after pushes at 23:15 and 23:23. Vercel built and reported success on
+  every one of them, so events were plainly reaching GitHub; `mergeable_state` sat at
+  `blocked` on a required check that did not exist. It finally queued at 23:29, on the
+  fourth push, twenty minutes after the PR opened.
+
+  Recorded mainly for the wrong conclusion drawn in between, which was written into this
+  file and had to be taken back out an hour later. Every CI run in this repo's history
+  shows `actor: jacobdixon (User)`, while a session's commits arrive through the agent
+  git proxy and its PR is opened by the GitHub App — and GitHub genuinely does suppress
+  workflow triggers for app-authored events. That is a tidy, checkable-looking story
+  which fits every observation available at the time, and it is **wrong**: the run that
+  eventually started came through the same proxy under the same identity as the ones
+  that did not. An explanation that accounts for the evidence is not the same as a
+  demonstrated cause, and this file is the wrong place to put the difference.
+
+  So when the check is missing rather than red: keep waiting, push again if there is
+  something real to push, and check by head SHA rather than trusting one poll. Verify
+  locally in the meantime and say in the PR that you did. Only after a genuinely long
+  silence is it worth telling anyone a human has to push — and if this does turn out to
+  recur, adding `workflow_dispatch:` to `ci.yml` would make it self-service, since
+  without it `actions_run_trigger` has nothing to call.
+
+- **`node_modules` is empty in a fresh session, and the failures that causes look like
+  real ones.** Nothing installs dependencies for you. Until `npm install` is run,
+  `npm run build` dies with `vite: not found`, `npm run lint` dies on a missing
+  `globals`, and `handstest`/`narrationtest`/`flagtest`/`pacingtest`/`e2etest`/`soaktest`
+  all fail with `ERR_MODULE_NOT_FOUND` for `@upstash/redis`. Every one of those reads as
+  a broken repo or a broken change. `npm install` works fine through the proxy and takes
+  well under a minute, so run it before believing any of it — and if a suite still fails,
+  confirm it against a clean tree (`git stash`) before treating it as yours.

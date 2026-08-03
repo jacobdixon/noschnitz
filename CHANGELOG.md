@@ -6,72 +6,11 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.0] - 2026-08-02 (`39a8f65`)
-- **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
-  mic chip in the header that mutes and shows how many people are on the call.
-  Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
-  microphone from a user gesture, and a link somebody texted you should not
-  demand one before you have decided to be in the conversation.
+## [0.49.0] - 2026-08-03 (`pending`)
+Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
+change; it was developed as two and the halves are kept separate below.
 
-- **Production carries no audio code, and that is now enforced rather than
-  asserted.** `scripts/voicebuildtest.mjs` builds both ways and greps the actual
-  bundles, wired into `npm test`. It is **bidirectional** on purpose: every
-  token must be absent flag-off AND present flag-on, because grepping for a
-  token and finding zero passes just as convincingly when the token is
-  misspelled, when the build silently failed, or when the feature was deleted.
-  Measured at v0.48.0: 0 flag-off against 95 flag-on for `daily`.
-
-  `Verify production` gains the deployed half of the same check — a new
-  `voice: absent|present` input, defaulting to absent. The build test stops a
-  regression being merged; the workflow catches a variable set on the wrong
-  Vercel scope, which no test can see.
-
-- **That guard immediately caught a real leak, which is the reason it exists.**
-  The first draft gated the UI on `voice.available`, a runtime property of the
-  hook's return — and Rollup cannot fold a property access, so the menu entry
-  and the mic chip survived into the production bundle. Worse, the first
-  verification MISSED it: building without `VITE_MULTIPLAYER` eliminates all of
-  `TableScreen`, so the audio inside it looked absent for the wrong reason.
-  Production is flag-on for multiplayer, so that was never the right baseline.
-  The test now builds production's real shape.
-
-  Fixes: the UI branches on the `VOICE_ENABLED` module constant, and `useVoice`
-  returns its inert shape **before** its hooks rather than after. Returning late
-  is the obvious shape and leaves every callback in the bundle — it is how
-  `toggleMute` shipped to production in the first draft. The early return reads
-  like a rules-of-hooks violation and is not one: the rule is that hook order be
-  consistent across renders, and `VOICE_ENABLED` is compile-time, so within any
-  build this hook either always runs its hooks or never does.
-
-- **The Daily SDK is its own lazy chunk** — 261kB, `import()`ed inside the join
-  handler, so even on beta nobody downloads it until they tap the button. Pinned
-  separately in the build test, because a refactor to a static import would keep
-  every token check passing while making all five people at a table fetch it.
-
-- **A stale join is cancellable.** `join()` awaits twice — the server, then the
-  SDK — and either gap is long enough to unmount or to leave. A continuation
-  past that point constructs a call object into a dead component, which leaves a
-  **live microphone** with nothing on screen to stop it. A generation counter,
-  bumped by every teardown, invalidates whatever join is in flight.
-
-- No camera is ever requested: `videoSource: false` at join on top of the room's
-  `start_video_off`. Both, because they fail differently — the room property is
-  what a second client would honour, the join option is what stops this browser
-  lighting a camera indicator even for an instant.
-
-- `userName` is set to the seat index, never the playerId — that is a bearer
-  token and the string is visible to every other participant. Nothing reads it
-  yet; it is there so a future speaking indicator (COM-2.1) has a seat to point
-  at. Deliberately no participant-to-seat mapping in this change: it needs an
-  identity join between two systems, and getting it wrong lights up the wrong
-  player.
-
-- **Note for whoever adds the next API route:** `api/tables/[id]/voice.js` takes
-  the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
-  The seat actions were already folded into one route for this reason. The next
-  one has to fold too.
-
-## [0.47.0] - 2026-08-02 (`0131bb1`)
+### Server — the flag, the provider adapter, the route
 - **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
   demand and cached on the table. No client yet: this is the flag, the provider
   adapter and `POST /api/tables/[id]/voice`. Nothing is reachable from the UI.
@@ -152,6 +91,221 @@ corresponds to the entries below.
   the voice wrapper read as ungated. `requireVoice` calls it first and returns
   false if it fails — and that implication is asserted in `voicetest` rather
   than assumed, which is the only thing that makes accepting the wrapper safe.
+
+### Client — opt-in join, mute, and the guard that keeps it off www
+- **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
+  mic chip in the header that mutes and shows how many people are on the call.
+  Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
+  microphone from a user gesture, and a link somebody texted you should not
+  demand one before you have decided to be in the conversation.
+
+- **Production carries no audio code, and that is now enforced rather than
+  asserted.** `scripts/voicebuildtest.mjs` builds both ways and greps the actual
+  bundles, wired into `npm test`. It is **bidirectional** on purpose: every
+  token must be absent flag-off AND present flag-on, because grepping for a
+  token and finding zero passes just as convincingly when the token is
+  misspelled, when the build silently failed, or when the feature was deleted.
+  Measured at v0.48.0: 0 flag-off against 95 flag-on for `daily`.
+
+  `Verify production` gains the deployed half of the same check — a new
+  `voice: absent|present` input, defaulting to absent. The build test stops a
+  regression being merged; the workflow catches a variable set on the wrong
+  Vercel scope, which no test can see.
+
+- **That guard immediately caught a real leak, which is the reason it exists.**
+  The first draft gated the UI on `voice.available`, a runtime property of the
+  hook's return — and Rollup cannot fold a property access, so the menu entry
+  and the mic chip survived into the production bundle. Worse, the first
+  verification MISSED it: building without `VITE_MULTIPLAYER` eliminates all of
+  `TableScreen`, so the audio inside it looked absent for the wrong reason.
+  Production is flag-on for multiplayer, so that was never the right baseline.
+  The test now builds production's real shape.
+
+  Fixes: the UI branches on the `VOICE_ENABLED` module constant, and `useVoice`
+  returns its inert shape **before** its hooks rather than after. Returning late
+  is the obvious shape and leaves every callback in the bundle — it is how
+  `toggleMute` shipped to production in the first draft. The early return reads
+  like a rules-of-hooks violation and is not one: the rule is that hook order be
+  consistent across renders, and `VOICE_ENABLED` is compile-time, so within any
+  build this hook either always runs its hooks or never does.
+
+- **The Daily SDK is its own lazy chunk** — 261kB, `import()`ed inside the join
+  handler, so even on beta nobody downloads it until they tap the button. Pinned
+  separately in the build test, because a refactor to a static import would keep
+  every token check passing while making all five people at a table fetch it.
+
+- **A stale join is cancellable.** `join()` awaits twice — the server, then the
+  SDK — and either gap is long enough to unmount or to leave. A continuation
+  past that point constructs a call object into a dead component, which leaves a
+  **live microphone** with nothing on screen to stop it. A generation counter,
+  bumped by every teardown, invalidates whatever join is in flight.
+
+- No camera is ever requested: `videoSource: false` at join on top of the room's
+  `start_video_off`. Both, because they fail differently — the room property is
+  what a second client would honour, the join option is what stops this browser
+  lighting a camera indicator even for an instant.
+
+- `userName` is set to the seat index, never the playerId — that is a bearer
+  token and the string is visible to every other participant. Nothing reads it
+  yet; it is there so a future speaking indicator (COM-2.1) has a seat to point
+  at. Deliberately no participant-to-seat mapping in this change: it needs an
+  identity join between two systems, and getting it wrong lights up the wrong
+  player.
+
+- **Note for whoever adds the next API route:** `api/tables/[id]/voice.js` takes
+  the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
+  The seat actions were already folded into one route for this reason. The next
+  one has to fold too.
+
+## [0.48.0] - 2026-08-02 (`ba00fa9`)
+- **`trickSecurity` now prices a beater by whether its holder could legally
+  *play* it.** Holding a card that beats the trick is not the same as being
+  allowed to play it: a seat holding any card of the led suit must follow with
+  one, so an off-suit beater in that hand is a card it never gets to play.
+  `forcedPlay` already closed this for the two called-suit pins; ordinary
+  follow-suit was still priced as though every unseen card were reachable by
+  every seat still to act.
+
+  Found from a real hand. Clubs led, the partner trumped in with J-hearts, one
+  opponent left to act. Three unseen cards beat the Jack so the count read
+  0.324 — but two fail clubs were also unseen, and that opponent can only trump
+  holding neither. The honest number is `0.515 + 0.128 = 0.643`, twice as safe.
+  The picker read the trick as 68% lost, overtook his own partner with a Queen
+  to rescue it, and was holding two diamonds that could not win a trick all
+  night. Double-dummy, every Queen there costs **19** and both diamonds cost 0.
+
+  The overtake gate was never at fault: it correctly demanded 0.60 for an
+  unbeatable card and was handed 0.676 by a biased estimate. Beaters are now
+  split by whether the led suit is their effective suit, exact for one free
+  seat; several free seats need inclusion-exclusion because voidness is
+  per-seat, so those keep the old estimate rather than an approximation.
+
+  Measured at 20,000 hands × 5 seeds, and re-measured after merging master so
+  the numbers describe the code that actually ships: **+0.0042/seat/hand,
+  ahead in 5 of 5** (`abtest`), and **−0.04pp** picker win rate in
+  `coalitiontest` with the old behaviour in every defender seat, i.e. no
+  defender-side effect either way. Both gates were re-swept with it on and the curve is
+  flat — `schmearConfidence` across 0.85/0.88/0.90/0.93/0.95 gives
+  +0.0038/+0.0045/+0.0038/+0.0043/+0.0048 and `overtakeMinGain` across
+  0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040 — so **the gates
+  stay where they are**. `SCHMEAR_CONFIDENCE` gains an `opts` override, which
+  sweeping it required and which null-tests to exactly +0.0000.
+
+  This was first measured at 4,000 × 3 and **rejected on that basis, wrongly**.
+  At that size the harness's run-to-run spread is about ±0.005, larger than the
+  effect: the identical variant gave −0.0052 (ahead 1 of 3), +0.0034 (2 of 3)
+  and +0.0029 (3 of 3) on three consecutive runs. The tell was that with the
+  flag defaulted *on*, turning it *off* also measured "ahead in 3 of 3" — two
+  runs that each say the variant wins are one broken measurement, not two
+  results. Runs cost eleven seconds; nothing should be decided at that size.
+
+- **New: PIMC decision analysis (`scripts/pimc.mjs`).** Answers "was this a good
+  decision given only what the player could see", as against the exact solver's
+  "was it a mistake given everything". It forgets what the seat could not know,
+  samples worlds consistent with the public evidence, and rolls each forward
+  with the engine's own policy. Reports mean, standard error and win rate per
+  legal card. `scripts/gradedecision.mjs` gives the full-hindsight grade from
+  the same scenario file, and `.claude/skills/analyze-sheepshead-hand` drives
+  both from a recap screenshot.
+
+  Four modelling bugs were found and fixed by validating it against a
+  forward-simulation baseline that shares no code with it — the habit worth
+  keeping. The picker's hand was being split keep-six/bury-two at random,
+  discarding 1.3 trump per hand; the pick threshold was applied to all eight
+  cards rather than the pre-blind six `aiWantsToPick` actually reads; and with
+  the partner unknown the called ace could be dealt to the picker or into the
+  bury, making the picker their own partner or secretly alone in 22% of worlds.
+  On the reference hand PIMC and the independent baseline now agree (51.3 / 30%
+  against 48.8 / 26.9%).
+
+- Repairs two `aiskilltest` fixtures that were pricing probabilities against
+  decks that cannot exist: one was 25 cards with the last opponent holding two
+  cards of the led suit, so in its own deal that seat had to follow suit and
+  could never take the trick the Queen was being spent to rescue; the other had
+  two played cards still sitting in hands plus a duplicated K-diamonds. Both are
+  now complete 32-card deals, asserted by `dealIsComplete()`.
+## [0.47.0] - 2026-08-01 (`a29d0d4`)
+- **The collected corpus can be read and mined without a browser, from Actions
+  → "Mine hands".** `minehands.mjs` has existed since 0.32.0 and found a real
+  bug in its first 41 hands, but reading the corpus meant reaching
+  `beta.noschnitz.com/api/hands` — and an agent session cannot: the egress proxy
+  answers 403 to CONNECT as a policy denial, exactly as it does for the deploy
+  checks. Same answer as `verify-beta.yml`, for the same reason: the check runs
+  where it can reach the site, and the answer gets read out of CI.
+  - It prints a census before it mines. The first question about a corpus is not
+    what it says, it is whether it is still arriving — and since every record is
+    stamped with the build that produced it, a corpus whose newest version is
+    three releases back means collection broke rather than that nobody played.
+  - **There are two corpora as of 0.45.2, and picking the wrong one reads as
+    "nobody played".** Preview and Production hold separate Upstash databases on
+    purpose, so beta has everything collected up to the promotion and www has
+    real play from that day on. The workflow takes the host as an input and
+    stamps it on the census; the default stays beta because that is where the
+    history is. `HANDS_READ_TOKEN` is scoped per environment too, so reading www
+    needs the Production copy of it. Comments in `api/hands.js` and
+    `handLog.js` that described production as having no store are corrected —
+    that stopped being true the same day this was written.
+  - The miner self-tests first, on a seat that plays a random legal card a
+    quarter of the time. An instrument that cannot detect a deliberately worse
+    player cannot be trusted to detect a better one.
+- **A grade could take the whole heap down, and did.** `DD_NODE_BUDGET` bounds
+  the search in TIME, and nothing bounded it in MEMORY — the transposition table
+  grows one entry per node, so at 50M nodes it wants gigabytes and the heap limit
+  arrives long before the budget can fire. `minehands.mjs --selftest 30` died on
+  "Ineffective mark-compacts near heap limit" at 8GB after six minutes. The
+  budget's whole purpose is to make a pathological hand report no verdict instead
+  of hanging; a crash is worse than the thing it was built to prevent, and in the
+  browser it takes `grader.worker.js` with it rather than returning nothing.
+  - Fixed by capping the table at 750k entries and clearing it when full, which
+    is safe because a transposition table is a cache and correctness never
+    depended on a hit. Sized on the measurement rather than a guess: the same
+    self-test peaks at 5.2GB with a 3M cap and 2.0GB at 750k, grading 30 of 30
+    hands either way in the same wall-clock. A CI runner's default old-space is
+    around 4GB and a phone's worker heap is far smaller, so the headroom is the
+    whole point.
+  - `gradetest` proves the clearing is harmless rather than assuming it: every
+    one of its 1,479 cross-checked positions is now solved a third time with the
+    table capped at five entries, so it clears constantly, and the value has to
+    match the unmemoised reference minimax. A table that corrupted results on
+    eviction could not pass that.
+- **Every device was losing the tail of its log — up to four hands each.**
+  `flushHands` only ran after a hand ended and only sent once five were pending,
+  so a browser that stopped on four kept them forever: the fifth hand that would
+  release them never comes. Since a device stops mid-batch by definition, that is
+  not an edge case, and it fell hardest on people who tried the game once. A
+  forced flush now runs on mount, so stragglers leave with the next visit.
+- **The uploader had no test coverage at all**, which is how that survived. It
+  has some now, stubbing `localStorage` and `fetch` and driving the real module:
+  four hands stay put, a forced flush sends them, a second forced flush sends
+  nothing because the first marked them, an empty queue makes no request, and a
+  503 stops the browser asking forever. Checked against the negative control —
+  with the fix removed, three of them fail.
+- **The miner's self-test advertised a fixed seed and did not have one.** It
+  seeded its own shuffle but started from `makeDeck()`, which shuffles with
+  `Math.random` first — so the seed was decorative and every run sampled a
+  different 30 hands. Three runs on identical code returned nets of -37, -38 and
+  -45, which is exactly the size of difference someone would report as an effect.
+  It deals from `ALL_CARDS` now, and two consecutive runs are byte-identical.
+  - This is why the memo cap above was measured with `gradetest` rather than with
+    the self-test: 1,479 positions solved a third time with a 5-entry table, each
+    against the unmemoised reference. A control that resamples every run cannot
+    settle a question like that, and would have looked like it had.
+- `minehands.mjs` takes `--budget-min`, because an exact grade is seconds a hand,
+  not milliseconds, so any real corpus outlives any job timeout. It takes the
+  newest hands first when the clock is bounded — an old hand is graded against an
+  engine that no longer exists — and says how many it did not reach, which is the
+  difference between a truncated run and a run that merely looks complete.
+- Correcting the comment above the recorder in `Sheepshead.jsx`: it still said
+  nothing leaves the browser, which stopped being true in 0.32.0 when uploads
+  were added.
+- Correcting CLAUDE.md's passage on the two "go alone" bars, which 0.46.0 made
+  false the same day it was merged: it still described `ALONE_OFFER_STRENGTH` as
+  18 and as a *measured* consequence of the human deciding after the bury is
+  spent. Both bars are 17 now, `aitest` asserts them equal rather than ordered,
+  and the reason is a product call made against an unchanged measurement rather
+  than a new one. Rewritten to say that, including the condition for putting 18
+  back — a note that reads as measurement when it is really a judgement is the
+  kind that gets cited later as if it settled something.
 
 ## [0.46.0] - 2026-08-01 (`6ef0eba`)
 - **`ALONE_OFFER_STRENGTH` drops to 17, matching the AI's `ALONE_HANDSTRENGTH`.**

@@ -24,13 +24,19 @@
    What is NOT stored: no name, no multiplayer playerId, no table code, no
    contact of any kind. There is nothing in a record that says who played it.
 
-   Gated by requireMultiplayer, which today means beta and not production. That
-   is not a category error: the gate's second condition is "a real store is
-   configured", which is exactly what collection needs, and production has
-   none. An in-memory store on serverless would accept writes and silently lose
-   them, so refusing is the correct answer rather than an unfortunate one — and
-   keeping a public write endpoint off the production site is the conservative
-   default anyway.
+   Gated by requireMultiplayer, and deliberately not by a second gate of its
+   own: that gate's second condition is "a real store is configured", which is
+   exactly what collection needs. An in-memory store on serverless would accept
+   writes and silently lose them, so refusing is the correct answer rather than
+   an unfortunate one.
+
+   Since the 2026-07-31 promotion that gate passes on BOTH environments, so
+   there are now two corpora in two different Upstash databases — Preview's,
+   which is everything collected up to the promotion, and Production's, which
+   starts empty and is where real play accumulates from here. They must not be
+   merged casually: the hands were played against different builds, which is
+   the whole reason a record carries a version. `HANDS_READ_TOKEN` is scoped per
+   environment too, so reading www needs the Production copy of it.
    ========================================================================= */
 import { redisFromEnv } from "../src/store/upstash.js";
 import { readJson, sendJson, fail, methodGuard } from "./_lib/http.js";

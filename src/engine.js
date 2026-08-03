@@ -554,6 +554,43 @@ export const DEDUCE_PARTNER = false;
 // goes through trickSecurity, not only the branch the hand came from.
 export const FORCED_FOLLOW = true;
 
+// Price a beater by whether its holder could legally PLAY it, not merely by
+// whether they hold it — see the long note in `trickSecurity`.
+//
+// The estimate it replaces is biased and provably so: on hand 1 trick 2 it
+// prices a trick at 0.324 that is honestly 0.643, because it lets an opponent
+// trump while holding cards of the led suit. Correcting that fixes the reported
+// hand — the picker stops spending a Queen, a 19-point double-dummy error — and
+// fixes it at the root rather than by nudging the overtake gate.
+//
+// Measured at 20,000 hands x 5 seeds, against the shipped default:
+//
+//   abtest        +0.0038/seat/hand, ahead in 5 of 5
+//   coalitiontest +0.02pp picker win rate, i.e. no defender-side effect
+//
+// This was FIRST MEASURED AT 4,000 x 3 AND REJECTED ON THAT BASIS, which was
+// wrong and is the most useful thing recorded here. At that size the harness's
+// run-to-run spread is about +/-0.005 — larger than the effect. The identical
+// variant measured -0.0052 (ahead 1 of 3), +0.0034 (2 of 3) and +0.0029 (3 of
+// 3) on three consecutive runs, so the first result read as a clear regression
+// and the seed count looked like corroboration. It was noise, in both
+// directions: with the flag defaulted ON, turning it OFF also measured "ahead
+// in 3 of 3". Two runs that each say "the variant wins" are not two results,
+// they are one broken measurement. Runs here cost eleven seconds; there is no
+// reason to decide anything at 4,000 x 3.
+//
+// The worry that motivated the rejection was real but did not survive testing:
+// SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN and the priceOf multipliers were all
+// swept while `trickSecurity` ran low, so each could have absorbed part of the
+// bias and been left stranded by an unbiased number. Sweeping both gates with
+// this on says otherwise — the curve is flat. schmearConfidence 0.85/0.88/
+// 0.90/0.93/0.95 gives +0.0038/+0.0045/+0.0038/+0.0043/+0.0048, and
+// overtakeMinGain 0.10/0.15/0.20/0.25 gives +0.0029/+0.0038/+0.0037/+0.0040,
+// every one of them inside the others' band. The gates are fine where they
+// are; only 0.08 falls away (-0.0001), which is a bound on how far the
+// overtake gate can drop, not an argument about this flag.
+export const FOLLOW_SUIT_ODDS = true;
+
 // Read a power-trump lead as evidence the seat is on the picker's team, and let
 // teammateProbability reweight its candidates by it. See partnerWeight.
 //
@@ -1070,16 +1107,68 @@ export function trickSecurity(g, viewer, opts = {}) {
   if (forcedTakes) return 0;
   if (!free.length) return acePrice;
 
-  const beaters = unseen.filter(takesIt).length;
-  if (!beaters) return acePrice;
+  const beaterCards = unseen.filter(takesIt);
+  if (!beaterCards.length) return acePrice;
 
   // How many unknown cards those opponents hold between them.
   const k = free.reduce((s, p) => s + g.hands[p].length, 0);
   if (!k) return acePrice;
-  if (beaters + k > unseen.length) return 0;
 
+  // Holding a beater is not the same as being ALLOWED to play it. `forcedPlay`
+  // above closes this for the two called-suit pins, which are the cases the
+  // rules settle outright; ordinary follow-suit was left priced as though every
+  // unseen card were reachable by every seat still to act. It is not — a seat
+  // holding any card of the led suit must follow with one, so an off-suit
+  // beater in that hand is a card it will never get to play.
+  //
+  // Reported from hand 1, trick 2: clubs led, the partner trumped in with
+  // J-hearts, and the only opponent left was Bunny. Three unseen cards beat the
+  // Jack, so the raw count read 0.324 — but two fail clubs were also unseen,
+  // and Bunny can only trump when holding neither. The honest number is
+  //
+  //     P(holds a club) + P(void) x P(no beater | void) = 0.515 + 0.128 = 0.643
+  //
+  // Twice as safe as the count claimed. The picker read the trick as 68% likely
+  // to be lost and overtook his own partner with a Queen to rescue it, holding
+  // A-diamonds and 10-diamonds that could not win a trick all night. That is a
+  // 19-point error double-dummy, and the overtake gate never had a chance: it
+  // correctly demanded 0.60 for an unbeatable card and was handed 0.676.
+  //
+  // Split the beaters by whether the led suit is their effective suit. A beater
+  // OF the led suit is playable whenever it is held. An off-suit one needs the
+  // seat void, so it only counts when no led-suit card is there to block it:
+  //
+  //     P(safe) = P(no led-suit beater)
+  //             - P(no led-suit card at all) + P(no led-suit card and no beater)
+  //
+  // Exact for one free seat, which is the common shape and the reported one.
+  // Voidness is per-seat, so several free seats need inclusion-exclusion rather
+  // than the pooled draw below; that is left alone rather than approximated,
+  // and those positions keep the old estimate.
+  const useFollowOdds = (opts.followSuitOdds ?? FOLLOW_SUIT_ODDS) && free.length === 1;
+  if (useFollowOdds) {
+    const U = unseen.length;
+    const n = g.hands[free[0]].length;
+    // C(a, n) / C(U, n), as a product so nothing overflows or needs factorials.
+    const frac = (a) => {
+      if (a < n) return 0;
+      let r = 1;
+      for (let i = 0; i < n; i++) r *= (a - i) / (U - i);
+      return r;
+    };
+    const led = effSuit(g.trick[0].card);
+    const ledBeaters = beaterCards.filter((c) => effSuit(c) === led).length;
+    const ledBlockers = unseen.filter((c) => effSuit(c) === led && !takesIt(c)).length;
+    const offBeaters = beaterCards.length - ledBeaters;
+    const safe =
+      frac(U - ledBeaters) - frac(U - ledBeaters - ledBlockers) +
+      frac(U - ledBeaters - ledBlockers - offBeaters);
+    return Math.max(0, Math.min(1, safe)) * acePrice;
+  }
+
+  if (beaterCards.length + k > unseen.length) return 0;
   let safe = 1;
-  for (let i = 0; i < k; i++) safe *= (unseen.length - beaters - i) / (unseen.length - i);
+  for (let i = 0; i < k; i++) safe *= (unseen.length - beaterCards.length - i) / (unseen.length - i);
   return safe * acePrice;
 }
 
@@ -1577,7 +1666,8 @@ export function heuristicCard(g, idx, opts = {}) {
   const useBelief = (opts.beliefSchmear ?? BELIEF_SCHMEAR) || (opts.beliefFloor ?? BELIEF_FLOOR) > 0;
   const ownership = useBelief && mateWinning ? teammateProbability(g, idx, winnerSoFar, opts) : 1;
   const scaled = (opts.beliefSchmear ?? BELIEF_SCHMEAR) ? asIs * ownership : asIs;
-  const trickLooksSafe = scaled >= SCHMEAR_CONFIDENCE && ownership >= (opts.beliefFloor ?? BELIEF_FLOOR);
+  const schmearBar = opts.schmearConfidence ?? SCHMEAR_CONFIDENCE;
+  const trickLooksSafe = scaled >= schmearBar && ownership >= (opts.beliefFloor ?? BELIEF_FLOOR);
 
   // Until the called ace falls, a defender's "teammate" is a guess — the seat
   // winning may well be the picker's partner, and paying points to the wrong
@@ -2150,6 +2240,32 @@ const GRADE_FROM_TRICK = 0;
 // reports no verdict rather than hanging the recap.
 const DD_NODE_BUDGET = 50_000_000;
 
+// The node budget bounds TIME. Nothing bounded MEMORY, and the transposition
+// table grows one entry per node — so at 50M nodes the table wants several
+// gigabytes and the heap limit arrives long before the budget does. That is not
+// theoretical: `minehands.mjs --selftest 30` died with "Ineffective mark-compacts
+// near heap limit" after ~6 minutes, having reached 8GB. A crash is strictly
+// worse than the ungraded hand the budget was designed to produce, and in the
+// browser it takes `grader.worker.js` down rather than returning no verdict.
+//
+// Clearing rather than evicting, because a transposition table is a cache and
+// correctness never depended on a hit — the only cost of dropping it is
+// re-search.
+//
+// Sized by measurement, on `--selftest 30`: at 3M entries peak RSS is 5.2GB, at
+// 750k it is 2.0GB, and both grade 30 of 30 hands in the same wall-clock. So the
+// smaller table costs nothing measurable and buys 2.6x the headroom — which
+// matters twice over, since a CI runner's default old-space is around 4GB and a
+// phone's worker heap is very much smaller than that.
+//
+// It rides on the `budget` object rather than a sixth recursion parameter
+// because that object already means "the resource limits for this pass" and is
+// already threaded everywhere the cap is needed. `budget.cap` overrides it,
+// which is what lets `gradetest` prove the clearing is harmless: a solve capped
+// at a handful of entries has to return the SAME value as an uncapped one, and
+// a table that corrupted results on eviction could not.
+export const DD_MEMO_CAP = 750_000;
+
 // Every card gets a bit, so a hand is a 32-bit mask and two orderings of the
 // same holding collide for free. Built as a nested lookup rather than keyed by
 // `cid` because the key function runs at every node of the search, and building
@@ -2218,6 +2334,7 @@ function ddFuture(g, alpha, beta, memo, budget) {
     }
     if (alpha >= beta) break;
   }
+  if (memo.size >= (budget.cap ?? DD_MEMO_CAP)) memo.clear();
   memo.set(key, { v: best, flag: best <= alpha0 ? -1 : best >= beta0 ? 1 : 0 });
   return best;
 }

@@ -86,12 +86,17 @@ for (let i = 0; i < 60 && compared < 1500; i++) {
       const next = applyPlay(g, g.turn, card);
       const fresh = solveHandValue(next, new Map(), { n: 0 });
       const shared = solveHandValue(next, sharedTable, { n: 0 });
+      // The transposition table is now capped and CLEARS when it fills, so
+      // that a pathological hand cannot take the heap with it. A cap of 5
+      // entries means it clears constantly, which is the point: if dropping
+      // the table could ever change an answer, this is where it shows up.
+      const capped = solveHandValue(next, new Map(), { n: 0, cap: 5 });
       const ref = referenceValue(next);
       compared++;
-      if (fresh !== ref || shared !== ref) {
+      if (fresh !== ref || shared !== ref || capped !== ref) {
         mismatches++;
         if (mismatches <= 3) {
-          failures.push(`solver mismatch on ${cid(card)}: fresh=${fresh} shared=${shared} reference=${ref}`);
+          failures.push(`solver mismatch on ${cid(card)}: fresh=${fresh} shared=${shared} capped=${capped} reference=${ref}`);
         }
       }
     }
