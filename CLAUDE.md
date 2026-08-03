@@ -455,9 +455,29 @@ Genuinely open:
      server's token is unset and when the one given is wrong, deliberately, so a 404
      tells you nothing about which.
    - **Mining is bounded by `--budget-min`, not by how many hands you ask for.** An
-     exact grade of every decision costs seconds a hand — ~24s on a slow box — so a
+     exact grade of every decision costs seconds a hand — ~24s on a slow box, and
+     **measured at ~16s/hand on a GitHub runner (131 hands in 35 minutes)** — so a
      thousand hands is hours, not minutes. It takes the newest first when the clock is
-     bounded and reports what it did not reach.
+     bounded and reports what it did not reach. The `--selftest 30` preamble is a
+     further ~7 minutes on a runner; that is the price of checking the instrument
+     before believing it, and it is why the self-test is not in `npm test`.
+   - **Next session's cleanup list, in the order that pays.** The collection and
+     analysis path works end to end now, so what is left is coverage and rigor:
+     1. **Point mining at www** and re-census. Beta is historical; www is where play is.
+     2. **Record multiplayer hands** (the parent item above). 131 solo hands over four
+        days is the ceiling on what solo collection produces; a five-seat table produces
+        five perspectives on every hand. Needs dedup and consent, per `handLog.js`.
+     3. **Give `minehands` a significance story.** It reports a signed total and nothing
+        about spread, so a net built from two heavy tails reads the same as a real edge.
+        It should report the per-decision distribution, or bootstrap a CI, so that "+72"
+        cannot be quoted as a finding. This is the gap that made the 2026-08-02 run
+        need a human to say "that is noise."
+     4. **Make the feature table honest about double-counting** — either report
+        decisions-per-cluster distinctly from features-per-cluster, or drop features
+        that only co-occur with a stronger one.
+     5. **Consider grading from trick 2** for cluster-hunting. Trick 1 dominates the
+        current table and is the position where DD bias is largest; excluding it would
+        tell you whether anything survives without it.
    - **What the corpus can answer is narrower than it looks.** Every record is one
      human against four AI seats, so a cluster is evidence about the engine and never
      about a table. And per the census, a corpus whose newest `version` is several
@@ -469,6 +489,38 @@ Genuinely open:
      census; the default is beta because that is where the history is, and it should
      move to www once www has more. Do not merge the two without reading the version
      field — they are hands against different builds, which is what that field is for.
+   - **THE CORPUS HAS BEEN MINED ONCE, 2026-08-02, and the answer was "no signal".**
+     131 hands off beta, 126 gradeable, 445 real decisions, 142 disagreements with the
+     engine. Net **+72 points to the human over 142 disagreements** — which is noise,
+     and the shape of it is the point: **87 of the 142 (61%) cost exactly the same
+     either way.** Of the 55 that mattered, the human was better 31 times at +9.2 avg
+     and the engine 24 times at −8.9. 31-vs-24 is within one SD of a coin flip
+     (expected 27.5, SD 3.7). Both sides make real mistakes at the same rate and size.
+     - **Read that as a genuine result, not a failed experiment.** "No large systematic
+       gap against a competent human" is worth knowing, and it is the strongest claim
+       55 decisions can support. Finding subtler stuff needs an order of magnitude more
+       hands, which is why the multiplayer-recording item above is the real unlock.
+     - **The one lead, and why it is probably a mirage.** `trick=1` had the highest win
+       share of any feature (38%, 13 of 34) and the three biggest single-decision gaps
+       in the corpus were all trick 1, all second-or-third to act with an opponent
+       holding, all the engine picking the wrong trump weight — twice under-committing
+       (a beatable queen or a jack where the boss card was right), once over-committing
+       (burning a queen where a discard was right). Opposite errors, so not one rule.
+       **Trick 1 is exactly where double-dummy flatters the human**, since nothing is
+       known yet and DD judges with all five hands visible. Trick 1 topping the table is
+       what the bias alone would produce. Cheap to check, do not assume it survives.
+     - **The feature table double-counts and will fool you.** Every decision emits seven
+       features, so one big-delta decision lights up seven rows. Most of that table is
+       the same handful of decisions viewed from different angles. Read the examples
+       under it, not the row totals.
+   - **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+     then nothing. Not a bug: the promotion moved players to www, whose hands go to a
+     different database. **Point the next run at `source: www.noschnitz.com`.** Beta's
+     corpus is now a fixed historical artifact spanning nine engine versions
+     (0.31.0 → 0.45.2), which is itself a limit on what it can say.
+   - **Whatever `total` says is an undercount.** The tail-drop bug (fixed in the same PR
+     that added this workflow) was live for the entire beta collection window, so every
+     device that stopped mid-batch silently kept up to four hands.
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,
