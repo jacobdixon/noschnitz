@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.0] - 2026-08-03 (`PENDING`)
+## [0.49.0] - 2026-08-03 (`f708d16`)
 - **The AI no longer bleeds with a fat trump when a cheaper one is available.**
   "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
   on the diamonds that reads exactly backwards on price: A-D and 10-D rank below
