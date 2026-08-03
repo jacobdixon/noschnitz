@@ -19,7 +19,7 @@
    so every seat is rotated by `mySeat` for display — see `rotate()`.
    ========================================================================= */
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { cid, legalPlays, callOptions, SUIT_NAME } from "./engine.js";
+import { cid, legalPlays, callOptions, isUnderCard, underFace, SUIT_NAME } from "./engine.js";
 import { felt, Badge, Modal, ModalActions, btnGold, btnPlain, btnGhost } from "./ui.jsx";
 import { useTableStream } from "./useTableStream.js";
 import { usePacedTrick, CARD_MS, TRICK_HOLD_MS } from "./usePacedTrick.js";
@@ -775,7 +775,15 @@ export default function TableScreen({ tableId, playerId, onRejoin }) {
       return;
     }
     if (!isMyTurn || !legal.includes(cid(card))) return;
-    setOptimistic({ card, player: mySeat });
+    // The stand-in has to speak the wire's language, not your hand's. A card
+    // played under lands as the placeholder 6 of the called suit, so a stand-in
+    // holding the REAL card shares no id with what the server sends back: the
+    // dedup in displayState misses it, the retirement check above never fires,
+    // and your own under card sits face up on the felt beside the placeholder
+    // for the rest of the hand. Standing in with the placeholder — flagged, so
+    // it goes down face down at once — makes both of those work by themselves.
+    const under = isUnderCard(g, mySeat, card);
+    setOptimistic(under ? { card: underFace(g), player: mySeat, under: true } : { card, player: mySeat });
     act(async () => {
       try {
         await api.playCard(tableId, playerId, card);

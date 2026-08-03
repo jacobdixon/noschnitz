@@ -31,14 +31,26 @@ export const TRICK_HOLD_MS = 1500; // lingering on a completed trick
 
 // Every play this hand, in order, tagged with the trick it belongs to.
 // Completed tricks come from trickHistory; the in-progress one from g.trick.
+//
+// `under` has to come along. It is what the felt reads to draw a card face down
+// (felt.jsx, `faceDown={t.under}`), so dropping it here rendered every card
+// played under face up as the placeholder 6 of the called suit — the one thing
+// playing under exists to prevent. Table-only, because solo hands raw `g` to
+// Felt and never rebuilds anything.
+//
+// `actual` deliberately does NOT come along. The felt draws every under card
+// face down for everyone, including the picker who knows perfectly well what it
+// is; revealing the face is the job of Last Trick and the recap, which have
+// their own entitlement rule (`played.actual ?? played.card`). Carrying it here
+// would put the real card one careless render away from the table.
 export function buildPlaySequence(g) {
   if (!g) return [];
   const out = [];
   (g.trickHistory || []).forEach((h, ti) => {
-    (h.trick || []).forEach((p) => out.push({ player: p.player, card: p.card, trickIndex: ti, winner: h.winner }));
+    (h.trick || []).forEach((p) => out.push({ player: p.player, card: p.card, under: p.under, trickIndex: ti, winner: h.winner }));
   });
   const ti = (g.trickHistory || []).length;
-  (g.trick || []).forEach((p) => out.push({ player: p.player, card: p.card, trickIndex: ti, winner: null }));
+  (g.trick || []).forEach((p) => out.push({ player: p.player, card: p.card, under: p.under, trickIndex: ti, winner: null }));
   return out;
 }
 

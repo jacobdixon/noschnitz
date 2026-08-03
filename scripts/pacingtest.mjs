@@ -34,8 +34,14 @@ function playFullHand(seed = 0) {
     const idx = g.pickTurn;
     if (handStrength(g.hands[idx]) >= 10 || (g.passes === 4 && handStrength(g.hands[idx]) >= 8)) {
       const eight = [...g.hands[idx], ...g.blind];
-      const { buried, call, hand } = aiBuryAndCall(eight);
-      g = { ...g, picker: idx, hands: g.hands.map((h, i) => (i === idx ? hand : h)), buried, calledSuit: call, phase: "playing", trick: [], turn: g.leader };
+      // callKind and underCard used to be dropped here, which quietly meant no
+      // fixture in this suite had ever played a card under — and that is why the
+      // felt could render one face up for four days without a test noticing.
+      const { buried, call, callRank, callKind, underCard, hand } = aiBuryAndCall(eight);
+      g = { ...g, picker: idx, hands: g.hands.map((h, i) => (i === idx ? hand : h)), buried,
+        calledSuit: call, calledRank: call === null ? null : callRank,
+        calledUnder: callKind === "under", underCard: underCard ?? null,
+        phase: "playing", trick: [], turn: g.leader };
       g = assignPartner(g);
       states.push(g);
       break;
@@ -71,6 +77,21 @@ if (!hand) {
   console.error("could not deal a played hand for the test after 50 attempts");
   process.exit(1);
 }
+
+// A hand where the picker called under AND actually played the designated card.
+// Both halves matter: calling under only sets the card aside, and the flag this
+// suite is about is not created until that card hits the table. Dealt until one
+// turns up rather than constructed, so the placeholder on the felt is the one
+// applyPlay really produces.
+function dealUnderHand(attempts = 400) {
+  for (let i = 0; i < attempts; i++) {
+    const h = playFullHand(2000 + i);
+    if (!h || !h.final.calledUnder) continue;
+    if (h.final.trickHistory.some((th) => th.trick.some((t) => t.under))) return h;
+  }
+  return null;
+}
+const underHand = dealUnderHand();
 
 /* ------------------------------ sequencing -------------------------------- */
 {
@@ -314,6 +335,92 @@ if (!hand) {
   const ids = dup.trick.map((p) => p.card.rank + p.card.suit);
   check("the stand-in never doubles the real card",
     new Set(ids).size === ids.length, ids.join(","));
+}
+
+/* ---------------------- a card played under stays hidden ------------------ */
+{
+  // Issue #113. A card played under goes down as the 6 of the called suit and
+  // must be drawn FACE DOWN — that it was played under is public, which card it
+  // was is not. felt.jsx renders `faceDown={t.under}`, so the flag surviving the
+  // rebuild is the whole of the secrecy on the multiplayer felt.
+  //
+  // Solo hands raw `g` to Felt and never comes through here, which is why this
+  // was a table-only bug: buildPlaySequence copies a fixed set of fields per
+  // play and `under` was not among them.
+  check("dealt a hand where a card was actually played under", underHand !== null,
+    "400 deals without one — every check below silently skipped");
+
+  if (underHand) {
+    const g = underHand.final;
+    const seq = buildPlaySequence(g);
+    const unders = seq.filter((p) => p.under);
+
+    check("an under play keeps its flag through the rebuild", unders.length === 1,
+      `${unders.length} of ${seq.length} plays carry it`);
+
+    // The felt draws the placeholder, never the real face — `actual` is
+    // deliberately not carried here. The reveal belongs to Last Trick and the
+    // recap, which have their own entitlement rule.
+    check("...and the card it carries is the placeholder, not the real face",
+      unders.every((p) => p.card.rank === "6" && p.card.suit === g.calledSuit),
+      unders.map((p) => p.card.rank + p.card.suit).join(","));
+    check("...with the real face left out of the frame entirely",
+      unders.every((p) => p.actual === undefined));
+
+    // Negative control: nothing else may start rendering face down.
+    check("no ordinary play claims to be under",
+      seq.filter((p) => !p.under).every((p) => p.under === undefined),
+      "an ordinary play carries a truthy-adjacent under flag");
+
+    // The two pushes in buildPlaySequence are separate code paths and the flag
+    // was missing from both, so the live trick is checked on its own.
+    const live = underHand.states.find((s) => (s.trick || []).some((t) => t.under));
+    check("found a state with the under card still on the table", Boolean(live));
+    if (live) {
+      const liveSeq = buildPlaySequence(live);
+      check("an under play in the LIVE trick keeps its flag too",
+        liveSeq.filter((p) => p.under).length === 1);
+    }
+
+    /* ---- the picker's own stand-in, which speaks a different language ---- */
+    // The second half of #113. Tapping the under card puts a stand-in on the
+    // felt immediately, but the server echoes the PLACEHOLDER while the stand-in
+    // held the real card — so the ids never matched, displayState's dedup missed
+    // and the retirement check in TableScreen could never fire. The picker was
+    // left looking at their own under card, face up, next to the placeholder.
+    //
+    // The fix is that the stand-in speaks the wire's language: the placeholder,
+    // flagged under. Both consequences are pinned.
+    const at = seq.findIndex((p) => p.under);
+    check("the under play can be located in the sequence at all", at >= 0,
+      "no play carries the flag, so the stand-in checks below cannot run");
+    if (at >= 0) {
+    const placeholder = seq[at].card;
+    const standIn = { card: placeholder, player: seq[at].player, under: true };
+
+    // Revealed: the frame already holds it, so the stand-in must not double it.
+    const shown = frameAt(seq, at + 1);
+    const dup = displayState(g, shown, standIn, true);
+    const ids = dup.trick.map((p) => p.card.rank + p.card.suit);
+    check("the under stand-in never doubles the placeholder",
+      new Set(ids).size === ids.length, ids.join(","));
+    check("...and the trick is exactly what the frame holds",
+      dup.trick.length === shown.cards.length, `${dup.trick.length} vs ${shown.cards.length}`);
+
+    // And it is the id in revealedIds that lets TableScreen retire the stand-in
+    // at all — the mechanism the real card could never satisfy.
+    check("the placeholder's id is what lands in revealedIds",
+      shown.revealedIds.has(cid(placeholder)),
+      [...shown.revealedIds].join(","));
+
+    // Not yet revealed: it must show at once, and face down.
+    const before = frameAt(seq, at);
+    const early = displayState(g, before, standIn, true);
+    const mine = early.trick.find((p) => p.player === standIn.player && p.card.rank === "6");
+    check("the under stand-in shows on the felt immediately", Boolean(mine));
+    check("...and shows face down", Boolean(mine && mine.under));
+    }
+  }
 }
 
 /* ------------------ nothing on the table while still dealing -------------- */
