@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.1] - 2026-08-03 (`pending`)
+## [0.58.1] - 2026-08-03 (`8b53d7e`)
 - **`Verify production` failed at exactly the moment it should have passed.**
   The audio check added in 0.58.0 counts occurrences of `daily` in the served
   bundle and expects **zero**, which is the whole point — and `grep` exits 1
