@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.52.1] - 2026-08-03 (`PENDING`)
+## [0.52.1] - 2026-08-03 (`5ec31ac`)
 - **`pimcmine` was mislabelling what the endgame clairvoyance is worth, and now
   measures it.** It reported the clairvoyant decisions' own PIMC cost as "the
   value of seeing the other hands". That is not what the number is: it is how
