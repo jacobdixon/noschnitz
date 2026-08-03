@@ -824,16 +824,117 @@ function trumpLeadKind(g, seat) {
   return kind;
 }
 
+// The fattest card a seat may DISCARD onto a trick the picker is winning
+// without it counting as a tell. Ten and up, so an Ace or a Ten trips it and a
+// King does not: a King is the card you are often just getting rid of, an Ace
+// is a decision.
+export const SCHMEAR_TELL_POINTS = 10;
+
+// Did this seat pay real points into a trick the PICKER was winning?
+//
+// The loudest signal at a live table and the one the belief could not hear.
+// Every existing evidence term is about LEADING; this one is about paying, and
+// the two never overlap. A defender who fattens the picker's trick has simply
+// made an error, so seeing it is strong evidence the seat is not a defender.
+//
+// Four restrictions. Each one removes a way to have been FORCED rather than to
+// have chosen, and the measurement is unsparing about which of them matter —
+// over 6,159 self-play hands, of every non-picker play after the lead (base
+// rate for "is the partner" 24.7%):
+//
+//   fat discard, picker ahead, any seat      5492 firings   30.7%   1.3:1
+//   ...restricted to the last two seats      2815           35.3%   1.7:1
+//   ...restricted to the last seat           1509           39.7%   2.0:1
+//   ...last seat, tricks 1-3                  279           73.1%   8.3:1
+//
+// So the naive rule is worth almost nothing and the restricted one is worth as
+// much as the power-trump lead. The restrictions:
+//
+//   - a DISCARD only. Following suit with an Ace can be the only legal card,
+//     and a rule that cannot tell obligation from generosity is reading noise.
+//   - LAST to play. Paying into a trick the picker is merely winning SO FAR is
+//     a legitimate defensive bet that a teammate behind you takes it; that bet
+//     is most of the 1.3:1 above, and it is not a tell. Only in the fifth seat
+//     is the trick unable to move.
+//   - TRICKS 1-3. This is the one that turns the rule from noise into evidence,
+//     and it is about being forced: in the last tricks a seat is down to two or
+//     three cards and may simply have nothing cheap left, so a fat discard says
+//     little. Early, with five cards in hand, it was a choice.
+//   - the picker, not the picker's TEAM. Using "the team was winning" would
+//     mean consulting who the partner is to work out who the partner is, and
+//     the answer would be whatever the belief already thought.
+//
+// Ace-only was measured too and is WORSE — 6.5:1 on half the firings — so the
+// threshold stays at a Ten. Once acquired the read persists for the rest of the
+// hand, which is the point: it is read in trick 1 and spent in trick 4.
+//
+// Public information throughout — the cards, the led suit, and who picked — so
+// this is viewer-independent, exactly as `trumpLeadKind` is, and every seat at
+// the table draws the same conclusion from it.
+export const SCHMEAR_TELL_LAST_TRICK = 2; // 0-based: tricks 1-3
+
+function schmearedToPicker(g, seat) {
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+  const upto = Math.min(tricks.length, SCHMEAR_TELL_LAST_TRICK + 1);
+  for (let ti = 0; ti < upto; ti++) {
+    const t = tricks[ti];
+    if (!t?.length) continue;
+    const i = t.findIndex((p) => p.player === seat);
+    if (i !== 4) continue;                                  // not the last seat
+    const play = t[i];
+    if (cardPts(play.actual ?? play.card) < SCHMEAR_TELL_POINTS) continue;
+    if (effSuit(play.card) === effSuit(t[0].card)) continue; // followed suit
+    if (trickWinner(t.slice(0, i)) === g.picker) return true;
+  }
+  return false;
+}
+
+// Odds multiplier for that tell.
+//
+// MEASURED AND NOT SHIPPED, default 1 (off). Calibrated at 8:1 and honest —
+// `belieftest` passes every bucket at 4 / 6 / 8 / 10 / 14 — and it is the read
+// that answers a real reported hand: a defender paid a Ten into the picker's
+// trick because the belief said the seat holding it was two-thirds likely to be
+// a teammate, and PIMC put that at 5.9 points. `aitest` pins the inference.
+//
+// It is simply almost never ACTIONABLE, and the funnel says why. Over 92,970
+// self-play decisions at odds 8:
+//
+//   belief moved for the seat winning the trick    252   (0.27% of decisions)
+//   ...of those, crossed BELIEF_FLOOR               30
+//   ...of those, actually changed the card          10   (0.011%)
+//
+// So the gate is not refusing the read — the SITUATION is rare. Everything
+// downstream agrees: abtest +0.0002/seat/hand ahead in 2 of 4 seeds,
+// coalitiontest -0.00pp with the defenders better in 1 of 4. Noise, against a
+// null control of exactly +0.0000.
+//
+// The same shape as PLAIN_TRUMP_LEAD_ODDS and for the same reason, which is
+// worth stating plainly: a tell can be strong, calibrated, and worth nothing,
+// because being able to read a table is not the same as being able to do
+// something about it. When it does fire it is right — all 10 changes were
+// defenders, shedding 6.5 fewer points on average. Left switchable for the day
+// something consults the belief in a spot that comes up more often.
+export const SCHMEAR_TELL_ODDS = 1;
+
 // How much more likely this seat is to be the partner than a seat we know
 // nothing about. A weight, not a probability — normalised across candidates
 // below, which is what keeps the result a distribution and therefore testable
 // against ground truth (`belieftest` asserts calibration per bucket).
+//
+// Terms multiply. They are close enough to independent to be worth it — one is
+// about opening a trick, the other about paying into somebody else's — and a
+// seat that has done both really is likelier than a seat that has done one.
 function partnerWeight(g, seat, opts = {}) {
-  if (!(opts.trumpLeadRead ?? TRUMP_LEAD_READ)) return 1;
-  const kind = trumpLeadKind(g, seat);
-  if (kind === "power") return opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
-  if (kind === "plain") return opts.plainTrumpLeadOdds ?? PLAIN_TRUMP_LEAD_ODDS;
-  return 1;
+  let w = 1;
+  if (opts.trumpLeadRead ?? TRUMP_LEAD_READ) {
+    const kind = trumpLeadKind(g, seat);
+    if (kind === "power") w *= opts.trumpLeadOdds ?? TRUMP_LEAD_ODDS;
+    else if (kind === "plain") w *= opts.plainTrumpLeadOdds ?? PLAIN_TRUMP_LEAD_ODDS;
+  }
+  const schmearOdds = opts.schmearTellOdds ?? SCHMEAR_TELL_ODDS;
+  if (schmearOdds !== 1 && schmearedToPicker(g, seat)) w *= schmearOdds;
+  return w;
 }
 
 // How likely `target` is on `viewer`'s side, in [0,1].
@@ -1287,28 +1388,162 @@ function endgameValue(g) {
 // what this seat actually knows (`cardEquity` had the Queen at 0 — boss of
 // everything unaccounted for — and would have played the 9). Search decides
 // what wins; judgement decides between things that tie.
+// THIS SEAT PLAYS THE LAST TWO TRICKS WITH PERFECT INFORMATION. `endgameValue`
+// recurses over `g.hands`, which holds all five, so from `tricksDone >= 4` the
+// AI is solving the REAL deal rather than what its seat could know. Measured
+// 2026-08-03: move one card between two OTHER seats — leaving the deciding
+// seat's hand, the played cards and every public fact untouched — and the card
+// it chooses changes on 4.8% of trick-5 decisions with more than one legal play.
+// One swap per decision was probed, so that is a floor on the dependence, not
+// an estimate of it.
+//
+// Two things follow, and they are separate.
+//
+//   FAIRNESS. In solo play the four AI seats can see the human's last two cards.
+//   Nothing tells the player that. Whether that is acceptable is a product call
+//   — it is a real difficulty knob, and it is the whole reason the endgame is
+//   exact — but it should be a decision somebody made on purpose rather than a
+//   property nobody noticed.
+//
+//   MEASUREMENT. Any double-dummy grade of these tricks reads 0 by construction,
+//   because the seat played the double-dummy card. `gradeAllPlays` therefore
+//   cannot see an endgame mistake, and never could — not because grading is
+//   broken but because there is nothing to see. `pimcmine` excludes them from
+//   its ranking for that reason and prices them separately; the gap there is the
+//   value of the information, not an error.
+//
+// WHAT IT IS WORTH, measured 2026-08-03 over 60 self-play hands: playing the
+// best card under UNCERTAINTY instead would cost 0.42 points per endgame
+// decision on the real deal, about 1.6 points a hand across the ~3.7 endgame
+// decisions a hand has. That is an upper bound on the price of removing it — a
+// real uncertainty player would not find the sampled-best card every time
+// either — and it is ~1.3% of the 120 points in a hand, so this is affordable
+// rather than load-bearing. `npm run pimcmine -- --selfplay N` reproduces it.
+//
+// Not changed here. Removing the clairvoyance means playing the endgame under
+// uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
+// — which is a strength change to be measured, not a one-line deletion. But the
+// number above is the input that decision was missing.
+// Which effective suits each seat has PROVEN it cannot hold, by failing to
+// follow one. Public information — everybody at the table watched it happen —
+// and the main thing that stops a sampled world being obvious nonsense.
+function shownVoids(g) {
+  const voids = [new Set(), new Set(), new Set(), new Set(), new Set()];
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+  for (const t of tricks) {
+    if (!t?.length) continue;
+    const led = effSuit(t[0].card);
+    for (const play of t.slice(1)) {
+      if (effSuit(play.card) !== led) voids[play.player].add(led);
+    }
+  }
+  return voids;
+}
+
+// Deal the cards `viewer` cannot see into the other seats, consistent with what
+// it does know: how many cards each seat holds, which suits they have shown void
+// in, and that the called card cannot be sitting with the picker (they called
+// it) — so if it is still out, somebody else has it.
+//
+// Seeded from the position rather than Math.random. The engine's card choices
+// have to be reproducible or every test that plays a hand becomes flaky, and
+// `handSeed` already exists for exactly this reason.
+function sampleEndgameWorld(g, viewer, unseen, voids, rand) {
+  const pool = [...unseen];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const hands = g.hands.map((h, p) => (p === viewer ? [...h] : []));
+  const need = g.hands.map((h, p) => (p === viewer ? 0 : h.length));
+  const calledRank = g.calledRank || "A";
+  const isCalled = (c) =>
+    g.calledSuit && !g.calledAcePlayed && c.suit === g.calledSuit && c.rank === calledRank && !isTrump(c);
+
+  // Hardest cards first — a card only one seat may legally hold has to be
+  // placed while that seat still has room, or the deal paints itself into a
+  // corner and the whole sample gets thrown away.
+  const canTake = (p, c) => need[p] > hands[p].length && !voids[p].has(effSuit(c)) && !(isCalled(c) && p === g.picker);
+  const seats = [0, 1, 2, 3, 4].filter((p) => p !== viewer);
+  pool.sort((a, b) => seats.filter((p) => canTake(p, a)).length - seats.filter((p) => canTake(p, b)).length);
+
+  for (const c of pool) {
+    const takers = seats.filter((p) => canTake(p, c));
+    if (!takers.length) continue; // the bury, or an impossible deal — see below
+    hands[takers[Math.floor(rand() * takers.length)]].push(c);
+  }
+  // Every seat must end up with the right number of cards or the world is not a
+  // legal position and solving it would be worse than not sampling at all.
+  return hands.every((h, p) => h.length === (p === viewer ? h.length : need[p])) ? hands : null;
+}
+
+export const ENDGAME_WORLDS = 40;
+
 export function solveEndgameCard(g, opts = {}) {
   const idx = g.turn;
   const legal = legalPlays(g, idx);
   if (legal.length <= 1) return legal[0];
   const isPickerSide = pickerTeamOf(g).includes(idx);
+
+  // `endgameClairvoyant` restores the pre-0.54 behaviour: solve the one deal in
+  // `g`, which holds all five hands. Kept switchable because it is the control
+  // this change was measured against, and because it is the rollback.
+  if (opts.endgameClairvoyant) {
+    let bv = isPickerSide ? -Infinity : Infinity;
+    let opt = [];
+    for (const card of legal) {
+      const val = endgameValue(applyPlay(g, idx, card));
+      if (val === bv) opt.push(card);
+      else if (isPickerSide ? val > bv : val < bv) { bv = val; opt = [card]; }
+    }
+    if (opt.length === 1) return opt[0];
+    const p = heuristicCard(g, idx, { ...opts, restrictTo: opt });
+    return opt.some((c) => cid(c) === cid(p)) ? p : opt[0];
+  }
+
+  // Sample deals the seat cannot rule out and solve each exactly, rather than
+  // solving the one deal that happens to be in `g`. See the note above.
+  const unseen = unaccountedFor(g, idx);
+  const voids = shownVoids(g);
+  const worlds = Math.max(1, opts.endgameWorlds ?? ENDGAME_WORLDS);
+  let seed = handSeed([...g.hands[idx], ...seenCards(g)]);
+  const rand = () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const total = legal.map(() => 0);
+  let n = 0;
+  for (let w = 0; w < worlds * 4 && n < worlds; w++) {
+    const hands = sampleEndgameWorld(g, idx, unseen, voids, rand);
+    if (!hands) continue;
+    const world = { ...g, hands };
+    n++;
+    legal.forEach((card, i) => { total[i] += endgameValue(applyPlay(world, idx, card)); });
+  }
+  // No consistent world could be built — only reachable if the constraints are
+  // contradictory, which would be a bug elsewhere. Fall back to the position as
+  // given rather than returning nothing.
+  if (!n) { n = 1; legal.forEach((card, i) => { total[i] = endgameValue(applyPlay(g, idx, card)); }); }
+
   let bestVal = isPickerSide ? -Infinity : Infinity;
   let optimal = [];
-  for (const card of legal) {
-    const val = endgameValue(applyPlay(g, idx, card));
+  for (let i = 0; i < legal.length; i++) {
+    const val = total[i] / n;
     if (val === bestVal) {
-      optimal.push(card);
+      optimal.push(legal[i]);
     } else if (isPickerSide ? val > bestVal : val < bestVal) {
       bestVal = val;
-      optimal = [card];
+      optimal = [legal[i]];
     }
   }
   if (optimal.length === 1) return optimal[0];
-  // Every card here is worth exactly the same double-dummy, so restricting the
-  // heuristics to this set cannot cost anything the solver could see. The
-  // guard is for the case where a heuristic branch returns something outside
-  // the set it was given — that would be a bug, not a preference, and falling
-  // back keeps this function's contract (always a double-dummy-optimal card).
+  // Every card here scores the same averaged over the sampled worlds, so
+  // restricting the heuristics to this set cannot cost anything the search could
+  // see. The guard is for the case where a heuristic branch returns something
+  // outside the set it was given — that would be a bug, not a preference.
   const pick = heuristicCard(g, idx, { ...opts, restrictTo: optimal });
   return optimal.some((c) => cid(c) === cid(pick)) ? pick : optimal[0];
 }

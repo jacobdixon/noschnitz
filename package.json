@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.50.0",
+  "version": "0.58.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -25,7 +25,7 @@
     "fantest": "node scripts/fantest.mjs",
     "scoringtest": "node scripts/scoringtest.mjs",
     "flagtest": "node scripts/flagtest.mjs",
-    "test": "npm run lint && npm run exporttest && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest && npm run voicetest && npm run statustest && npm run narrationtest && npm run calltest && npm run undertest && npm run soaktest && npm run gradetest && npm run belieftest && npm run coalitiontest && npm run firingtest && npm run handstest && npm run voicebuildtest",
+    "test": "npm run lint && npm run exporttest && npm run leaktest && npm run tabletest && npm run storetest && npm run aitest && npm run streamtest && npm run e2etest && npm run pacingtest && npm run aiskilltest && npm run fantest && npm run scoringtest && npm run flagtest && npm run voicetest && npm run statustest && npm run narrationtest && npm run calltest && npm run undertest && npm run soaktest && npm run gradetest && npm run belieftest && npm run coalitiontest && npm run firingtest && npm run handstest && npm run clairvoyancetest && npm run voicebuildtest",
     "lint": "eslint src api scripts",
     "statustest": "node scripts/statustest.mjs",
     "narrationtest": "node scripts/narrationtest.mjs",
@@ -34,7 +34,10 @@
     "soaktest": "node scripts/soaktest.mjs",
     "coalitiontest": "node scripts/coalitiontest.mjs 4000 --seeds 2",
     "exporttest": "node scripts/exporttest.mjs",
-    "firingtest": "node scripts/firingtest.mjs 3000 --seeds 2"
+    "firingtest": "node scripts/firingtest.mjs 3000 --seeds 2",
+    "pimcsolve": "node scripts/pimcsolve.mjs",
+    "pimcmine": "node scripts/pimcmine.mjs",
+    "clairvoyancetest": "node scripts/clairvoyancetest.mjs"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.91.0",
