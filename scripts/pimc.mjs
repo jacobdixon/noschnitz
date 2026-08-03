@@ -165,10 +165,18 @@ for (const x of ordered) {
 const bestRow = ordered[0], playedRow = rows[refIdx];
 if (cid(bestRow.card) !== cid(actual)) {
   const gap = pairedDiff(r.samples[refIdx], r.samples[rows.indexOf(bestRow)]);
+  // The sign of the win-rate delta is the whole point and an absolute value
+  // destroys it: the best-on-points card quite often wins LESS often, trading
+  // wins for schneider margin, and printing that as "cost 2.3pp of win rate"
+  // states the opposite of what happened. Three cases, because they are three
+  // different pieces of advice.
   const wpp = sideWin(bestRow.win) - sideWin(playedRow.win);
-  console.log(`\n  ${show(actual)} cost ${Math.abs(gap.mean).toFixed(1)} ± ${gap.se.toFixed(2)} points against ${show(bestRow.card)}` +
-              (Math.abs(wpp) < 0.5 ? ", and made no difference to whether the hand was won."
-                                   : `, and ${Math.abs(wpp).toFixed(1)}pp of win rate.`));
+  const tail = Math.abs(wpp) < 0.5
+    ? ", and made no difference to whether the hand was won."
+    : wpp > 0
+      ? `, and ${wpp.toFixed(1)}pp of win rate.`
+      : `, but won the hand ${(-wpp).toFixed(1)}pp MORE often — ${show(bestRow.card)} gains margin, not wins.`;
+  console.log(`\n  ${show(actual)} cost ${Math.abs(gap.mean).toFixed(1)} ± ${gap.se.toFixed(2)} points against ${show(bestRow.card)}${tail}`);
 } else {
   console.log(`\n  ${show(actual)} was the best card available.`);
 }

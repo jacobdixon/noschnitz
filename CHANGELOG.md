@@ -6,6 +6,18 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.54.1] - 2026-08-03 (`PENDING`)
+- **`pimc`'s summary line stated the opposite of what happened when the played
+  card won more often.** The win-rate delta was wrapped in `Math.abs`, so a card
+  that cost points while WINNING more often — trading wins for schneider margin,
+  which is the tradeoff this output exists to surface — printed as "and 2.3pp of
+  win rate", reading as though it had lost that too. Found by a skill eval run,
+  which flagged the line as unusable and told the reader to ignore it.
+  - Three cases now, because they are three different pieces of advice: no
+    difference, lost win rate, or "but won the hand 1.5pp MORE often — K♣ gains
+    margin, not wins". The last is the one that was unsayable before, and it is
+    the interesting one.
+
 ## [0.54.0] - 2026-08-03 (`2f102cd`)
 - **The AI no longer sees your last two cards.** `solveEndgameCard` solved the
   real deal — `endgameValue` recurses over `g.hands`, all five of them — so from
