@@ -278,6 +278,39 @@ Unchanged rules:
   somebody can reword without knowing that file depends on it.
 
 ## Conventions established this session (keep following them)
+- **Open a pull request whenever there is finished work to check in, without being
+  asked, and merge it once the tests pass.** Standing order as of 2026-08-03.
+  `master` is protected and takes no direct pushes, so a branch with no PR is not
+  "work in review", it is work parked where nothing will ever pick it up. Do not
+  wait to be told; the default agent instruction elsewhere ("no PR unless asked")
+  is overridden here.
+
+  "Once the tests pass" means the repo's own suites, and what counts is
+  spelled out because the failure modes differ:
+
+  - `npm test` green locally is the bar for merging — every suite, 0 failures,
+    plus `npm run build`. For engine/AI changes add the measurement the change
+    is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
+    the question), and check its null control really came back zero.
+  - **Prefer CI's verdict when there is one, but a check that never queued is
+    not a failing check.** Actions genuinely lags here, sometimes twenty minutes
+    and several pushes (see "Things a session will try and cannot do"). Waiting
+    for it is right; treating its absence as a red light is not. Merging on a
+    green local run while CI is still missing is acceptable — say so in the PR
+    when you do it, so the record shows what the merge actually rested on.
+  - **Do not merge over a red check, ever**, and do not merge to "see if it
+    passes on master". Red is the one state that blocks, because of the next
+    point.
+  - **Watch `master` after the merge, not just before it.** `Release` is gated
+    on CI *succeeding* on `master`, and a marginal test can pass on a PR and
+    fail on `master` for the identical commit — which does not merely fail a
+    check, it silently withholds the beta deploy and leaves production
+    unverified. The merge is not the end of the job; a green `Release` run is.
+
+  Anything genuinely irreversible or outward-facing beyond this — a production
+  variable flip, a rollback, a repo-settings change — is still a human action
+  and still gets asked about. This order covers merging ordinary work, not
+  deploying by other means.
 - **Watch every PR you open, without being asked.** Subscribe to its activity as
   soon as it exists, and stay subscribed until it is merged or closed. A PR here is
   not finished when it is opened: CI going red on `master` is what silently withholds
@@ -307,15 +340,16 @@ Unchanged rules:
   consistent across seeds. It null-tests to exactly `+0.0000`, which is what makes a
   small result trustworthy.
   - **The null test proves the PAIRING, not reproducibility, and for a long time
-    those deals were not reproducible at all.** Until 0.49.1 `dealWith` seeded-shuffled
+    those deals were not reproducible at all.** Until 0.49.2 `dealWith` seeded-shuffled
     the cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
     RNG — and a Fisher-Yates composes with the shuffle underneath instead of replacing
     it. So "seed 3" named a fresh population every run. The null test cannot catch
     this in any of these harnesses, because two identical arms play identically
     whatever deal they are handed and still difference to exactly zero. Fixed in all
-    three (`abtest`, `coalitiontest`, `undertest`) by shuffling from `ALL_CARDS`.
-    **Any seed-level number recorded before 0.49.1 was a fresh draw and will not
-    reproduce**, which is exactly how a 4-of-4 sweep result in 0.49.0 evaporated to
+    four (`abtest`, `coalitiontest`, `undertest`, `firingtest`) by shuffling from
+    `ALL_CARDS`.
+    **Any seed-level number recorded before 0.49.2 was a fresh draw and will not
+    reproduce**, which is exactly how a 4-of-4 sweep result in 0.49.1 evaporated to
     4-of-8 on re-run. The paired comparison between arms was never affected, so the
     conclusions those numbers supported still stand — only their reproducibility was
     ever wrong. `undertest` was the sharper risk: it *asserts*, so it could have
@@ -323,17 +357,25 @@ Unchanged rules:
     section withholds the beta deploy rather than merely going red.
 - **`scripts/firingtest.mjs` is the harness for a rule that fires rarely, and
   reaching for `abtest` first will tell you there is no effect when there is one.**
-  It is the same paired A/B, scored only on the hands where the variant actually
-  changed a card — divergence in the seat's play sequence, an event settled at the
-  decision point rather than by the outcome, so the restriction is not circular.
-  Built in 0.49.0 for a rule firing on 0.83% of decisions, which `abtest` diluted
-  about twelvefold into noise (+0.0009 in 4 of 4, then +0.0002 in 4 of 8 on re-run);
-  restricted to firings the same change reads +0.0666 ± 0.0317 over 3,629 of them.
-  The two agree once the dilution is undone, and that agreement is the check worth
-  running — they share the deal code but not the denominator. Its control arm forces
-  the variant's own keys off rather than inheriting the shipped default, so it
-  measures the same thing before and after you change a constant. Null-test it by
-  passing a variant that cannot fire: 0 firings, exactly `+0.0000`.
+  Same paired A/B, split by whether the option actually changed a card. The probe
+  runs against the CONTROL line of play — at each decision it asks whether the
+  variant *would* have chosen differently — which counts the decisions the seat
+  really faced; once the arms diverge, "would it differ here" has stopped being a
+  question about the same hand. It prints the whole-hand `abtest` number beside
+  the per-firing one on purpose, so the two get compared instead of confused.
+  Read the per-firing figure WITH the firing rate: a big effect on a rule firing
+  twice in ten thousand hands is still a rounding error.
+  - **It was built twice on the same day, by two people who did not know the
+    other was doing it** (0.49.0 for `guardFatTrumpBleed`, 0.49.1 for
+    `OVERTAKE_SPEND_SECURITY`), which is the strongest argument that the
+    denominator objection is real and not a rationalisation for a weak result.
+    Both landed per-firing effects of the same size, +0.252 and +0.210, on rules
+    whose whole-hand aggregates were flat or negative noise. **If a change you
+    believe in reads as nothing in `abtest`, check the firing rate before
+    concluding anything** — 0.49.1 spent an entire measurement pass concluding
+    "not established" from a diluted number that was, undiluted, a 4.5 SE effect.
+  - Null-test it by passing a variant that cannot fire: 0 firings, exactly
+    `+0.0000`. `npm test` asserts that.
 - **`scripts/coalitiontest.mjs` is the second harness, and you need it for any rule
   about co-operating with teammates.** A one-seat A/B structurally cannot see those:
   one defender can stand down while the other two still contest the trick, so that seat
@@ -483,9 +525,29 @@ Genuinely open:
      server's token is unset and when the one given is wrong, deliberately, so a 404
      tells you nothing about which.
    - **Mining is bounded by `--budget-min`, not by how many hands you ask for.** An
-     exact grade of every decision costs seconds a hand — ~24s on a slow box — so a
+     exact grade of every decision costs seconds a hand — ~24s on a slow box, and
+     **measured at ~16s/hand on a GitHub runner (131 hands in 35 minutes)** — so a
      thousand hands is hours, not minutes. It takes the newest first when the clock is
-     bounded and reports what it did not reach.
+     bounded and reports what it did not reach. The `--selftest 30` preamble is a
+     further ~7 minutes on a runner; that is the price of checking the instrument
+     before believing it, and it is why the self-test is not in `npm test`.
+   - **Next session's cleanup list, in the order that pays.** The collection and
+     analysis path works end to end now, so what is left is coverage and rigor:
+     1. **Point mining at www** and re-census. Beta is historical; www is where play is.
+     2. **Record multiplayer hands** (the parent item above). 131 solo hands over four
+        days is the ceiling on what solo collection produces; a five-seat table produces
+        five perspectives on every hand. Needs dedup and consent, per `handLog.js`.
+     3. **Give `minehands` a significance story.** It reports a signed total and nothing
+        about spread, so a net built from two heavy tails reads the same as a real edge.
+        It should report the per-decision distribution, or bootstrap a CI, so that "+72"
+        cannot be quoted as a finding. This is the gap that made the 2026-08-02 run
+        need a human to say "that is noise."
+     4. **Make the feature table honest about double-counting** — either report
+        decisions-per-cluster distinctly from features-per-cluster, or drop features
+        that only co-occur with a stronger one.
+     5. **Consider grading from trick 2** for cluster-hunting. Trick 1 dominates the
+        current table and is the position where DD bias is largest; excluding it would
+        tell you whether anything survives without it.
    - **What the corpus can answer is narrower than it looks.** Every record is one
      human against four AI seats, so a cluster is evidence about the engine and never
      about a table. And per the census, a corpus whose newest `version` is several
@@ -497,6 +559,38 @@ Genuinely open:
      census; the default is beta because that is where the history is, and it should
      move to www once www has more. Do not merge the two without reading the version
      field — they are hands against different builds, which is what that field is for.
+   - **THE CORPUS HAS BEEN MINED ONCE, 2026-08-02, and the answer was "no signal".**
+     131 hands off beta, 126 gradeable, 445 real decisions, 142 disagreements with the
+     engine. Net **+72 points to the human over 142 disagreements** — which is noise,
+     and the shape of it is the point: **87 of the 142 (61%) cost exactly the same
+     either way.** Of the 55 that mattered, the human was better 31 times at +9.2 avg
+     and the engine 24 times at −8.9. 31-vs-24 is within one SD of a coin flip
+     (expected 27.5, SD 3.7). Both sides make real mistakes at the same rate and size.
+     - **Read that as a genuine result, not a failed experiment.** "No large systematic
+       gap against a competent human" is worth knowing, and it is the strongest claim
+       55 decisions can support. Finding subtler stuff needs an order of magnitude more
+       hands, which is why the multiplayer-recording item above is the real unlock.
+     - **The one lead, and why it is probably a mirage.** `trick=1` had the highest win
+       share of any feature (38%, 13 of 34) and the three biggest single-decision gaps
+       in the corpus were all trick 1, all second-or-third to act with an opponent
+       holding, all the engine picking the wrong trump weight — twice under-committing
+       (a beatable queen or a jack where the boss card was right), once over-committing
+       (burning a queen where a discard was right). Opposite errors, so not one rule.
+       **Trick 1 is exactly where double-dummy flatters the human**, since nothing is
+       known yet and DD judges with all five hands visible. Trick 1 topping the table is
+       what the bias alone would produce. Cheap to check, do not assume it survives.
+     - **The feature table double-counts and will fool you.** Every decision emits seven
+       features, so one big-delta decision lights up seven rows. Most of that table is
+       the same handful of decisions viewed from different angles. Read the examples
+       under it, not the row totals.
+   - **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+     then nothing. Not a bug: the promotion moved players to www, whose hands go to a
+     different database. **Point the next run at `source: www.noschnitz.com`.** Beta's
+     corpus is now a fixed historical artifact spanning nine engine versions
+     (0.31.0 → 0.45.2), which is itself a limit on what it can say.
+   - **Whatever `total` says is an undercount.** The tail-drop bug (fixed in the same PR
+     that added this workflow) was live for the entire beta collection window, so every
+     device that stopped mid-batch silently kept up to four hands.
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,

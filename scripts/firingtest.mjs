@@ -1,46 +1,50 @@
 #!/usr/bin/env node
 /* ============================================================================
-   Paired A/B restricted to the decisions a rule ACTUALLY CHANGES.
+   Conditional-on-firing A/B harness.
 
-   `abtest.mjs` scores every hand, which is right when a change touches most of
-   them. It goes blind when a rule fires rarely: divide a real per-firing effect
-   by the ~99% of decisions where nothing happened and it lands under the noise
-   floor, so the harness reports "no effect" for "effect I cannot see". CLAUDE.md
-   already says a cluster must be measured "on the decisions it changes — never
-   on a whole-hand aggregate, which is too coarse to see a rule that fires on
-   under 1% of decisions"; this is that measurement.
+   `abtest.mjs` measures a variant over EVERY hand, which is the right
+   instrument for a rule that touches most hands and the wrong one for a rule
+   that touches few. A guard that fires on half a percent of hands and is worth
+   five points when it does moves the whole-hand aggregate by about 0.03 — a
+   number indistinguishable from noise at any sample size this project runs, so
+   `abtest` reports "no effect" for a change that is plainly correct. That is
+   not a close call being missed; it is the wrong denominator. Two rules in
+   engine.js were already tuned this way (see the notes above the fat-trump
+   press guard in aiskilltest.mjs), each time with a throwaway script rebuilt
+   from scratch. This is that script, kept.
 
-   Built for OVERTAKE_SPEND_SECURITY in 0.49.0, which fires on 0.83% of
-   contested decisions. abtest read it as +0.0009 in 4 of 4 seeds, then +0.0002
-   in 4 of 8 on a re-run — indistinguishable from zero. Restricted to firings it
-   reads +0.0666 +/- 0.0317 over 3,629 of them, and the two agree once the
-   dilution is undone: 0.0666 x 0.0057 firings/hand = +0.00038/seat/hand.
+   It plays each deal twice from an identical shuffle, exactly like abtest —
+   control with every seat on the current engine, variant with ONE seat carrying
+   the option — but it also asks, at every decision that seat makes in the
+   control arm, whether the variant option would have chosen a different card.
+   That flag is what splits the population:
 
-   HOW THE RESTRICTION STAYS HONEST. Both arms get the identical deal, and the
-   condition is "did the seat's play diverge", which is settled at the decision
-   point by the position alone — not by how the hand turned out. Conditioning on
-   an OUTCOME (say, hands the variant seat won) would be circular; this is not
-   that. Divergence is read by comparing the seat's play sequence between arms,
-   so no engine instrumentation is needed and the rule under test needs only an
-   `opts` switch.
+     firing rate   share of hands where the option changed at least one card
+     per firing    mean point delta over only those hands
+     overall       the abtest number, printed alongside so the two can be
+                   compared rather than confused
 
-   Usage:
-     node scripts/firingtest.mjs [hands] [seeds] [--opt key=value ...]
-     node scripts/firingtest.mjs 30000 22 --opt spendFatSecurity=0.5
+   Read the per-firing column with the firing rate next to it: a large per-firing
+   delta on a rule that fires twice in ten thousand hands is still a rounding
+   error in the game, and a small one that fires constantly is not.
 
-   The control arm plays with every listed opt forced OFF (numeric opts to 0,
-   boolean to false), so the result does not depend on what the shipped default
-   happens to be — run it before and after changing a constant and it measures
-   the same thing.
+   Detection runs against the CONTROL line of play, so it counts the decisions
+   the seat would actually have faced. Once the variant diverges the two arms
+   see different positions and "would it differ here" stops being a question
+   about the same hand.
 
-   Null control: pass a variant that cannot fire (e.g. spendFatSecurity=0) and
-   it must report 0 firings and exactly +0.0000.
+   Null-tests to exactly +0.0000 with a zero firing rate, which is what makes a
+   small result trustworthy; `npm test` asserts it.
+
+   Usage: node scripts/firingtest.mjs <hands> [--seeds n] --opt key=value ...
+     node scripts/firingtest.mjs 20000 --seeds 4 --opt guardFatTrumpBleed=false
    ========================================================================= */
 import {
-  ALL_CARDS, freshHand, assignPartner, applyPlay, resolveTrick,
-  handStrength, aiBuryAndCall, aiChooseCard, scoreHand, cid,
+  ALL_CARDS, freshHand, assignPartner, applyPlay, resolveTrick, cid,
+  handStrength, aiBuryAndCall, aiChooseCard, scoreHand,
 } from "../src/engine.js";
 
+/* -------- deterministic RNG so both arms see the identical shuffle -------- */
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -51,8 +55,9 @@ function mulberry32(a) {
 }
 
 // Shuffles from ALL_CARDS, a fixed canonical order, NOT from the cards as
-// freshHand left them — see the long note on dealWith in abtest.mjs for what
-// that distinction cost.
+// freshHand left them — see the long note on dealWith in abtest.mjs. Shuffling
+// an already-shuffled array composes with the unseeded shuffle underneath
+// instead of replacing it, which left every "seed" naming a fresh population.
 function dealWith(rand, dealer) {
   const g = freshHand(dealer, [0, 0, 0, 0, 0], 1);
   const deck = [...ALL_CARDS];
@@ -60,17 +65,17 @@ function dealWith(rand, dealer) {
     const j = Math.floor(rand() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  return {
-    ...g,
-    hands: [0, 1, 2, 3, 4].map((p) => deck.slice(p * 6, p * 6 + 6)),
-    blind: deck.slice(30, 32),
-  };
+  const hands = [0, 1, 2, 3, 4].map((p) => deck.slice(p * 6, p * 6 + 6));
+  return { ...g, hands, blind: deck.slice(30, 32) };
 }
 
-// Returns {delta, cards}; `cards` is watchSeat's play sequence, which is what
-// the two arms are compared on to detect a firing.
-function playHand(start, optsFor, watchSeat) {
+// Identical to abtest's, except for `watch`: when set to {seat, opts} it
+// records whether those opts would ever have changed that seat's card. The
+// probe is read-only — the hand still plays on the card actually chosen.
+function playHand(start, optsFor, watch = null) {
   let g = start;
+  let fired = false;
+
   while (g.phase === "picking" && g.passes < 5) {
     const idx = g.pickTurn;
     const wants = handStrength(g.hands[idx]) >= 10 || (g.passes === 4 && handStrength(g.hands[idx]) >= 8);
@@ -88,25 +93,26 @@ function playHand(start, optsFor, watchSeat) {
   }
   if (g.phase !== "playing") return null;
 
-  const cards = [];
   let guard = 0;
   while (g.phase === "playing" && guard++ < 60) {
     const idx = g.turn;
     if (idx < 0) { g = resolveTrick(g); continue; }
-    const c = aiChooseCard(g, idx, optsFor(idx));
-    if (idx === watchSeat) cards.push(cid(c));
-    g = applyPlay(g, idx, c);
+    const chosen = aiChooseCard(g, idx, optsFor(idx));
+    if (watch && idx === watch.seat && !fired) {
+      if (cid(aiChooseCard(g, idx, watch.opts)) !== cid(chosen)) fired = true;
+    }
+    g = applyPlay(g, idx, chosen);
     if (g.trick.length === 5) g = resolveTrick(g);
   }
   if (g.phase !== "handEnd") return null;
-  return { delta: scoreHand(g).result.handDelta, cards };
+  return { delta: scoreHand(g).result.handDelta, fired };
 }
 
 /* --------------------------------- main ---------------------------------- */
 const args = process.argv.slice(2);
-const positional = args.filter((a) => !a.startsWith("--") && !/=/.test(a));
-const HANDS = parseInt(positional[0] || "20000", 10);
-const SEEDS = parseInt(positional[1] || "8", 10);
+const hands = parseInt(args[0] || "2000", 10);
+const seedArg = args.indexOf("--seeds");
+const seeds = seedArg >= 0 ? parseInt(args[seedArg + 1], 10) : 3;
 
 const variant = {};
 for (let i = 0; i < args.length; i++) {
@@ -114,51 +120,57 @@ for (let i = 0; i < args.length; i++) {
   const [k, v] = args[i + 1].split("=");
   variant[k] = v === "true" ? true : v === "false" ? false : Number(v);
 }
-if (!Object.keys(variant).length) {
-  console.error("nothing to test — pass at least one --opt key=value");
-  process.exit(1);
-}
-// Same keys, forced off, so the control does not inherit the shipped default.
-const offVariant = Object.fromEntries(
-  Object.entries(variant).map(([k, v]) => [k, typeof v === "boolean" ? false : 0]),
-);
-const NONE = () => offVariant;
 
-console.log(`variant: ${JSON.stringify(variant)}   control: ${JSON.stringify(offVariant)}`);
-console.log(`${HANDS} hands x ${SEEDS} seeds, scored ONLY where the variant changed a card\n`);
+const NONE = () => ({});
+console.log(`variant: ${JSON.stringify(variant)}`);
+console.log(`${hands} hands x ${seeds} seeds, variant in one seat against four unchanged\n`);
 
-const perSeed = [];
-let totalFired = 0, totalScored = 0;
-for (let seed = 1; seed <= SEEDS; seed++) {
+const perSeedFiring = [];
+const perSeedOverall = [];
+const perSeedRate = [];
+for (let seed = 1; seed <= seeds; seed++) {
   const rand = mulberry32(seed * 7919);
-  let sum = 0, fired = 0, scored = 0;
-  for (let h = 0; h < HANDS; h++) {
+  let firedSum = 0, firedN = 0, allSum = 0, allN = 0, skipped = 0;
+  for (let h = 0; h < hands; h++) {
+    const dealer = h % 5;
     const seat = h % 5;
-    const start = dealWith(rand, h % 5);
-    const control = playHand(start, NONE, seat);
-    const test = playHand(start, (p) => (p === seat ? variant : offVariant), seat);
-    if (!control || !test) continue;
-    scored++;
-    const diverged = control.cards.length !== test.cards.length
-      || control.cards.some((c, i) => c !== test.cards[i]);
-    if (!diverged) continue;
-    fired++;
-    sum += test.delta[seat] - control.delta[seat];
+    const start = dealWith(rand, dealer);
+    const control = playHand(start, NONE, { seat, opts: variant });
+    const test = playHand(start, (p) => (p === seat ? variant : {}));
+    if (!control || !test) { skipped++; continue; }
+    const d = test.delta[seat] - control.delta[seat];
+    allSum += d; allN++;
+    if (control.fired) { firedSum += d; firedN++; }
   }
-  const per = fired ? sum / fired : 0;
-  perSeed.push(per);
-  totalFired += fired; totalScored += scored;
-  console.log(`  seed ${seed}: ${per >= 0 ? "+" : ""}${per.toFixed(4)} per firing   (${fired} firings in ${scored} hands, ${(100 * fired / scored).toFixed(2)}%)`);
+  const rate = firedN / allN;
+  const perFiring = firedN ? firedSum / firedN : 0;
+  const overall = allSum / allN;
+  perSeedFiring.push(perFiring); perSeedOverall.push(overall); perSeedRate.push(rate);
+  console.log(
+    `  seed ${seed}: fired on ${(100 * rate).toFixed(2).padStart(5)}% of hands` +
+    `   ${perFiring >= 0 ? "+" : ""}${perFiring.toFixed(3).padStart(7)} per firing` +
+    `   (${overall >= 0 ? "+" : ""}${overall.toFixed(4)} overall, ${allN} scored, ${skipped} skipped)`
+  );
 }
 
-const mean = perSeed.reduce((a, b) => a + b, 0) / perSeed.length;
-const sd = Math.sqrt(perSeed.reduce((s, x) => s + (x - mean) ** 2, 0) / Math.max(1, perSeed.length - 1));
-const se = sd / Math.sqrt(perSeed.length);
-const ahead = perSeed.filter((d) => d > 0).length;
-const behind = perSeed.filter((d) => d < 0).length;
+const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+const mf = avg(perSeedFiring);
+const ahead = perSeedFiring.filter((d) => d > 0).length;
+console.log(
+  `\n  fires on ${(100 * avg(perSeedRate)).toFixed(2)}% of hands;` +
+  ` mean ${mf >= 0 ? "+" : ""}${mf.toFixed(3)}/firing, ahead in ${ahead} of ${perSeedFiring.length} seeds` +
+  `\n  (whole-hand aggregate: ${avg(perSeedOverall) >= 0 ? "+" : ""}${avg(perSeedOverall).toFixed(4)}/seat/hand — the abtest number)`
+);
 
-console.log(`\n  mean ${mean >= 0 ? "+" : ""}${mean.toFixed(4)} per firing +/- ${se.toFixed(4)} SE  (${se > 0 ? (mean / se).toFixed(2) : "n/a"} SE from zero)`);
-console.log(`  ahead in ${ahead} of ${perSeed.length} seeds, behind in ${behind}`);
-console.log(`  ${totalFired} firings (${(100 * totalFired / totalScored).toFixed(2)}% of hands)`);
-console.log(`  implied whole-hand effect ${(mean * totalFired / totalScored).toFixed(5)}/seat/hand`);
-if (!totalFired) console.log("\n  no firings — null control, or the variant never applies to these deals.");
+// Run with no --opt, this is the null control, and it has to come back exactly
+// zero on both columns: an empty variant cannot change a card, so nothing may
+// fire and no hand may differ. A harness that drifts off zero here is measuring
+// its own nondeterminism, and every small result it has ever reported is void.
+// Same contract as coalitiontest's, and `npm test` runs it for the same reason.
+if (!Object.keys(variant).length) {
+  const clean = avg(perSeedRate) === 0 && perSeedOverall.every((d) => d === 0);
+  console.log(clean
+    ? "\nPASS — null control is exactly zero and nothing fired; the harness is paired."
+    : "\nFAIL — null control moved. The arms are not paired; do not trust any result from this.");
+  if (!clean) process.exit(1);
+}
