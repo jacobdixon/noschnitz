@@ -6,6 +6,47 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.49.0] - 2026-08-03 (`PENDING`)
+- **The AI no longer bleeds with a fat trump when a cheaper one is available.**
+  "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
+  on the diamonds that reads exactly backwards on price: A-D and 10-D rank below
+  every Jack while carrying 11 and 10 points, so the weakest trump in a hand is
+  routinely the fattest card in it. Both bleed paths — the picker's and the
+  defender's all-trump line — picked that card. New `bleedTrump` skips a fat
+  trump when a cheaper one exists and the fat one can still be beaten; a fat
+  trump nothing can beat is still a fine lead and stays eligible.
+
+  This is the bleed half of an objection the engine already sustained on the
+  press path (`leadDonatesPoints`, 0.44.0). The two have separate switches on
+  purpose — `guardFatTrumpBleed` and `guardFatTrumpLead` — because an A/B that
+  moves both at once cannot attribute either.
+
+  Found in a real hand, now pinned as `scripts/scenarios/hand8-fonzie-ad.mjs`
+  with a constructed assertion and a negative control in `aiskilltest`: a
+  defender with every Queen already gone held A-D and three Jacks, so the only
+  card left in the deck that could beat anything of theirs was the J-H. The
+  engine led A-D — weakest of the four by power, dearest by ten points — into a
+  lone picker who, on the evidence visible at the time, held that J-H about 83%
+  of the time. PIMC scores J-D ahead by 7.4 points and 30 points of schneider
+  rate over 12,000 sampled worlds.
+
+  Measured at **+0.252 per firing on 0.37% of hands, ahead in 5 of 5 seeds**
+  (100,000 hands). The whole-hand aggregate is -0.0009/seat/hand, which is
+  noise, and that is the point — see the new harness below.
+- **New harness `scripts/firingtest.mjs` (`npm run firingtest`).** `abtest`
+  measures a variant over every hand, which is the wrong denominator for a rule
+  that touches few. A guard firing on half a percent of hands and worth five
+  points when it does moves the whole-hand aggregate by about 0.03 — noise at
+  any sample size this project runs — so `abtest` reports "no effect" for a
+  change that is plainly correct. This splits the population by whether the
+  option actually changed a card, and reports firing rate, per-firing delta and
+  the `abtest` number side by side so the two are compared rather than confused.
+
+  Two rules in `engine.js` were already tuned this way with throwaway scripts
+  rebuilt from scratch each time (see the notes in `aiskilltest`). This is that
+  script, kept. It null-tests to exactly zero on both columns with nothing
+  firing, and `npm test` asserts it.
+
 ## [0.48.1] - 2026-08-03 (`ff2862c`)
 - **PIMC now reports a schneider rate next to the win rate.** The win rate goes
   flat at exactly the decisions where it is least useful: in a hand already
