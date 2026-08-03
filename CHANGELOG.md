@@ -77,9 +77,18 @@ corresponds to the entries below.
 
   That number was taken against the engine as it stood BEFORE #124. `bleedTrump`
   moves fat trump on the leading path and this rule moves it on the overtake
-  path — different code, same two cards — so the two could in principle interact,
-  and the re-run on the merged engine is recorded in 0.49.3 rather than silently
-  replacing this figure.
+  path — different code, same two cards — so the two could in principle interact.
+  Re-run on the merged engine, with #124's harness:
+
+      +0.210 per firing, ahead in 20 of 22 seeds, fires on 0.47% of hands
+      whole-hand aggregate +0.0010/seat/hand   (30,000 hands x 22)
+
+  Unchanged: the same mean and the same 20-of-22 split as the pre-merge run, so
+  the two guards do not interact — they touch the same two cards on paths that
+  never both apply to one decision. 20 of 22 is a sign test at p ≈ 6e-5 on its
+  own, without leaning on the SE. (The per-seed figures were piped through
+  `tail` when this ran, so the ± could not be recomputed from the log; the
+  pre-merge run of the identical measurement gave ± 0.0466.)
 
 ## [0.49.1] - 2026-08-03 (`e85447a`)
 - **The cheapest-winner rule now measures "cheapest" in points when rank is
