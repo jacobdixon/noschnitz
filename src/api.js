@@ -104,5 +104,15 @@ export const leaveTable = (id, playerId) => seatAction(id, playerId, "leave");
 // Deduped server-side exactly like joining.
 export const setName = (id, playerId, name) => seatAction(id, playerId, "rename", { name });
 
+// COM-1.1 — the table's audio room. A POST because the first caller causes a
+// room to be provisioned at Daily; everyone after gets the cached one back.
+//
+// Codes worth branching on: "voice-disabled" and "no-voice-provider" both mean
+// this environment has no audio (the first deliberately, the second by
+// mistake), and "not-at-table" means the caller is holding a link but isn't in
+// the room's roster.
+export const getVoiceRoom = (id, playerId) =>
+  request(`/api/tables/${encodeURIComponent(id)}/voice`, { method: "POST", body: { playerId } });
+
 // MP-1.2: the link that gets texted to the group.
 export const tableUrl = (id) => `${window.location.origin}/t/${id}`;

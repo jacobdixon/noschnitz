@@ -37,6 +37,29 @@
    the API routes) because this one never reaches it: VITE_* vars exist only in
    the browser bundle. See api/_lib/flags.js — a client that can't see the
    feature is not a control, only a courtesy.
+
+   VOICE is the second flag, and it is deliberately narrower (COM-1):
+
+     production  (www.noschnitz.com, master)  unset
+     beta        (beta.noschnitz.com, beta)   VITE_VOICE=1
+
+   Beta-only, which is worth spelling out because it is no longer obvious. Since
+   the promotion, beta and production are built from the SAME COMMIT — release.yml
+   fast-forwards beta to master on every green CI run — so "beta only" cannot be
+   a branch difference any more. What still differs is the Vercel ENVIRONMENT:
+   master builds Production, and beta, being a non-production branch, builds
+   Preview. So a Preview-scoped VITE_VOICE reaches beta and not www, which is
+   exactly the arrangement VITE_MULTIPLAYER had before it was promoted.
+
+   The consequence to keep in mind: Preview scope covers every preview
+   deployment, so pull-request previews get voice too. That is useful rather
+   than accidental — it is where the feature can be tried before beta.
+
+   Same build-time property as above, so the production bundle contains no
+   voice code at all — including the Daily client, which is a dynamic import
+   behind this flag and therefore never fetched by anyone on www.
    ========================================================================= */
 
 export const MULTIPLAYER_ENABLED = import.meta.env.VITE_MULTIPLAYER === "1";
+
+export const VOICE_ENABLED = import.meta.env.VITE_VOICE === "1";

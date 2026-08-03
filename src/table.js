@@ -132,6 +132,10 @@ export function createTable({ hostPlayerId, hostName, now, rand, id } = {}) {
     dealer: 0,
     scores: [0, 0, 0, 0, 0],
     handNum: 0,
+    // COM-1. Null until somebody actually asks for audio — provisioning a room
+    // costs a round trip to a third party and a slot of their quota, and most
+    // tables will never want one. See setVoiceRoom.
+    voice: null,
     g: null,
   };
 }
@@ -316,6 +320,57 @@ export function watcherNotices(table) {
     isYou: Boolean(p.isYou),
     text: watcherNotice(p.name, targets[i] >= 0 ? table.seats[targets[i]].name : null),
   }));
+}
+
+/* --------------------------- Voice rooms (COM-1) --------------------------- */
+
+// Where the table remembers its audio room.
+//
+// Cached on the table rather than derived per request, for the reason every
+// other piece of shared state here is: five clients tapping "Join audio" within
+// a second of each other must land in ONE room. The room name is already
+// deterministic in the table id (see roomNameFor in api/_lib/voice.js), so they
+// would converge anyway — but each of those requests would otherwise be a call
+// to Daily, and the cache turns five into one.
+//
+// Goes through commit() like every other mutation, so it bumps the CAS version
+// and reaches the other clients down the stream they are already watching. That
+// matters more than it looks: it is what lets somebody else's "Join audio"
+// button light up because YOU started the call, which is most of the point of
+// having voice at the table at all.
+//
+// FIRST writer wins, as long as what they cached is still fresh.
+//
+// Usually moot: the room name is deterministic in the table id, so two clients
+// racing to provision converge on the same room by construction — one creates
+// it, the other reads it back. The case this actually guards is the one where
+// they DON'T converge, which is real if narrow: rotate DAILY_API_KEY between
+// the two calls and the name is keyed differently, so the two requests genuinely
+// mint two rooms. Last-writer-wins there splits a table across two calls, and
+// the people in the losing one can hear each other, which is what makes it hard
+// to notice and miserable to debug on a games night.
+//
+// The freshness qualifier is what keeps this from also blocking RENEWAL: an
+// expiring room must still be replaceable, and it is checked against the same
+// margin the caller used to decide to re-mint in the first place.
+export function setVoiceRoom(table, { voice, now }) {
+  if (!voice?.url) return table;
+  const held = table.voice;
+  if (held?.url && held.url !== voice.url && voiceRoomIsFresh(held, now)) return table;
+  if (held?.url === voice.url && held?.expiresAt === voice.expiresAt) return table;
+  return commit({ ...table, voice: { ...voice } }, now);
+}
+
+// Re-mint slightly before expiry rather than at it. A room that expires while
+// five people are connected drops the call; one re-minted a few minutes early
+// costs nothing, because the URL is only read when somebody taps "Join audio".
+export const VOICE_RENEW_MARGIN_MS = 10 * 60 * 1000; // 10m
+
+// Lives here rather than beside the provider code because both sides need it
+// and only this side is safe to import from a browser — api/_lib/voice.js
+// reaches for node:crypto. The provider module imports this, not the reverse.
+export function voiceRoomIsFresh(voice, now) {
+  return Boolean(voice?.url && voice.expiresAt && now < voice.expiresAt - VOICE_RENEW_MARGIN_MS);
 }
 
 /* -------------------------------------------------------------------------- */

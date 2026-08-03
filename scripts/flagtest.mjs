@@ -147,7 +147,16 @@ const codeOf = (res) => { try { return JSON.parse(res.body).error.code; } catch 
   // rather than reading the ambient one. That route was correctly gated the
   // whole time; the test was wrong, which costs more than no test — a suite
   // that cries wolf gets read as broken rather than as a finding.
-  const CALL = /requireMultiplayer\(\s*res\b/;
+  //
+  // `requireVoice` counts as a gate because it CALLS requireMultiplayer first
+  // and returns false if it fails — a voice room belongs to a table, so
+  // everything that makes a table reachable has to hold before it. That is a
+  // real dependency and not an assumption: scripts/voicetest.mjs asserts it
+  // directly ("voice on but multiplayer off is still refused", and that the
+  // code comes back as multiplayer-disabled rather than a voice one). If that
+  // implication is ever weakened, voicetest fails — which is the only reason
+  // it is safe for this regex to accept the wrapper.
+  const CALL = /require(?:Multiplayer|Voice)\(\s*res\b/;
   const missing = routes.filter((p) => !CALL.test(readFileSync(p, "utf8")));
   check("every route is gated", missing.length === 0, missing.join(", "));
 

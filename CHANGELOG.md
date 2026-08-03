@@ -6,6 +6,157 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.0] - 2026-08-03 (`de21287`)
+Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
+change; it was developed as two and the halves are kept separate below.
+
+### Server — the flag, the provider adapter, the route
+- **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
+  demand and cached on the table. No client yet: this is the flag, the provider
+  adapter and `POST /api/tables/[id]/voice`. Nothing is reachable from the UI.
+
+- **Audio only, and not as a first step toward video.** The felt is a locked,
+  no-scroll viewport with the seat ring absolutely positioned, so video tiles
+  would mean redesigning the table. Hearing each other is also what the
+  interview said was doing the work — the game is an excuse to fill the quiet
+  spaces. `start_video_off`, no screenshare, no chat.
+
+- **Daily, not Jitsi, and the reason is worth recording.** `meet.jit.si` has
+  required an account to CREATE a room since August 2023 (Google/GitHub/
+  Facebook). Joining stays anonymous, but somebody has to create it — so the
+  first person at every table would hit a login wall, which breaks COM-1.3's
+  "no second signup" and the whole no-account premise of guest join. The Jitsi
+  paths that remain are JaaS (an 8x8 account, plus a JWT signed per participant
+  with an RSA key) or somebody's donated public instance.
+
+  Daily rooms can be **public**, so a participant joins with the room URL and no
+  token at all. That is the entire reason `api/_lib/voice.js` is 150 lines
+  instead of a key-management service, and it matches the trust model this
+  project already has: the table link IS the credential, so "anyone holding the
+  URL may join" is the same rule one layer down rather than a weakening. Free
+  tier is 10,000 participant-minutes a month — a games night is about 900.
+
+- **`VITE_VOICE` is beta-only, which is no longer a branch difference.** Since
+  the promotion, beta and production are built from the same commit —
+  `release.yml` fast-forwards beta on every green CI run — so "beta only" has to
+  be an ENVIRONMENT difference. `master` builds Vercel's Production; `beta`,
+  being a non-production branch, builds Preview. A Preview-scoped `VITE_VOICE`
+  therefore reaches beta and not www, which is exactly the arrangement
+  `VITE_MULTIPLAYER` had before it was promoted. Preview scope also covers PR
+  previews, which is useful rather than accidental.
+
+  Verified by building both ways: the production bundle is byte-identical
+  (`index-DdDM1lmD.js`, 204.70 kB) and neither build contains `api.daily.co`.
+
+- **The room name is an HMAC of the table code, not the code.** The code is a
+  bearer credential; a room name is a string handed to a third party that lands
+  in their URLs, logs and dashboard. `src/App.jsx` already redacts table codes
+  out of analytics for precisely this reason, and sending the same code to Daily
+  would undo that one file over. Keyed with `DAILY_API_KEY` rather than plainly
+  hashed, because an 8-character code from a 31-character alphabet is only
+  ~8.5e11 preimages — brute-forceable by anyone who obtained a room list. Keying
+  costs no new configuration, since the key is already required for any of this
+  to work.
+
+- **Two conditions the gate distinguishes, for the reason 0.45.1 exists.**
+  `VOICE=1` on the server and a provider key are checked separately, with
+  distinct codes (`voice-disabled` / `no-voice-provider`), and the second names
+  which credential it cannot see — names only, never values, asserted against
+  the serialized body. Flag on with the key missing is the failure that shows a
+  working "Join audio" button which 503s when tapped, in front of five people on
+  a games night.
+
+- **First writer wins on the room, as long as theirs is still fresh.** Usually
+  moot — the name is deterministic in the table id, so racing clients converge
+  by construction, one creating and one reading back. The case it guards is a
+  key rotation between two provisioning calls, which mints two genuinely
+  different rooms; last-writer-wins there splits a table across two calls, and
+  the people in the losing one can hear each other, which is what makes it hard
+  to notice. The freshness qualifier keeps renewal working, so a session running
+  past the 12h room TTL doesn't silently lose audio.
+
+- **Provisioning happens outside `mutate()`.** The CAS loop can call its
+  mutation function several times against different states, so a network call
+  inside it would be repeated per attempt. The slow, impure part runs once and
+  only its result goes through the loop.
+
+- `scripts/voicetest.mjs` (55 checks, wired into `npm test`) drives every branch
+  against an injected fake `fetch` — the create/read race, an expiring room, a
+  provider that says no, and a stranger trying to spend our quota. Both of the
+  load-bearing assertions were negative-controlled: removing the race guard
+  fails exactly one check, removing the at-table gate fails exactly two.
+
+- **`flagtest`'s structural check now accepts `requireVoice` as a gate.** It
+  matched the literal `requireMultiplayer(res` call, so a route gated through
+  the voice wrapper read as ungated. `requireVoice` calls it first and returns
+  false if it fails — and that implication is asserted in `voicetest` rather
+  than assumed, which is the only thing that makes accepting the wrapper safe.
+
+### Client — opt-in join, mute, and the guard that keeps it off www
+- **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
+  mic chip in the header that mutes and shows how many people are on the call.
+  Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
+  microphone from a user gesture, and a link somebody texted you should not
+  demand one before you have decided to be in the conversation.
+
+- **Production carries no audio code, and that is now enforced rather than
+  asserted.** `scripts/voicebuildtest.mjs` builds both ways and greps the actual
+  bundles, wired into `npm test`. It is **bidirectional** on purpose: every
+  token must be absent flag-off AND present flag-on, because grepping for a
+  token and finding zero passes just as convincingly when the token is
+  misspelled, when the build silently failed, or when the feature was deleted.
+  Measured at v0.48.0: 0 flag-off against 95 flag-on for `daily`.
+
+  `Verify production` gains the deployed half of the same check — a new
+  `voice: absent|present` input, defaulting to absent. The build test stops a
+  regression being merged; the workflow catches a variable set on the wrong
+  Vercel scope, which no test can see.
+
+- **That guard immediately caught a real leak, which is the reason it exists.**
+  The first draft gated the UI on `voice.available`, a runtime property of the
+  hook's return — and Rollup cannot fold a property access, so the menu entry
+  and the mic chip survived into the production bundle. Worse, the first
+  verification MISSED it: building without `VITE_MULTIPLAYER` eliminates all of
+  `TableScreen`, so the audio inside it looked absent for the wrong reason.
+  Production is flag-on for multiplayer, so that was never the right baseline.
+  The test now builds production's real shape.
+
+  Fixes: the UI branches on the `VOICE_ENABLED` module constant, and `useVoice`
+  returns its inert shape **before** its hooks rather than after. Returning late
+  is the obvious shape and leaves every callback in the bundle — it is how
+  `toggleMute` shipped to production in the first draft. The early return reads
+  like a rules-of-hooks violation and is not one: the rule is that hook order be
+  consistent across renders, and `VOICE_ENABLED` is compile-time, so within any
+  build this hook either always runs its hooks or never does.
+
+- **The Daily SDK is its own lazy chunk** — 261kB, `import()`ed inside the join
+  handler, so even on beta nobody downloads it until they tap the button. Pinned
+  separately in the build test, because a refactor to a static import would keep
+  every token check passing while making all five people at a table fetch it.
+
+- **A stale join is cancellable.** `join()` awaits twice — the server, then the
+  SDK — and either gap is long enough to unmount or to leave. A continuation
+  past that point constructs a call object into a dead component, which leaves a
+  **live microphone** with nothing on screen to stop it. A generation counter,
+  bumped by every teardown, invalidates whatever join is in flight.
+
+- No camera is ever requested: `videoSource: false` at join on top of the room's
+  `start_video_off`. Both, because they fail differently — the room property is
+  what a second client would honour, the join option is what stops this browser
+  lighting a camera indicator even for an instant.
+
+- `userName` is set to the seat index, never the playerId — that is a bearer
+  token and the string is visible to every other participant. Nothing reads it
+  yet; it is there so a future speaking indicator (COM-2.1) has a seat to point
+  at. Deliberately no participant-to-seat mapping in this change: it needs an
+  identity join between two systems, and getting it wrong lights up the wrong
+  player.
+
+- **Note for whoever adds the next API route:** `api/tables/[id]/voice.js` takes
+  the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
+  The seat actions were already folded into one route for this reason. The next
+  one has to fold too.
+
 ## [0.57.0] - 2026-08-03 (`6b7b254`)
 - **Project memory brought in line with the session.** CLAUDE.md's clairvoyance
   section said "Not fixed, deliberately", which stopped being true in 0.56.0 —

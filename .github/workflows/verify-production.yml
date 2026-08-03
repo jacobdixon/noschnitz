@@ -50,6 +50,14 @@ on:
         options:
           - multiplayer
           - solo
+      voice:
+        description: "Should production contain the audio feature? (COM-1 is beta-only until deliberately promoted)"
+        required: true
+        default: absent
+        type: choice
+        options:
+          - absent
+          - present
 
 permissions:
   contents: read
@@ -72,6 +80,7 @@ jobs:
         env:
           WANT_INPUT: ${{ inputs.version }}
           EXPECT: ${{ inputs.expect }}
+          EXPECT_VOICE: ${{ inputs.voice }}
         run: |
           set -uo pipefail
 
@@ -141,7 +150,37 @@ jobs:
           fi
 
           echo "production is serving the $EXPECT build ($mp references to the tables API)"
+
+          # Audio (COM-1) is beta-only until somebody deliberately promotes it,
+          # and unlike multiplayer it has a THIRD-PARTY SDK behind it — so the
+          # cost of it leaking is not just an unfinished feature on www, it is
+          # 261kB of Daily's client and a microphone permission surface on a
+          # page nobody asked to have one.
+          #
+          # `daily` is the discriminator for the same reason `/api/tables/` is
+          # the one above: structural, not a UI label. It matches the chunk
+          # name, the SDK and every URL it uses, and scripts/voicebuildtest.mjs
+          # asserts the same token bidirectionally at build time — 0 flag-off
+          # against 95 flag-on at v0.47.0. This is the deployed half of that
+          # check: the build test stops a regression being merged, this catches
+          # an environment variable set on the wrong scope, which no test can.
+          voice="$(grep -o -i 'daily' bundle.js 2>/dev/null | wc -l)"
+
+          if [ "$EXPECT_VOICE" = "absent" ] && [ "$voice" -ne 0 ]; then
+            echo "- **audio leaked to production** ($voice references to \`daily\`)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::production is serving a bundle containing the audio feature ($voice references to 'daily'), and this run expected it absent. VITE_VOICE is set on the Production environment — it belongs on Preview only. Unset it in the Vercel dashboard and redeploy. Check VOICE and DAILY_API_KEY while you are there: a Production API with a voice flag on is a live microphone route nobody signed off."
+            exit 1
+          fi
+
+          if [ "$EXPECT_VOICE" = "present" ] && [ "$voice" -eq 0 ]; then
+            echo "- version OK, but **no audio** — expected present" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::production is serving v$want with no audio code in it, and this run expected it present. VITE_VOICE=1 is not set on the Production environment (and it must NOT be marked sensitive — build-time variables are withheld from the build step, which produces exactly this: a voiceless bundle in front of a live API)."
+            exit 1
+          fi
+
+          echo "audio is $EXPECT_VOICE on production ($voice references to daily)"
           {
             echo "- version verified by bundle content"
             echo "- build verified: $mp references to \`/api/tables/\`"
+            echo "- audio verified $EXPECT_VOICE: $voice references to \`daily\`"
           } >> "$GITHUB_STEP_SUMMARY"

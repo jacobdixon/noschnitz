@@ -31,6 +31,16 @@
    A route that serializes a raw table — even "just the seats" — reintroduces
    both leaks. Every route returns tables through this function, without
    exception.
+
+   `voice` passes through in `rest`, and that is deliberate rather than an
+   oversight of the rule above. The room URL is what a client needs in order to
+   join the call, everyone at the table needs it, and a watcher on seat -1 needs
+   it too — they arrived from the link and are exactly the person with the most
+   reason to want to talk to somebody. It is not a second credential: the room is
+   public by design (see api/_lib/voice.js), so the URL is worth precisely as
+   much as the table code that already got them here. The thing that must never
+   pass through is DAILY_API_KEY, which is account-wide and never touches a
+   table.
    ========================================================================= */
 import { viewFor } from "../../src/engine.js";
 import { seatOf } from "../../src/table.js";
