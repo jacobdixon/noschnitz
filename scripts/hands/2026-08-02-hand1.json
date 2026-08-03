@@ -1,0 +1,18 @@
+{
+  "label": "2026-08-02 hand 1 (v0.46.0) — pickers win, no schneider, 115-5",
+  "seats": ["You", "Bernie", "Bunny", "Gus", "Fonzie"],
+  "picker": 0,
+  "calledSuit": "S",
+  "calledRank": "A",
+  "buried": ["KH", "7H"],
+  "firstLeader": 3,
+  "passers": [3, 4],
+  "plays": [
+    ["KD", "QS", "10D", "8D", "8S", "JS"],
+    ["10H", "AD", "QD", "QH", "9S", "10C"],
+    ["AC", "7D", "QC", "JH", "AS", "KC"],
+    ["AH", "JC", "10S", "7S", "KS", "8H"],
+    ["9H", "9D", "JD", "7C", "8C", "9C"]
+  ],
+  "expectedWinners": [0, 0, 2, 1, 2, 0]
+}

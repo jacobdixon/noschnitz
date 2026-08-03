@@ -277,6 +277,35 @@ Unchanged rules:
   ever need a different discriminator, pick a structural string, not a UI label
   somebody can reword without knowing that file depends on it.
 
+## Skills, and what the evaluation of them showed
+
+`.claude/skills/hand-analysis/` is the procedure for "was that play right", and
+`.claude/skills/hand-analysis/evals/evals.json` is its committed test set — four
+cases, each aimed at a way hand analysis goes wrong rather than at the happy
+path. Re-run them with subagents (one with the skill, one without) if the skill
+is edited.
+
+**The result is worth knowing before writing another skill here.** Measured
+against a no-skill baseline over nine runs: answer QUALITY was never the
+differentiator — every run in both arms got the hand right. This repo's own
+documentation (engine.js's comments, the harness headers, this file, the
+MEASURED AND NOT SHIPPED notes) already walks a capable reader to the right
+procedure, and the baseline beat the skill outright on one case. What varied
+wildly was SCOPE: 4 to 30 minutes on comparable questions, depending entirely on
+whether the agent stopped once the question was answered.
+
+So a skill here earns its place by carrying (a) the handful of facts written
+nowhere else and (b) an explicit instruction to stop. Adding "answer the question
+and stop", naming the harnesses not to reach for, took one case from 225 tool
+calls to 36. Re-teaching what the codebase already teaches is where the time goes
+without buying anything.
+
+**Two defects in this session's own work were caught by the evals rather than by
+review**: a summary line that printed a win-rate delta as an absolute value and
+so read backwards on exactly the tradeoff it existed to surface, and a first
+corpus ranking contaminated by clairvoyant decisions that would have been
+reported as engine errors. Run the evals.
+
 ## Conventions established this session (keep following them)
 - **Open a pull request whenever there is finished work to check in, without being
   asked, and merge it once the tests pass.** Standing order as of 2026-08-03.
@@ -340,7 +369,7 @@ Unchanged rules:
   consistent across seeds. It null-tests to exactly `+0.0000`, which is what makes a
   small result trustworthy.
   - **The null test proves the PAIRING, not reproducibility, and for a long time
-    those deals were not reproducible at all.** Until 0.49.2 `dealWith` seeded-shuffled
+    those deals were not reproducible at all.** Until 0.58.2 `dealWith` seeded-shuffled
     the cards *as `freshHand` left them* — already shuffled by `makeDeck`'s unseeded
     RNG — and a Fisher-Yates composes with the shuffle underneath instead of replacing
     it. So "seed 3" named a fresh population every run. The null test cannot catch
@@ -348,8 +377,8 @@ Unchanged rules:
     whatever deal they are handed and still difference to exactly zero. Fixed in all
     four (`abtest`, `coalitiontest`, `undertest`, `firingtest`) by shuffling from
     `ALL_CARDS`.
-    **Any seed-level number recorded before 0.49.2 was a fresh draw and will not
-    reproduce**, which is exactly how a 4-of-4 sweep result in 0.49.1 evaporated to
+    **Any seed-level number recorded before 0.58.2 was a fresh draw and will not
+    reproduce**, which is exactly how a 4-of-4 sweep result in 0.58.1 evaporated to
     4-of-8 on re-run. The paired comparison between arms was never affected, so the
     conclusions those numbers supported still stand — only their reproducibility was
     ever wrong. `undertest` was the sharper risk: it *asserts*, so it could have
@@ -366,13 +395,13 @@ Unchanged rules:
   Read the per-firing figure WITH the firing rate: a big effect on a rule firing
   twice in ten thousand hands is still a rounding error.
   - **It was built twice on the same day, by two people who did not know the
-    other was doing it** (0.49.0 for `guardFatTrumpBleed`, 0.49.1 for
+    other was doing it** (0.49.0 for `guardFatTrumpBleed`, 0.58.1 for
     `OVERTAKE_SPEND_SECURITY`), which is the strongest argument that the
     denominator objection is real and not a rationalisation for a weak result.
     Both landed per-firing effects of the same size, +0.252 and +0.210, on rules
     whose whole-hand aggregates were flat or negative noise. **If a change you
     believe in reads as nothing in `abtest`, check the firing rate before
-    concluding anything** — 0.49.1 spent an entire measurement pass concluding
+    concluding anything** — 0.58.1 spent an entire measurement pass concluding
     "not established" from a diluted number that was, undiluted, a 4.5 SE effect.
   - Null-test it by passing a variant that cannot fire: 0 firings, exactly
     `+0.0000`. `npm test` asserts that.
@@ -441,6 +470,56 @@ the hand, using the AI's own policy as a consistent yardstick across all six tri
 (cheap, deterministic, no separate heuristic-vs-exact blending needed since
 `aiChooseCard` already dispatches to the exact solver for the last two tricks).
 
+## Analyzing a reported hand — use the skill
+
+`.claude/skills/hand-analysis/SKILL.md` is the procedure, and it triggers on its
+own when somebody asks whether a play was right. The one thing worth repeating
+here because it is the easy mistake: **the recap's double-dummy grade and PIMC
+answer different questions**, and the grade is the wrong one for "how bad was
+that". It solves the deal that happened, with every hand visible, so it forgives
+a bad decision that got lucky and convicts a sound one that did not — measured
+over 425 decisions it called 15% of decisions clean that cost a point or more,
+and 9% mistakes that cost nothing. Report the PIMC number.
+
+## The AI used to see your last two cards — FIXED in 0.54.0
+
+Kept because the failure is worth recognising again, not because it is open.
+
+`aiChooseCard` handed tricks 5-6 to `solveEndgameCard`, which recursed over
+`g.hands` — all five — so from `tricksDone >= 4` every AI seat solved the REAL
+deal rather than what its seat could know. In solo play that meant the four
+opponents could see the human's last two cards, and nothing said so. Nobody put
+it there on purpose: the endgame was built to be exact, and being exact meant
+reading the true layout.
+
+**How it was found is the transferable part.** Not by reading the code — by a
+number that could only be true if something was wrong. Ranking corpus decisions
+by cost, every trick-5 row had a double-dummy cost of exactly zero, which is
+impossible unless the mover already knew the answer. Then demonstrated rather
+than argued: move one card between two OTHER seats, leaving the deciding seat's
+hand and every public fact identical, and its choice changed.
+
+**Now:** the endgame samples deals from the seat's own information set —
+respecting hand sizes, shown voids, and that the called card cannot sit with the
+picker — and solves each exactly, averaging over them. Seeded from the position
+via `handSeed`, so choices stay reproducible and no hand-playing test goes flaky.
+
+- **Measured cost: +0.0430 stake/seat/hand, ahead in 3 of 3 seeds**
+  (`abtest --opt endgameClairvoyant=true`), about 1.6 card points a hand. A real
+  strength loss, taken deliberately — an opponent that can see your hand is not a
+  difficulty setting, and a player who suspects it will never un-suspect it.
+- `endgameClairvoyant` restores the old path. It is the measurement control and
+  the rollback, not a supported mode.
+- **`npm run clairvoyancetest` is now a LEAK DETECTOR** — it asserts the choice
+  does not move when cards are shuffled between seats the deciding seat cannot
+  see (0 of 251 probes, against 22 before). It is the only test that can catch
+  this class of regression, because a hand reference quietly reintroducing the
+  real layout would fail nothing else: playing better with more information looks
+  exactly like playing better.
+- Consequence still live: `pimcmine` excludes tricks 5-6 from its ranking. That
+  was correct while the endgame was clairvoyant and is now over-cautious — those
+  decisions became honest data in 0.54.0 and the exclusion should come out.
+
 ## The strategic pivot (why the roadmap looks the way it does)
 Explored "chess.com for Sheepshead" as a real ambition, not a bit — see the
 brainstorm/interview notes at the bottom of `ROADMAP.md` for the full reasoning.
@@ -479,6 +558,30 @@ for how it was checked and for the rollback.
 
 Genuinely open:
 
+0. **FIRST: there are two hand-analysis skills and they collide.** `hand-analysis`
+   and `analyze-sheepshead-hand` landed from parallel sessions on 2026-08-03 and
+   their descriptions trigger on the same request — a shared hand, a recap
+   screenshot, "was that the right card". Both will fire, and they route to
+   different tools with different on-disk formats: `analyze-sheepshead-hand` →
+   `scripts/pimc.mjs`, rollouts on `aiChooseCard`'s own policy, hands under
+   `scripts/scenarios/`; `hand-analysis` → `scripts/pimcsolve.mjs`, an exact
+   double-dummy solve per sampled world, hands under `scripts/hands/`. They will
+   give different numbers for the same question and you will not see which one
+   answered.
+   - The scripts were renamed apart so the tools no longer collide. The skills
+     were not, because which one wins is a judgement call rather than a merge
+     conflict, and it was left for a person.
+   - **Options, roughly in order of preference.** One skill with both tools
+     behind it and a line on when each is right — the exact solve is sharper on
+     the last few tricks where the tree is small, the rollout scales better
+     early. Or keep both and narrow each description hard enough that they cannot
+     both match. Or drop one, which loses a genuinely different second opinion.
+   - Do this before using either in anger, and re-run
+     `.claude/skills/hand-analysis/evals/evals.json` afterwards — it is a
+     committed eval set and it will tell you whether whatever you picked still
+     answers the four cases.
+
+
 0. **The first games night on production is the real test, and nothing else is.**
    Every multiplayer bug worth fixing so far came from a person on a phone, not
    from a harness. Two things are newest and least exercised: the arrival flow
@@ -516,7 +619,20 @@ Genuinely open:
    seats, so it needs dedup, and `handLog.js` says in its own header that collecting
    other people's play needs their consent. Worth doing properly, not hastily, and
    never in the hours before a games night.
-   - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
+   - **Rank it by what mistakes COST with the same workflow, `analysis: cost-ranking`**
+    (`scripts/pimcmine.mjs`). The default `outplays` pass ranks by exact
+    double-dummy cost, and that ruler is mis-calibrated in both directions —
+    measured inside one trick of the 2026-08-02 hand, it scored a 4.3-point error
+    at zero and a 0.9-point error at six. It is the right tool for "did this seat
+    find the best card" and the wrong one for "which mistakes are worth fixing",
+    so any worklist sorted by it has the wrong things at the top. The cost pass
+    re-prices every decision under uncertainty and ranks decision SHAPES by total
+    cost. Its control is paired and nulls to exactly 0.0000; the unpaired
+    seat-vs-seat version measured +0.06 and was measuring role, not skill.
+    A session can also run it without the corpus at all — `--selfplay N` deals
+    clean engine-vs-engine hands, which is a fine source for the engine's own
+    error classes and no source at all for a human's.
+  - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
      `workflow_dispatch`). A session cannot fetch it — `beta.noschnitz.com` is a 403
      CONNECT policy denial, the same wall as the deploy checks — so this exists for the
      same reason `verify-beta.yml` does. It needs `HANDS_READ_TOKEN` as an **Actions
@@ -591,6 +707,26 @@ Genuinely open:
    - **Whatever `total` says is an undercount.** The tail-drop bug (fixed in the same PR
      that added this workflow) was live for the entire beta collection window, so every
      device that stopped mid-batch silently kept up to four hands.
+
+   - **Two independent passes now agree that double-dummy flatters the human, and
+     that is the same fact from two directions.** The mining run above reasoned it
+     out — trick 1 tops its table because nothing is known yet and DD judges with
+     all five hands visible — and the cost ranking below measured it: DD
+     overstates cost about 2.3x on average and errs in BOTH directions. So the
+     "no signal" result is if anything understated; some of the human's 31 wins
+     are the bias, not the human.
+
+3b. **The engine's own error classes are now measurable without the corpus.**
+   `npm run pimcmine -- --selfplay N` deals clean engine-vs-engine hands and
+   ranks decision shapes by cost under uncertainty. First run, 425 decisions:
+   the exact double-dummy grade OVERSTATES cost roughly 2.3x on average (2.09
+   against 0.89) and is wrong in both directions — it called 13.6% of decisions
+   clean that cost a point or more, and 11.5% mistakes that cost under half a
+   point. Leading is the most expensive decision shape (1.36/decision against
+   0.46 when an opponent holds the trick). Treat that as a hypothesis: the
+   feature buckets are not mutually exclusive and there are no error bars on
+   them yet.
+
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,

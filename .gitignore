@@ -5,3 +5,11 @@ dist
 .vercel
 vite.config.js.timestamp-*.mjs
 .env*
+
+# Skill eval scratch. The eval SET is committed (.claude/skills/*/evals/) and so
+# is the benchmark summary each iteration produces; the per-run outputs and
+# transcripts under the workspace are bulky, regenerable, and accumulate one
+# directory per iteration, so they stay local.
+.claude/skills/*-workspace/
+# Hand specs written by eval runs, as opposed to real reported hands.
+scripts/hands/eval*.json

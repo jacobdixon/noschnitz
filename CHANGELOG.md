@@ -6,13 +6,13 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.2] - 2026-08-03 (`d9fce44`)
-> Numbering note: this and 0.49.1 were developed in parallel with #124 and were
-> both originally written as 0.49.0/0.49.1. #124 reached `master` first and took
-> 0.49.0, so they shifted up one. Their commit subjects still carry the old
-> numbers; the entries here are authoritative. Worth reading #124 alongside
-> 0.49.1 below — the two are the same insight found independently on two
-> different code paths, which is the most useful thing about either of them.
+## [0.58.2] - 2026-08-03 (`d9fce44`)
+> Numbering note: this and 0.58.1 were written as 0.49.0/0.49.1, renumbered to
+> 0.49.1/0.49.2 when #124 took 0.49.0, and renumbered again on merge because
+> `master` reached 0.58.0 while the PR was open. Their commit subjects carry the
+> older numbers; the entries here are authoritative. Worth reading #124 (0.49.0)
+> alongside 0.58.1 below — the same insight, found independently on two different
+> code paths the same day, which is the most useful thing about either of them.
 
 - **The tuning harnesses were not seeded, and had not been for a long time.**
   `dealWith` in `abtest.mjs`, `coalitiontest.mjs`, `undertest.mjs` **and
@@ -32,7 +32,7 @@ corresponds to the entries below.
   now makes explicitly, because it previously cited the exact zero as the reason
   small results were trustworthy.
 
-  What it cost in 0.49.1: a sweep point that read "ahead in 4 of 4 seeds" and
+  What it cost in 0.58.1: a sweep point that read "ahead in 4 of 4 seeds" and
   then came back 4 of 8 when re-run, which looked like the effect evaporating and
   was really a fresh draw. The paired comparison between arms was never affected,
   so conclusions already drawn from these harnesses stand — only their
@@ -57,7 +57,7 @@ corresponds to the entries below.
   (+0.252 there, +0.210 here) is better evidence that the instrument is right
   than either measurement is on its own.
 
-- **Corrected: the 0.49.1 measurement was understated, and one of the two numbers
+- **Corrected: the 0.58.1 measurement was understated, and one of the two numbers
   reported for it was confounded.** The throwaway version of that harness gave
   the *variant* seat the rule and left the other four on the shipped default
   — which by then was already `0.5`, so the test arm had the rule live in all
@@ -68,11 +68,11 @@ corresponds to the entries below.
       +0.2095 per firing +/- 0.0466 SE   (2,999 firings, 30,000 hands x 22)
       4.49 SE from zero, ahead in 20 of 22 seeds
 
-  against the `+0.0666 +/- 0.0317` recorded under 0.49.1. Implied whole-hand
+  against the `+0.0666 +/- 0.0317` recorded under 0.58.1. Implied whole-hand
   effect **+0.00099/seat/hand**, which lands on the `+0.0009` the original 4-seed
   abtest sweep reported — so that first sweep was right, and the 4-of-8 re-run
   that appeared to contradict it was the unlucky draw. The rule is a clearly
-  positive change, not the marginal one 0.49.1 claims; that entry is left as
+  positive change, not the marginal one 0.58.1 claims; that entry is left as
   written rather than edited, because the sequence is the useful part.
 
   That number was taken against the engine as it stood BEFORE #124. `bleedTrump`
@@ -90,7 +90,7 @@ corresponds to the entries below.
   `tail` when this ran, so the ± could not be recomputed from the log; the
   pre-merge run of the identical measurement gave ± 0.0466.)
 
-## [0.49.1] - 2026-08-03 (`e85447a`)
+## [0.58.1] - 2026-08-03 (`e85447a`)
 - **The cheapest-winner rule now measures "cheapest" in points when rank is
   provably free.** Taking a trick with the weakest card that wins it is right,
   but `power` is the wrong axis for deciding what to *risk*: the trump order
@@ -171,6 +171,549 @@ corresponds to the entries below.
   given. Not fixed here — fixing it changes every historical number in this
   file — but it is why a k-of-n from one run should be re-run before it is
   believed.
+## [0.58.0] - 2026-08-03 (`de21287`)
+Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
+change; it was developed as two and the halves are kept separate below.
+
+### Server — the flag, the provider adapter, the route
+- **Voice rooms, server half — COM-1.1.** A per-table audio room, provisioned on
+  demand and cached on the table. No client yet: this is the flag, the provider
+  adapter and `POST /api/tables/[id]/voice`. Nothing is reachable from the UI.
+
+- **Audio only, and not as a first step toward video.** The felt is a locked,
+  no-scroll viewport with the seat ring absolutely positioned, so video tiles
+  would mean redesigning the table. Hearing each other is also what the
+  interview said was doing the work — the game is an excuse to fill the quiet
+  spaces. `start_video_off`, no screenshare, no chat.
+
+- **Daily, not Jitsi, and the reason is worth recording.** `meet.jit.si` has
+  required an account to CREATE a room since August 2023 (Google/GitHub/
+  Facebook). Joining stays anonymous, but somebody has to create it — so the
+  first person at every table would hit a login wall, which breaks COM-1.3's
+  "no second signup" and the whole no-account premise of guest join. The Jitsi
+  paths that remain are JaaS (an 8x8 account, plus a JWT signed per participant
+  with an RSA key) or somebody's donated public instance.
+
+  Daily rooms can be **public**, so a participant joins with the room URL and no
+  token at all. That is the entire reason `api/_lib/voice.js` is 150 lines
+  instead of a key-management service, and it matches the trust model this
+  project already has: the table link IS the credential, so "anyone holding the
+  URL may join" is the same rule one layer down rather than a weakening. Free
+  tier is 10,000 participant-minutes a month — a games night is about 900.
+
+- **`VITE_VOICE` is beta-only, which is no longer a branch difference.** Since
+  the promotion, beta and production are built from the same commit —
+  `release.yml` fast-forwards beta on every green CI run — so "beta only" has to
+  be an ENVIRONMENT difference. `master` builds Vercel's Production; `beta`,
+  being a non-production branch, builds Preview. A Preview-scoped `VITE_VOICE`
+  therefore reaches beta and not www, which is exactly the arrangement
+  `VITE_MULTIPLAYER` had before it was promoted. Preview scope also covers PR
+  previews, which is useful rather than accidental.
+
+  Verified by building both ways: the production bundle is byte-identical
+  (`index-DdDM1lmD.js`, 204.70 kB) and neither build contains `api.daily.co`.
+
+- **The room name is an HMAC of the table code, not the code.** The code is a
+  bearer credential; a room name is a string handed to a third party that lands
+  in their URLs, logs and dashboard. `src/App.jsx` already redacts table codes
+  out of analytics for precisely this reason, and sending the same code to Daily
+  would undo that one file over. Keyed with `DAILY_API_KEY` rather than plainly
+  hashed, because an 8-character code from a 31-character alphabet is only
+  ~8.5e11 preimages — brute-forceable by anyone who obtained a room list. Keying
+  costs no new configuration, since the key is already required for any of this
+  to work.
+
+- **Two conditions the gate distinguishes, for the reason 0.45.1 exists.**
+  `VOICE=1` on the server and a provider key are checked separately, with
+  distinct codes (`voice-disabled` / `no-voice-provider`), and the second names
+  which credential it cannot see — names only, never values, asserted against
+  the serialized body. Flag on with the key missing is the failure that shows a
+  working "Join audio" button which 503s when tapped, in front of five people on
+  a games night.
+
+- **First writer wins on the room, as long as theirs is still fresh.** Usually
+  moot — the name is deterministic in the table id, so racing clients converge
+  by construction, one creating and one reading back. The case it guards is a
+  key rotation between two provisioning calls, which mints two genuinely
+  different rooms; last-writer-wins there splits a table across two calls, and
+  the people in the losing one can hear each other, which is what makes it hard
+  to notice. The freshness qualifier keeps renewal working, so a session running
+  past the 12h room TTL doesn't silently lose audio.
+
+- **Provisioning happens outside `mutate()`.** The CAS loop can call its
+  mutation function several times against different states, so a network call
+  inside it would be repeated per attempt. The slow, impure part runs once and
+  only its result goes through the loop.
+
+- `scripts/voicetest.mjs` (55 checks, wired into `npm test`) drives every branch
+  against an injected fake `fetch` — the create/read race, an expiring room, a
+  provider that says no, and a stranger trying to spend our quota. Both of the
+  load-bearing assertions were negative-controlled: removing the race guard
+  fails exactly one check, removing the at-table gate fails exactly two.
+
+- **`flagtest`'s structural check now accepts `requireVoice` as a gate.** It
+  matched the literal `requireMultiplayer(res` call, so a route gated through
+  the voice wrapper read as ungated. `requireVoice` calls it first and returns
+  false if it fails — and that implication is asserted in `voicetest` rather
+  than assumed, which is the only thing that makes accepting the wrapper safe.
+
+### Client — opt-in join, mute, and the guard that keeps it off www
+- **Table audio, client half — COM-1.1/1.2.** "Join audio" in the table menu, a
+  mic chip in the header that mutes and shows how many people are on the call.
+  Beta only. Opt-in by tap, never automatic: mobile Safari only grants a
+  microphone from a user gesture, and a link somebody texted you should not
+  demand one before you have decided to be in the conversation.
+
+- **Production carries no audio code, and that is now enforced rather than
+  asserted.** `scripts/voicebuildtest.mjs` builds both ways and greps the actual
+  bundles, wired into `npm test`. It is **bidirectional** on purpose: every
+  token must be absent flag-off AND present flag-on, because grepping for a
+  token and finding zero passes just as convincingly when the token is
+  misspelled, when the build silently failed, or when the feature was deleted.
+  Measured at v0.48.0: 0 flag-off against 95 flag-on for `daily`.
+
+  `Verify production` gains the deployed half of the same check — a new
+  `voice: absent|present` input, defaulting to absent. The build test stops a
+  regression being merged; the workflow catches a variable set on the wrong
+  Vercel scope, which no test can see.
+
+- **That guard immediately caught a real leak, which is the reason it exists.**
+  The first draft gated the UI on `voice.available`, a runtime property of the
+  hook's return — and Rollup cannot fold a property access, so the menu entry
+  and the mic chip survived into the production bundle. Worse, the first
+  verification MISSED it: building without `VITE_MULTIPLAYER` eliminates all of
+  `TableScreen`, so the audio inside it looked absent for the wrong reason.
+  Production is flag-on for multiplayer, so that was never the right baseline.
+  The test now builds production's real shape.
+
+  Fixes: the UI branches on the `VOICE_ENABLED` module constant, and `useVoice`
+  returns its inert shape **before** its hooks rather than after. Returning late
+  is the obvious shape and leaves every callback in the bundle — it is how
+  `toggleMute` shipped to production in the first draft. The early return reads
+  like a rules-of-hooks violation and is not one: the rule is that hook order be
+  consistent across renders, and `VOICE_ENABLED` is compile-time, so within any
+  build this hook either always runs its hooks or never does.
+
+- **The Daily SDK is its own lazy chunk** — 261kB, `import()`ed inside the join
+  handler, so even on beta nobody downloads it until they tap the button. Pinned
+  separately in the build test, because a refactor to a static import would keep
+  every token check passing while making all five people at a table fetch it.
+
+- **A stale join is cancellable.** `join()` awaits twice — the server, then the
+  SDK — and either gap is long enough to unmount or to leave. A continuation
+  past that point constructs a call object into a dead component, which leaves a
+  **live microphone** with nothing on screen to stop it. A generation counter,
+  bumped by every teardown, invalidates whatever join is in flight.
+
+- No camera is ever requested: `videoSource: false` at join on top of the room's
+  `start_video_off`. Both, because they fail differently — the room property is
+  what a second client would honour, the join option is what stops this browser
+  lighting a camera indicator even for an instant.
+
+- `userName` is set to the seat index, never the playerId — that is a bearer
+  token and the string is visible to every other participant. Nothing reads it
+  yet; it is there so a future speaking indicator (COM-2.1) has a seat to point
+  at. Deliberately no participant-to-seat mapping in this change: it needs an
+  identity join between two systems, and getting it wrong lights up the wrong
+  player.
+
+- **Note for whoever adds the next API route:** `api/tables/[id]/voice.js` takes
+  the deployment to 11 Serverless Functions against the Hobby plan's cap of 12.
+  The seat actions were already folded into one route for this reason. The next
+  one has to fold too.
+
+## [0.57.0] - 2026-08-03 (`6b7b254`)
+- **Project memory brought in line with the session.** CLAUDE.md's clairvoyance
+  section said "Not fixed, deliberately", which stopped being true in 0.56.0 —
+  a handoff doc that describes a fixed bug as open is worse than one that omits
+  it. Rewritten around how it was FOUND, since that is the transferable part: not
+  by reading the code, but by a number that could only be true if something was
+  wrong (every trick-5 row grading at exactly zero).
+- **New section on skills and what evaluating one showed**, because it changes
+  how the next one should be written. Nine runs against a no-skill baseline:
+  answer quality was never the differentiator, this repo's documentation already
+  walks a capable reader to the right procedure, and the baseline beat the skill
+  outright on one case. What varied was scope — 4 to 30 minutes on comparable
+  questions. A skill here earns its place by carrying the facts written nowhere
+  else and an explicit instruction to stop; adding that took one case from 225
+  tool calls to 36.
+- Recorded that the evals caught two defects in this session's own work that
+  review did not: a summary line printing a win-rate delta as an absolute value,
+  and a corpus ranking contaminated by clairvoyant decisions.
+- Added the first self-play cost ranking to the "where to pick up next" list —
+  double-dummy overstates cost ~2.3x and errs in both directions (13.6% of clean
+  calls cost a point or more; 11.5% of flagged mistakes cost under half a point),
+  with leading the most expensive shape. Flagged as a hypothesis, not a finding:
+  the buckets overlap and have no error bars yet.
+
+## [0.56.1] - 2026-08-03 (`a85a6e7`)
+- **`pimc`'s summary line stated the opposite of what happened when the played
+  card won more often.** The win-rate delta was wrapped in `Math.abs`, so a card
+  that cost points while WINNING more often — trading wins for schneider margin,
+  which is the tradeoff this output exists to surface — printed as "and 2.3pp of
+  win rate", reading as though it had lost that too. Found by a skill eval run,
+  which flagged the line as unusable and told the reader to ignore it.
+  - Three cases now, because they are three different pieces of advice: no
+    difference, lost win rate, or "but won the hand 1.5pp MORE often — K♣ gains
+    margin, not wins". The last is the one that was unsayable before, and it is
+    the interesting one.
+
+## [0.56.0] - 2026-08-03 (`2f102cd`)
+- **The AI no longer sees your last two cards.** `solveEndgameCard` solved the
+  real deal — `endgameValue` recurses over `g.hands`, all five of them — so from
+  `tricksDone >= 4` every AI seat played the endgame with perfect information,
+  and nothing told the player. It now samples deals from that seat's OWN
+  information set and solves each exactly, averaging over them: the determinized
+  search of AI_PERFECT_PLAY.md §A, applied where the trees are small enough to
+  afford it.
+  - Worlds respect what the seat actually knows — hand sizes, suits each seat has
+    shown void in, and that the called card cannot sit with the picker. Hardest
+    cards are placed first, or a deal paints itself into a corner and the sample
+    is wasted. Seeded from the position with `handSeed`, not `Math.random`, so
+    card choices stay reproducible and no test that plays a hand becomes flaky.
+  - **Cost, measured rather than estimated: +0.0430 stake per seat per hand,
+    ahead in 3 of 3 seeds** (`abtest --opt endgameClairvoyant=true`). That is
+    what the clairvoyance was worth and what removing it gives up — consistent
+    with the ~1.6 card points a hand priced in 0.55.2, and about 24x what
+    `BELIEF_FLOOR` gained. A real strength loss, taken deliberately: an opponent
+    that can see your hand is not a difficulty setting, it is a different game,
+    and a player who suspects it will never un-suspect it.
+  - `endgameClairvoyant` restores the old path. It is the measurement control and
+    the rollback, not a supported mode.
+- **`clairvoyancetest` is inverted and is now a leak detector.** It asserted the
+  dependence existed so that removing it would be deliberate; it now asserts the
+  choice does NOT move when cards are shuffled between seats the deciding seat
+  cannot see (0 of 251 probes, against 22 before). This is the only test that can
+  catch the way this silently breaks — a constraint or a hand reference
+  reintroducing the real layout would fail nothing else, because playing better
+  with more information looks exactly like playing better.
+
+## [0.55.2] - 2026-08-03 (`f6dfa71`)
+- **The endgame clairvoyance now has a price: about 1.6 points a hand.** Measured
+  over 60 self-play hands — playing the best card under uncertainty instead of
+  the clairvoyant one costs 0.42 points per endgame decision on the real deal,
+  across the ~3.7 endgame decisions a hand has. It is an UPPER bound, since a
+  real uncertainty player would not find the sampled-best card every time either.
+  - Against the 120 points in a hand that is ~1.3%: affordable rather than
+    load-bearing. The fairness question — the four AI seats can see the human's
+    last two cards and nothing says so — was blocked on not knowing what fixing
+    it would cost. It is now a decision somebody can make.
+  - Recorded next to `solveEndgameCard` and in CLAUDE.md, both of which described
+    the behaviour without pricing it. Reproduce with
+    `npm run pimcmine -- --selfplay N`.
+
+## [0.55.1] - 2026-08-03 (`5d4c220`)
+- **The hand-analysis skill now says to answer the question and stop**, which the
+  evaluation says is its most valuable instruction rather than a matter of tone.
+  The failure mode is not getting a hand wrong, it is not stopping: a question
+  about one card opens onto real work — the engine plays that card too, is that a
+  bug, what would a fix measure at — and following the thread produces a research
+  report when a reply to a friend was wanted. Measured on an unscoped run: **22
+  minutes** on a single trick-1 card, finishing by A/B testing a tuning constant
+  over 10,000 hands. Scoped, the same class of question runs about four.
+  - Named the harnesses not to reach for (`abtest`, `coalitiontest`, `simulate`,
+    `pimcmine`) unless the person asked about the engine rather than the hand,
+    since "be brief" without saying what to skip is not actionable.
+  - Noticing something about the engine is worth one line and that line is the
+    deliverable. The closing pointer now says an engine change is a job started
+    deliberately, not drifted into from an answer about a hand.
+
+## [0.55.0] - 2026-08-03 (`7c19df8`)
+- **`npm run pimc` leads with the answer somebody actually asked for.** Before
+  the diagnostics it now prints every legal card with the DECIDING SEAT's own
+  side's average points out of 120 and how often that side wins the hand, then a
+  one-line cost against the best card. The table underneath was picker-framed,
+  which meant a defender had to invert every number in their head, and no part of
+  the output was a thing you could paste to a friend.
+  - When the win rate does not move it says so in words rather than leaving two
+    identical columns to be noticed — that case is common and it changes the
+    verdict from "you threw the hand away" to "you were choosing whether to lose
+    double".
+- **The hand-analysis skill is cut roughly in half, to the simulation and the
+  handful of facts written nowhere else.** Evaluated against a no-skill baseline
+  over four cases, and the result was not flattering: the repo's own
+  documentation — `engine.js`'s comments, the harness headers, CLAUDE.md, the
+  MEASURED AND NOT SHIPPED notes — already gets a capable reader to the right
+  procedure. The skill won clearly on one case, tied on one, and **lost** on the
+  engine-change case, where the baseline found a code-path distinction (only 301
+  of 2,160 apparent schmears came from the schmear branch at all; the rest were
+  `shedCard` discarding into a trick already lost) that the skill's own run
+  missed.
+  - So it no longer re-teaches the engine-change discipline, which CLAUDE.md
+    covers better and which was where the time went without buying anything. What
+    it keeps is the workflow, and the one thing genuinely undocumented elsewhere:
+    a simulated cost at tricks 5-6 is meaningless because the seat is not under
+    uncertainty there. That was the case the baseline got wrong — it reported a
+    phantom 2.70-point engine bug from a clairvoyant decision.
+
+## [0.54.1] - 2026-08-03 (`5ec31ac`)
+- **`pimcmine` was mislabelling what the endgame clairvoyance is worth, and now
+  measures it.** It reported the clairvoyant decisions' own PIMC cost as "the
+  value of seeing the other hands". That is not what the number is: it is how
+  much worse the clairvoyant card LOOKS when scored under uncertainty, which
+  answers no question anybody has. The seat is not under uncertainty — that is
+  the entire point of excluding those decisions.
+  - The quantity that matters is the **double-dummy cost of the uncertainty-best
+    card**: what an honest endgame would give up on the real deal. Since the
+    clairvoyant card's own DD cost is zero by construction, that difference is
+    exactly the price of the information, and it is the input the "should the AI
+    stop seeing your last two cards" decision needs. Now computed and reported
+    per decision and per hand, flagged as an UPPER bound because a real
+    uncertainty player would not find PIMC's best card every time either.
+- Correction to the 0.53.1 reading, recorded because it was acted on: on the
+  biased estimator `holder=our side` was the one shape where double-dummy
+  UNDERstated cost, by +0.19, which made it the obvious place to look next.
+  Cross-fitted it is +0.02 — neutral. The hypothesis was an artefact of the
+  winner's curse, and the corrected picture is that DD overstates almost
+  everywhere (2.09 against 0.89 overall, negative on 17 of 18 shapes) rather
+  than having a pocket where it is too kind.
+
+## [0.54.0] - 2026-08-03 (`9173952`)
+- **`.claude/skills/hand-analysis/` — the hand-analysis procedure, saved so it
+  runs the same way every time somebody asks whether a play was right.** It
+  triggers on a recap screenshot, on "was that the right lead", on "what did that
+  cost", and on grading or reviewing play generally.
+- The thing it exists to prevent is one confusion: **the recap's double-dummy
+  grade and PIMC answer different questions**, and the grade is the wrong one for
+  "how bad was that". Measured over 425 decisions it called 15% of decisions
+  clean that cost a point or more and 9% mistakes that cost under half a point.
+  Reporting a DD cost as the size of a mistake is the default failure here, and
+  it is confident and wrong rather than obviously wrong.
+- It also carries the traps this week produced, each of which cost real time
+  before it was understood: tricks 5-6 cannot be analysed as mistakes at all
+  because the engine is clairvoyant there; regret is a max over noisy means and
+  so is biased upward unless cross-fitted; a defender's information set excludes
+  the bury and most sampled worlds with it. And the discipline for acting on a
+  hand — reproduce, pin with a negative control, measure on both harnesses,
+  calibrate a belief before playing on it — including the outcome nobody expects,
+  that a tell can calibrate at 8:1 and still be worth nothing.
+
+## [0.53.1] - 2026-08-03 (`bbcad41`)
+- **`pimcmine`'s cost estimate is cross-fitted, because the obvious one is
+  biased upward and the bias is not small.** Regret is a MAX over cards of means
+  estimated from a finite sample, so whichever card's sampling error ran highest
+  gets selected and its inflated mean becomes the yardstick — the winner's
+  curse. At 50 worlds that is not a rounding error; it is most of the difference
+  between "the engine loses a point a decision" and "the engine is fine", which
+  is exactly the kind of number this tool exists to get right.
+  - The fix costs nothing: pick the best card on one half of the sampled worlds
+    and price it on the other half, so selection noise and measurement noise are
+    independent. Both orientations are averaged so no world is wasted. It is
+    conservative — the card chosen on half the worlds is sometimes not the best
+    — which is the right direction for a number that decides what to work on.
+  - The uncorrected figure is still printed, labelled as not to be quoted, since
+    the gap between the two is itself worth watching as the world count changes.
+  - Every card is priced through the same path, the engine's included. Doing it
+    only for the played card left the paired control nulling to something near
+    zero instead of exactly zero, which would have quietly cost the one property
+    that makes it a control.
+
+## [0.53.0] - 2026-08-03 (`634333c`)
+- **The AI plays the last two tricks with perfect information, and now there is
+  a test that says so.** `aiChooseCard` dispatches tricks 5-6 to
+  `solveEndgameCard`, which recurses over `g.hands` — all five of them — so from
+  `tricksDone >= 4` every AI seat is solving the real deal rather than what its
+  seat could know. Found by the cost ranking rather than by reading the code:
+  every trick-5 decision had a double-dummy cost of exactly 0.00, which is only
+  possible if the mover already knew the answer.
+- **Demonstrated, not inferred.** `npm run clairvoyancetest` moves one card
+  between two OTHER seats — leaving the deciding seat's hand, the played cards
+  and every public fact identical — and the card it chooses changes on **4.8%**
+  of trick-5 decisions with more than one legal play. One swap is probed per
+  decision, so that is a floor on the dependence rather than an estimate of it.
+  A characterisation test: it asserts the behaviour that EXISTS, so removing the
+  clairvoyance later fails loudly instead of changing quietly.
+- **Two consequences, and they are different conversations.** In solo play the
+  four AI opponents can see the human's last two cards and nothing says so —
+  possibly a fine difficulty knob, but it should be a decision somebody made
+  rather than a property nobody noticed. Separately, any double-dummy grade of
+  tricks 5-6 reads 0 by construction, so `gradeAllPlays` cannot see an endgame
+  mistake and never could, and anything averaging over graded decisions has been
+  averaging in a guaranteed zero for the last third of every hand.
+- **Not fixed, deliberately.** Removing it means playing the endgame under
+  uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
+  — which is a strength change to be measured and a difficulty change to be
+  decided, not a one-line deletion.
+- `pimcmine` excludes those decisions from its ranking and prices them
+  separately. Their PIMC cost is the value of seeing the other hands, not an
+  error to fix, and the first run of the ranker reported them as the eight most
+  expensive mistakes in the corpus at 10-17 points each. That list was wrong.
+  The failure mode is worth naming: an instrument that is correct everywhere
+  except one population will report that population's artefacts as its headline,
+  because they are the largest numbers it produces.
+
+## [0.52.0] - 2026-08-03 (`f21cf4f`)
+- **`scripts/pimcmine.mjs` — rank the corpus by what mistakes actually COST,
+  and Actions → "Mine hands" grew an `analysis: cost-ranking` mode to run it
+  where the corpus is reachable.** `minehands.mjs` ranks by exact double-dummy
+  cost, and 0.50.x established that ruler is mis-calibrated in both directions
+  at once: inside a single trick of one hand it scored a 4.3-point error at zero
+  and a 0.9-point error at six. That is the right tool for "did this seat find
+  the best card" and the wrong one for "which mistakes are worth fixing", so
+  every worklist sorted by it has the wrong things at the top. This re-prices
+  every decision under uncertainty and ranks decision SHAPES — the same coarse
+  feature buckets `minehands` already used — by TOTAL cost, because a shape that
+  is slightly wrong very often is worth more than one badly wrong once.
+- **Three things it refuses to do, each of which would fake a result:** it does
+  not pre-filter to DD-flagged decisions (that would discard exactly the class
+  where DD says zero and the real cost is large — the 10♦'s class); it grades
+  every seat rather than the human, because the AI's own decisions are what a
+  fix would change; and the budget bounds hands rather than decisions, so no
+  hand is half-graded and whatever went unreached is printed.
+- **The control is paired and nulls to exactly 0.0000.** Every decision is also
+  priced for the card `aiChooseCard` would have played there, so the four engine
+  seats — who played that card — must come out at exactly zero excess, and the
+  noisy seat must come out positive: +2.46 over the decisions it deviated on.
+  The first version compared seat 0's mean cost against the other seats' and
+  measured +0.06, which is not a control: seat 0 is also the picker more often
+  than not, so it was mostly measuring role. That is the same paired-vs-unpaired
+  lesson `abtest` and `coalitiontest` already carry, arrived at again.
+- **`--selfplay N` deals clean engine-vs-engine hands as a source.** A session
+  cannot reach either corpus — the egress proxy still answers 403 to CONNECT for
+  both hosts, verified again — and the thing a fix would change is the engine's
+  own play, which self-play supplies without limit. What it cannot supply is a
+  human's decisions or the real distribution of positions people reach, so a
+  self-play ranking is about the engine in the abstract and the corpus stays the
+  thing to run against.
+- Refactor with no behaviour change: rebuilding a record, the feature buckets and
+  the self-test generator moved to `scripts/lib/handlog.js`, and the PIMC core to
+  `scripts/lib/pimc.js`, so the two miners cannot drift on what a record means.
+  `minehands.mjs --selftest 25` is byte-identical before and after, and both
+  published PIMC results reproduce exactly.
+
+## [0.51.0] - 2026-08-02 (`5066c23`)
+- **The schmear tell: a new evidence term in the partner belief, calibrated at
+  8:1, and shipped OFF because it is almost never actionable.** Every existing
+  term in `partnerWeight` is about LEADING a trick; this one is about paying
+  into somebody else's, and the two never overlap. It came from a reported hand
+  where a defender fed a Ten to the picker — worth 5.9 points by PIMC — because
+  `teammateProbability` told him the seat holding the trick was two-thirds
+  likely to be a teammate. It was the partner, and the partner had said so in
+  trick 1 by throwing an Ace onto a trick the picker had already trumped.
+- **The measurement changed the rule twice, which is the part worth keeping.**
+  The obvious version — "paid a fat card into a trick the picker was winning" —
+  measures at **1.3:1** against a 24.7% base rate, i.e. nothing. Two
+  restrictions fix it, and both are about telling a choice from an obligation:
+  the payer must be LAST to play (paying into a trick the picker leads *so far*
+  is a legitimate bet that a teammate behind you takes it), and it must be
+  **tricks 1-3** (late in the hand a seat may have nothing cheap left). That
+  lands at **8.3:1** over 6,159 hands, in the same class as the power-trump
+  lead. Restricting to Aces makes it *worse*, so the threshold stays at a Ten.
+- **Not shipped, and the funnel says why.** Over 92,970 self-play decisions at
+  odds 8, the belief moved for the seat winning the trick in 252 (0.27%), 30 of
+  those crossed `BELIEF_FLOOR`, and 10 changed a card. The gate is not refusing
+  the read — the situation is rare. `abtest` +0.0002/seat/hand ahead in 2 of 4;
+  `coalitiontest` -0.00pp with the defenders ahead in 1 of 4; null controls
+  exactly +0.0000. When it does fire it is right: all 10 changes were defenders,
+  shedding 6.5 fewer points each.
+  - Same shape as `PLAIN_TRUMP_LEAD_ODDS`, and worth saying plainly: a tell can
+    be strong, honest and worth nothing, because reading a table is not the same
+    as being able to do anything about it.
+- `aitest` pins the INFERENCE rather than the shipped behaviour, with the
+  negative control — at the shipped odds the read does nothing and the defender
+  still pays the Ten. If the read ever stops being right, that fails whether or
+  not anything is playing on it.
+- `belieftest` gained a `SCHMEAR_TELL_ODDS` env override for the sweep, and its
+  deduction-only arm now pins the new term off explicitly — the same trap the
+  file already documents for `trumpLeadRead`, which silently turned `plain` into
+  a comparison of the read against itself.
+
+## [0.50.2] - 2026-08-02 (`f037452`)
+- **`pimc.mjs --partner NAME` prices a READ.** It restricts sampling to worlds
+  where a named seat holds the called card. The harness has no theory of how
+  somebody played and cannot derive this — it is supplied by hand, and that is
+  the point: run the same decision with and without, and the gap is what the
+  inference is worth in points. The card is dealt to that seat rather than
+  sampled and rejected, because rejection on top of the call filter would gut an
+  already thin acceptance rate.
+- Reported on hand 1: at trick 1 Bunny threw the **A♣** into a trick the picker
+  had already trumped and won — playing last, void in the led suit, holding
+  cheaper cards. No defender pays eleven points to the picker, so Gus can read
+  Bunny as the partner from that alone. Once he has, Bunny's Q♣ at trick 3 means
+  the trick is already the picker team's.
+  - Throwing the **10♠** goes from **0.9 points** behind the best card to
+    **5.9** (±0.12, same sign in 4 of 4 seeds). The read is worth more than six
+    times the error it exposes, which is the more useful number: the mistake is
+    cheap, *not making the read* is what costs.
+  - With the read on, every legal card wins the hand for the picker team in 100%
+    of worlds, so the decision is purely the schneider line — 58.7% with the 8♥
+    against 76.5% with the 10♠.
+- **The engine cannot make this read, and that is a gap in the belief model
+  rather than in the play code.** `partnerWeight` has exactly one evidence term,
+  `trumpLeadKind`, and a schmear into the picker's trick is not a lead.
+  `BELIEF_SCHMEAR` gates a defender *paying* on the belief; nothing feeds the
+  belief *from* somebody else's payment. `teammateProbability` is the right
+  place for it and `belieftest` is the harness that would calibrate it — this is
+  a candidate weight, measurable the same way `TRUMP_LEAD_ODDS` was.
+
+## [0.50.1] - 2026-08-02 (`32621fe`)
+- **`pimc.mjs` handles a DEFENDER's viewpoint, which is a different information
+  set and was quietly getting it wrong.** A defender cannot see the bury, so the
+  two cards nobody ever sees have to be sampled — and two things broke on that:
+  - The buried points were being added as a constant taken from the REAL bury.
+    For the picker that is correct and the numbers are unchanged (verified
+    bit-for-bit against 0.50.0); for anyone else it silently fed the viewer two
+    cards' worth of knowledge they do not have, and the bury lands on the
+    picker's side of the schneider line, so it moves the answer.
+  - Worlds that put the called ace in the picker's hand or in the bury were
+    being kept. Nothing about them plays illegally — they simply could not have
+    been called that way. The filter asks `callOptions` whether the call that
+    was actually made was available in the sampled world, rather than restating
+    the rule, so under-calls and called-tens stay right for free. It is doing
+    real work: it rejects **74%** of sampled worlds for the defender seat here,
+    because it also carries the fact that the picker must still be holding a
+    spade, having played nothing but trump.
+  - Output is oriented to the deciding seat now — a defender's best card is the
+    one that MINIMISES picker-team points, so the sort, the "best" marker and
+    the stake column all flip with the side. Stake is the viewer's own delta,
+    computed per world, since who the partner is varies between worlds.
+- Second result on hand 1, and it points the OPPOSITE way to the first: Gus
+  throwing the **10♠** at trick 3 was the worst of his four cards, but by only
+  **0.9 points** (±0.10, same sign in 4 of 4 seeds). The exact solve of the real
+  deal scores it at **6 points** — so the grader overstates this one by nearly
+  7x, having overstated nothing at all about the 10♦. Both errors are real; the
+  actual-deal grader is simply not a measure of size.
+  - The whole cost is schneider margin, not the hand: win probability is flat
+    across all four cards to within a tenth of a point, while the defenders'
+    chance of being schneidered goes 31.6% → 34.3%. `aiChooseCard` throws the
+    10♠ too.
+
+## [0.50.0] - 2026-08-02 (`924ae24`)
+- **`scripts/pimc.mjs` — the determinized search from AI_PERFECT_PLAY.md §A,
+  aimed at one decision instead of at the engine.** Sample complete deals of the
+  unseen cards consistent with what the deciding seat knew, run the existing
+  exact solver on every legal card in every sample, average. It answers the
+  question the recap grader structurally cannot: the grader solves the one deal
+  that happened, so it scores a play against cards nobody could see, and it will
+  happily call a guess correct because the guess came in.
+  - **Consistency is enforced by REPLAY, not by a rule list.** A sampled world
+    gives each seat its real played cards plus a sampled remainder, the hand is
+    replayed from trick 1, and the world is discarded if any card somebody
+    actually played would have been illegal in it. Voids, the called-ace
+    restrictions and the picker's retain rule all come along for free, and the
+    filter cannot drift away from `legalPlays` the way a hand-written one would.
+  - Two further filters, kept separate because they are assumptions rather than
+    observations: seats that passed are held to `handStrength < 10` (real
+    information, and it pushes power trump toward the seats that never got to
+    pick), and `--no-passes` turns that off so the sensitivity is visible rather
+    than asserted. Error bars are PAIRED — every card is scored on the same
+    worlds, so the spread of the difference is what gets reported, not the
+    spread of two means.
+  - **It cross-checks its own reconstruction against `gradeAllPlays` and refuses
+    to print if they disagree.** Analysing a position that is not the position
+    that was played produces numbers that are confidently wrong and look fine,
+    which is the one failure mode here that nothing else would catch.
+  - First result, on the 2026-08-02 hand 1 recap (`scripts/hands/`): leading the
+    **10♦** at trick 3 costs **4.3 points against leading the 8♦** (±0.15, same
+    sign in 5 of 5 seeds, unchanged with the passer filter off) — the 10 is fat
+    and cannot win, with five power trump still out. The exact solver on the real
+    deal scores that same lead as **best-available, cost 0**, because in the one
+    world that happened the partner's Q♣ took the trick. Both numbers are right;
+    they are answers to different questions, and the recap only ever showed the
+    second. `aiChooseCard` leads J♠ from that seat — better than the 10♦, still
+    2.2 points behind the 8♦, so this is an engine finding and not only a human
+    one.
+
 ## [0.49.0] - 2026-08-03 (`f708d16`)
 - **The AI no longer bleeds with a fat trump when a cheaper one is available.**
   "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
