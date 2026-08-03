@@ -84,11 +84,16 @@ const readBins = mkBins();
 // Both arms pin the flag explicitly rather than leaning on the module default,
 // which now ships ON — leaving `plain` to the default silently turned this into
 // a comparison of the read against itself.
-const PLAIN = { trumpLeadRead: false };
+// `schmearTellOdds` is pinned to 1 in PLAIN for the reason the comment above
+// gives about trumpLeadRead: the moment a term ships ON by default, a `plain`
+// arm that leans on the module default stops being deduction-only and the
+// comparison quietly becomes the read against itself.
+const PLAIN = { trumpLeadRead: false, schmearTellOdds: 1 };
 const READ = {
   trumpLeadRead: true,
   ...(process.env.TRUMP_LEAD_ODDS ? { trumpLeadOdds: Number(process.env.TRUMP_LEAD_ODDS) } : {}),
   ...(process.env.PLAIN_TRUMP_LEAD_ODDS ? { plainTrumpLeadOdds: Number(process.env.PLAIN_TRUMP_LEAD_ODDS) } : {}),
+  ...(process.env.SCHMEAR_TELL_ODDS ? { schmearTellOdds: Number(process.env.SCHMEAR_TELL_ODDS) } : {}),
 };
 
 function tally(target, p, truth) {

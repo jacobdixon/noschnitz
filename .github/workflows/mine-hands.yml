@@ -47,8 +47,27 @@ on:
         required: false
         default: "120"
         type: string
+      analysis:
+        description: "outplays = where the human beat the engine (double-dummy). cost-ranking = every decision re-priced under uncertainty and the shapes ranked by what they actually cost."
+        required: false
+        default: "outplays"
+        type: choice
+        options:
+          - outplays
+          - cost-ranking
+          - both
+      worlds:
+        description: "cost-ranking only: sampled deals per decision. More is tighter and linearly slower."
+        required: false
+        default: "60"
+        type: string
+      from_trick:
+        description: "cost-ranking only: first trick to price. Tricks 1-2 cost about a full-hand solve per sampled world, so lowering this costs minutes per decision."
+        required: false
+        default: "3"
+        type: string
       seat:
-        description: "Study this seat instead of each hand's recorded human seat"
+        description: "outplays only: study this seat instead of each hand's recorded human seat"
         required: false
         type: string
       source:
@@ -99,7 +118,18 @@ jobs:
       # is why it is not in `npm test` — and why the hand count is not raised
       # casually.
       - name: Self-test the miner
+        if: inputs.analysis != 'cost-ranking'
         run: node scripts/minehands.mjs --selftest 30
+
+      # The same argument for the cost ranker, but the control is PAIRED and so
+      # has an exact null: every decision is also priced for the card the engine
+      # would have played there, which for the four engine seats is the card they
+      # did play, so their excess must come out at exactly zero. An unpaired
+      # seat-vs-seat version measured +0.06 and was not a control — seat 0 is
+      # also the picker more often than not, so it was mostly measuring role.
+      - name: Self-test the cost ranker
+        if: inputs.analysis != 'outplays'
+        run: node scripts/pimcmine.mjs --selftest 24 --worlds 40
 
       - name: Fetch the corpus
         env:
@@ -192,6 +222,7 @@ jobs:
           ' | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Mine
+        if: inputs.analysis != 'cost-ranking'
         env:
           SEAT: ${{ inputs.seat }}
           BUDGET_MIN: ${{ inputs.budget_min }}
@@ -209,6 +240,35 @@ jobs:
             echo '```'
             echo ""
             echo "A cluster here is a hypothesis. Reproduce it against the engine, pin it with a negative control, and measure it on the decisions it changes — never on a whole-hand aggregate."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Ranking by what a mistake COST rather than by whether the exact solver
+      # called it one. The two answer different questions and the second is the
+      # one a fix should be chosen from: measured on the hand that prompted this,
+      # inside a single trick, the exact grader scored a 4.3-point error at zero
+      # and a 0.9-point error at six. Sorting a worklist by that ruler puts the
+      # wrong things at the top.
+      - name: Rank by cost under uncertainty
+        if: inputs.analysis != 'outplays'
+        env:
+          BUDGET_MIN: ${{ inputs.budget_min }}
+          WORLDS: ${{ inputs.worlds }}
+          FROM_TRICK: ${{ inputs.from_trick }}
+        run: |
+          set -uo pipefail
+          node scripts/pimcmine.mjs hands.json \
+            --budget-min "${BUDGET_MIN:-120}" \
+            --worlds "${WORLDS:-60}" \
+            --from-trick "${FROM_TRICK:-3}" | tee rank.txt
+          {
+            echo ""
+            echo "### Ranked by cost under uncertainty"
+            echo ""
+            echo '```'
+            cat rank.txt
+            echo '```'
+            echo ""
+            echo "Shapes are ranked by TOTAL cost, not mean: a shape that is slightly wrong very often is worth more than one that is badly wrong once. A row is still a hypothesis — reproduce it against the engine, pin it with a negative control, and measure it on the decisions it changes."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The raw corpus, so a deeper pass can run against the same hands without
