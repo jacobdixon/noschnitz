@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.52.0] - 2026-08-03 (`PENDING`)
+## [0.52.0] - 2026-08-03 (`9173952`)
 - **`.claude/skills/hand-analysis/` — the hand-analysis procedure, saved so it
   runs the same way every time somebody asks whether a play was right.** It
   triggers on a recap screenshot, on "was that the right lead", on "what did that
