@@ -1335,28 +1335,126 @@ function endgameValue(g) {
 // uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
 // — which is a strength change to be measured, not a one-line deletion. But the
 // number above is the input that decision was missing.
+// Which effective suits each seat has PROVEN it cannot hold, by failing to
+// follow one. Public information — everybody at the table watched it happen —
+// and the main thing that stops a sampled world being obvious nonsense.
+function shownVoids(g) {
+  const voids = [new Set(), new Set(), new Set(), new Set(), new Set()];
+  const tricks = [...(g.trickHistory || []).map((th) => th.trick), g.trick];
+  for (const t of tricks) {
+    if (!t?.length) continue;
+    const led = effSuit(t[0].card);
+    for (const play of t.slice(1)) {
+      if (effSuit(play.card) !== led) voids[play.player].add(led);
+    }
+  }
+  return voids;
+}
+
+// Deal the cards `viewer` cannot see into the other seats, consistent with what
+// it does know: how many cards each seat holds, which suits they have shown void
+// in, and that the called card cannot be sitting with the picker (they called
+// it) — so if it is still out, somebody else has it.
+//
+// Seeded from the position rather than Math.random. The engine's card choices
+// have to be reproducible or every test that plays a hand becomes flaky, and
+// `handSeed` already exists for exactly this reason.
+function sampleEndgameWorld(g, viewer, unseen, voids, rand) {
+  const pool = [...unseen];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const hands = g.hands.map((h, p) => (p === viewer ? [...h] : []));
+  const need = g.hands.map((h, p) => (p === viewer ? 0 : h.length));
+  const calledRank = g.calledRank || "A";
+  const isCalled = (c) =>
+    g.calledSuit && !g.calledAcePlayed && c.suit === g.calledSuit && c.rank === calledRank && !isTrump(c);
+
+  // Hardest cards first — a card only one seat may legally hold has to be
+  // placed while that seat still has room, or the deal paints itself into a
+  // corner and the whole sample gets thrown away.
+  const canTake = (p, c) => need[p] > hands[p].length && !voids[p].has(effSuit(c)) && !(isCalled(c) && p === g.picker);
+  const seats = [0, 1, 2, 3, 4].filter((p) => p !== viewer);
+  pool.sort((a, b) => seats.filter((p) => canTake(p, a)).length - seats.filter((p) => canTake(p, b)).length);
+
+  for (const c of pool) {
+    const takers = seats.filter((p) => canTake(p, c));
+    if (!takers.length) continue; // the bury, or an impossible deal — see below
+    hands[takers[Math.floor(rand() * takers.length)]].push(c);
+  }
+  // Every seat must end up with the right number of cards or the world is not a
+  // legal position and solving it would be worse than not sampling at all.
+  return hands.every((h, p) => h.length === (p === viewer ? h.length : need[p])) ? hands : null;
+}
+
+export const ENDGAME_WORLDS = 40;
+
 export function solveEndgameCard(g, opts = {}) {
   const idx = g.turn;
   const legal = legalPlays(g, idx);
   if (legal.length <= 1) return legal[0];
   const isPickerSide = pickerTeamOf(g).includes(idx);
+
+  // `endgameClairvoyant` restores the pre-0.54 behaviour: solve the one deal in
+  // `g`, which holds all five hands. Kept switchable because it is the control
+  // this change was measured against, and because it is the rollback.
+  if (opts.endgameClairvoyant) {
+    let bv = isPickerSide ? -Infinity : Infinity;
+    let opt = [];
+    for (const card of legal) {
+      const val = endgameValue(applyPlay(g, idx, card));
+      if (val === bv) opt.push(card);
+      else if (isPickerSide ? val > bv : val < bv) { bv = val; opt = [card]; }
+    }
+    if (opt.length === 1) return opt[0];
+    const p = heuristicCard(g, idx, { ...opts, restrictTo: opt });
+    return opt.some((c) => cid(c) === cid(p)) ? p : opt[0];
+  }
+
+  // Sample deals the seat cannot rule out and solve each exactly, rather than
+  // solving the one deal that happens to be in `g`. See the note above.
+  const unseen = unaccountedFor(g, idx);
+  const voids = shownVoids(g);
+  const worlds = Math.max(1, opts.endgameWorlds ?? ENDGAME_WORLDS);
+  let seed = handSeed([...g.hands[idx], ...seenCards(g)]);
+  const rand = () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const total = legal.map(() => 0);
+  let n = 0;
+  for (let w = 0; w < worlds * 4 && n < worlds; w++) {
+    const hands = sampleEndgameWorld(g, idx, unseen, voids, rand);
+    if (!hands) continue;
+    const world = { ...g, hands };
+    n++;
+    legal.forEach((card, i) => { total[i] += endgameValue(applyPlay(world, idx, card)); });
+  }
+  // No consistent world could be built — only reachable if the constraints are
+  // contradictory, which would be a bug elsewhere. Fall back to the position as
+  // given rather than returning nothing.
+  if (!n) { n = 1; legal.forEach((card, i) => { total[i] = endgameValue(applyPlay(g, idx, card)); }); }
+
   let bestVal = isPickerSide ? -Infinity : Infinity;
   let optimal = [];
-  for (const card of legal) {
-    const val = endgameValue(applyPlay(g, idx, card));
+  for (let i = 0; i < legal.length; i++) {
+    const val = total[i] / n;
     if (val === bestVal) {
-      optimal.push(card);
+      optimal.push(legal[i]);
     } else if (isPickerSide ? val > bestVal : val < bestVal) {
       bestVal = val;
-      optimal = [card];
+      optimal = [legal[i]];
     }
   }
   if (optimal.length === 1) return optimal[0];
-  // Every card here is worth exactly the same double-dummy, so restricting the
-  // heuristics to this set cannot cost anything the solver could see. The
-  // guard is for the case where a heuristic branch returns something outside
-  // the set it was given — that would be a bug, not a preference, and falling
-  // back keeps this function's contract (always a double-dummy-optimal card).
+  // Every card here scores the same averaged over the sampled worlds, so
+  // restricting the heuristics to this set cannot cost anything the search could
+  // see. The guard is for the case where a heuristic branch returns something
+  // outside the set it was given — that would be a bug, not a preference.
   const pick = heuristicCard(g, idx, { ...opts, restrictTo: optimal });
   return optimal.some((c) => cid(c) === cid(pick)) ? pick : optimal[0];
 }

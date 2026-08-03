@@ -6,6 +6,36 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.54.0] - 2026-08-03 (`PENDING`)
+- **The AI no longer sees your last two cards.** `solveEndgameCard` solved the
+  real deal — `endgameValue` recurses over `g.hands`, all five of them — so from
+  `tricksDone >= 4` every AI seat played the endgame with perfect information,
+  and nothing told the player. It now samples deals from that seat's OWN
+  information set and solves each exactly, averaging over them: the determinized
+  search of AI_PERFECT_PLAY.md §A, applied where the trees are small enough to
+  afford it.
+  - Worlds respect what the seat actually knows — hand sizes, suits each seat has
+    shown void in, and that the called card cannot sit with the picker. Hardest
+    cards are placed first, or a deal paints itself into a corner and the sample
+    is wasted. Seeded from the position with `handSeed`, not `Math.random`, so
+    card choices stay reproducible and no test that plays a hand becomes flaky.
+  - **Cost, measured rather than estimated: +0.0430 stake per seat per hand,
+    ahead in 3 of 3 seeds** (`abtest --opt endgameClairvoyant=true`). That is
+    what the clairvoyance was worth and what removing it gives up — consistent
+    with the ~1.6 card points a hand priced in 0.53.2, and about 24x what
+    `BELIEF_FLOOR` gained. A real strength loss, taken deliberately: an opponent
+    that can see your hand is not a difficulty setting, it is a different game,
+    and a player who suspects it will never un-suspect it.
+  - `endgameClairvoyant` restores the old path. It is the measurement control and
+    the rollback, not a supported mode.
+- **`clairvoyancetest` is inverted and is now a leak detector.** It asserted the
+  dependence existed so that removing it would be deliberate; it now asserts the
+  choice does NOT move when cards are shuffled between seats the deciding seat
+  cannot see (0 of 251 probes, against 22 before). This is the only test that can
+  catch the way this silently breaks — a constraint or a hand reference
+  reintroducing the real layout would fail nothing else, because playing better
+  with more information looks exactly like playing better.
+
 ## [0.53.2] - 2026-08-03 (`f6dfa71`)
 - **The endgame clairvoyance now has a price: about 1.6 points a hand.** Measured
   over 60 self-play hands — playing the best card under uncertainty instead of

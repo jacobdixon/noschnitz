@@ -12,11 +12,16 @@
    card it chooses changes, the choice depended on hidden state. There is no
    other explanation available.
 
-   This is a CHARACTERISATION test, not a bug report. It asserts the behaviour
-   that exists, so that removing the clairvoyance later is a deliberate act that
-   fails this file loudly rather than a quiet change nobody notices. Whether the
-   AI should see those cards is a product call — see the note above
-   `solveEndgameCard`.
+   It was a CHARACTERISATION test until 0.54.0 — it asserted the dependence so
+   that removing it would be a deliberate act rather than a quiet one. The
+   clairvoyance is now gone, so the assertion is inverted: the choice must NOT
+   move when cards are shuffled between seats the deciding seat cannot see.
+
+   That makes this a leak detector, and it is the only one there can be. The
+   endgame now samples deals from the seat's own information set, and the way
+   that silently breaks is a constraint or a hand reference quietly reintroducing
+   the real layout — which would not fail any other test, because playing better
+   with more information looks exactly like playing better.
 
    Usage: node scripts/clairvoyancetest.mjs
    ========================================================================= */
@@ -77,13 +82,10 @@ for (let h = 0; h < 400 && tested < 250; h++) {
 console.log(`trick-5 decisions probed with one swap between two OTHER seats: ${tested}`);
 console.log(`choice changed: ${flipped}  (${(100*flipped/Math.max(1,tested)).toFixed(1)}%)`);
 examples.forEach((e) => console.log("  " + e));
-// A floor, not an estimate: one swap is probed per decision, so a decision that
-// depends on hidden cards can still come back unchanged. The assertion is
-// therefore one-sided — this documents that the dependence EXISTS.
-const ok = tested > 100 && flipped > 0;
+// One swap per decision, so this is a floor on detection rather than a proof of
+// absence — but any leak big enough to matter shows up across 250 probes.
+const ok = tested > 100 && flipped === 0;
 console.log(ok
-  ? "\nPASS — the endgame choice provably depends on cards the seat cannot see."
-  : "\nFAILED — expected to demonstrate the dependence and did not.");
-console.log("(If this ever fails because the clairvoyance was REMOVED, that is the");
-console.log(" intended outcome — delete this file and say so in the changelog.)");
+  ? `\nPASS — the endgame choice does not depend on cards the seat cannot see (${tested} probes).`
+  : `\nFAILED — the choice moved on ${flipped} of ${tested} probes, so hidden cards are reaching the decision.`);
 process.exit(ok ? 0 : 1);
