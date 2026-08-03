@@ -6,6 +6,26 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.51.1] - 2026-08-03 (`PENDING`)
+- **`pimcmine`'s cost estimate is cross-fitted, because the obvious one is
+  biased upward and the bias is not small.** Regret is a MAX over cards of means
+  estimated from a finite sample, so whichever card's sampling error ran highest
+  gets selected and its inflated mean becomes the yardstick — the winner's
+  curse. At 50 worlds that is not a rounding error; it is most of the difference
+  between "the engine loses a point a decision" and "the engine is fine", which
+  is exactly the kind of number this tool exists to get right.
+  - The fix costs nothing: pick the best card on one half of the sampled worlds
+    and price it on the other half, so selection noise and measurement noise are
+    independent. Both orientations are averaged so no world is wasted. It is
+    conservative — the card chosen on half the worlds is sometimes not the best
+    — which is the right direction for a number that decides what to work on.
+  - The uncorrected figure is still printed, labelled as not to be quoted, since
+    the gap between the two is itself worth watching as the world count changes.
+  - Every card is priced through the same path, the engine's included. Doing it
+    only for the played card left the paired control nulling to something near
+    zero instead of exactly zero, which would have quietly cost the one property
+    that makes it a control.
+
 ## [0.51.0] - 2026-08-03 (`634333c`)
 - **The AI plays the last two tricks with perfect information, and now there is
   a test that says so.** `aiChooseCard` dispatches tricks 5-6 to

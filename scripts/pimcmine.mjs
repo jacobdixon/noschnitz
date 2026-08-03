@@ -114,10 +114,37 @@ function mineHand(rec, seats) {
             const ours = pickerTeamOf(sim).includes(idx);
             const meanOf = (col) => col.reduce((s, x) => s + x, 0) / col.length;
             const vals = r.samples.map(meanOf);
-            const best = ours ? Math.max(...vals) : Math.min(...vals);
             const actualAt = r.legal.findIndex((c) => cid(c) === cid(play.card));
-            const pimcCost = ours ? best - vals[actualAt] : vals[actualAt] - best;
+            const best = ours ? Math.max(...vals) : Math.min(...vals);
             const bestCard = r.legal[vals.indexOf(best)];
+            // Naive regret takes a MAX over cards of noisy means, so it is
+            // biased upward — the winner's curse. Whichever card's sampling
+            // error ran highest gets selected, and its inflated mean becomes the
+            // yardstick. On 50 worlds that is not a rounding error: it is most
+            // of the difference between "the engine loses a point a decision"
+            // and "the engine is fine".
+            //
+            // Cross-fit instead: pick the best card on ONE half of the worlds,
+            // price it on the OTHER half. The selection noise and the
+            // measurement noise are then independent, so the estimate is
+            // unbiased for that selection rule. It is conservative — the card
+            // chosen on half the worlds is sometimes not the best one — which is
+            // the right direction for a number that decides what to work on.
+            const halfMean = (i, from) => { const c = r.samples[i]; let t = 0, n = 0;
+              for (let w = from; w < c.length; w += 2) { t += c[w]; n++; } return n ? t / n : 0; };
+            const half = (target, pick, score) => {
+              const sel = r.samples.map((_, i) => halfMean(i, pick));
+              const bi = ours ? sel.indexOf(Math.max(...sel)) : sel.indexOf(Math.min(...sel));
+              return ours ? halfMean(bi, score) - halfMean(target, score)
+                          : halfMean(target, score) - halfMean(bi, score);
+            };
+            // Both orientations averaged, so no world is wasted and neither half
+            // is privileged. Every card is priced through this same path — the
+            // engine's included — or the paired control below stops nulling to
+            // exactly zero, which is the one property that makes it a control.
+            const crossfit = (target) => (half(target, 0, 1) + half(target, 1, 0)) / 2;
+            const pimcCost = crossfit(actualAt);
+            const naiveCost = ours ? best - vals[actualAt] : vals[actualAt] - best;
             // The same price for the card the ENGINE would have played from
             // this seat, so every row carries a paired comparison. For an AI
             // seat the two are the same card and the excess is exactly zero,
@@ -125,13 +152,13 @@ function mineHand(rec, seats) {
             // a small number somebody has to believe.
             const engineCard = aiChooseCard(sim, idx);
             const engAt = r.legal.findIndex((c) => cid(c) === cid(engineCard));
-            const engineCost = engAt < 0 ? null : (ours ? best - vals[engAt] : vals[engAt] - best);
+            const engineCost = engAt < 0 ? null : crossfit(engAt);
             decisions++; priced = true;
             rows.push({
               role: idx === sim.picker ? "picker" : idx === sim.partner ? "partner" : "defender",
               seat: idx, clairvoyant,
               human: idx === (rec.humanSeat ?? -1),
-              pimcCost, ddCost: d.cost, engineCost, engineCard: cid(engineCard),
+              pimcCost, naiveCost, ddCost: d.cost, engineCost, engineCard: cid(engineCard),
               excess: engineCost === null ? null : pimcCost - engineCost,
               card: cid(play.card), pimcBest: cid(bestCard), ddBest: cid(d.bestCard),
               feats: features(sim, idx, play.card),
@@ -204,7 +231,8 @@ if (clair.length) {
   console.log(`  those ${clair.length} are excluded from everything below. Their mean DD cost is ${mean(clair, "ddCost").toFixed(2)} — zero by construction, it played the double-dummy card —`);
   console.log(`  and their mean PIMC cost ${mean(clair, "pimcCost").toFixed(2)} is the value of seeing the other hands, not an error to fix.`);
 }
-console.log(`\n  mean PIMC cost per decision : ${mean(rows, "pimcCost").toFixed(2)} pts`);
+console.log(`\n  mean PIMC cost per decision : ${mean(rows, "pimcCost").toFixed(2)} pts   (cross-fitted)`);
+console.log(`    the same, uncorrected     : ${mean(rows, "naiveCost").toFixed(2)} pts   — winner's curse, do not quote this one`);
 console.log(`  mean DD cost per decision   : ${mean(rows, "ddCost").toFixed(2)} pts`);
 
 // The headline claim of this whole exercise, as a measured number rather than
