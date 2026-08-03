@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.0] - 2026-08-03 (`pending`)
+## [0.58.0] - 2026-08-03 (`de21287`)
 Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
 change; it was developed as two and the halves are kept separate below.
 
