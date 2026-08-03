@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.55.0] - 2026-08-03 (`PENDING`)
+## [0.55.0] - 2026-08-03 (`6b7b254`)
 - **Project memory brought in line with the session.** CLAUDE.md's clairvoyance
   section said "Not fixed, deliberately", which stopped being true in 0.54.0 —
   a handoff doc that describes a fixed bug as open is worse than one that omits
