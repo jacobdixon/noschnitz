@@ -142,6 +142,38 @@ const rows = r.legal.map((card, i) => {
 const bestPts = onPickerTeam ? Math.max(...rows.map((x) => x.pts)) : Math.min(...rows.map((x) => x.pts));
 const bestDD = onPickerTeam ? Math.max(...rows.map((x) => x.dd)) : Math.min(...rows.map((x) => x.dd));
 
+// The answer somebody actually asked for, before the diagnostics. Framed from
+// the DECIDING SEAT's side rather than the picker's, because "your side took 42
+// points and won 27% of the time" is a sentence you can send to a friend and
+// "picker-team points 78" is not — and a defender reading a picker-framed table
+// has to invert every number in their head to use it.
+const sideOf = (pts) => (onPickerTeam ? pts : 120 - pts);
+const sideWin = (w) => (onPickerTeam ? w : 100 - w);
+const ordered = [...rows].sort((a, b) => (onPickerTeam ? b.pts - a.pts : a.pts - b.pts));
+const who = spec.seats[r.viewer];
+// The solo screen names the human seat "You", so possessives have to bend or the
+// summary reads "You's side" — small, but this block exists to be pasted to a
+// person and that would be the first thing they noticed.
+const isYou = who.toLowerCase() === "you";
+const subj = isYou ? "you" : who;
+const poss = isYou ? "your" : who.endsWith("s") ? `${who}'` : `${who}'s`;
+console.log(`If ${subj} had played...        ${poss} side: avg pts of 120   wins the hand`);
+for (const x of ordered) {
+  const tag = cid(x.card) === cid(actual) ? "(played)" : x === ordered[0] ? "(best)" : "";
+  console.log(`  ${show(x.card).padEnd(4)} ${tag.padEnd(9)}${" ".repeat(12)}${sideOf(x.pts).toFixed(1).padStart(8)}${sideWin(x.win).toFixed(1).padStart(15)}%`);
+}
+const bestRow = ordered[0], playedRow = rows[refIdx];
+if (cid(bestRow.card) !== cid(actual)) {
+  const gap = pairedDiff(r.samples[refIdx], r.samples[rows.indexOf(bestRow)]);
+  const wpp = sideWin(bestRow.win) - sideWin(playedRow.win);
+  console.log(`\n  ${show(actual)} cost ${Math.abs(gap.mean).toFixed(1)} ± ${gap.se.toFixed(2)} points against ${show(bestRow.card)}` +
+              (Math.abs(wpp) < 0.5 ? ", and made no difference to whether the hand was won."
+                                   : `, and ${Math.abs(wpp).toFixed(1)}pp of win rate.`));
+} else {
+  console.log(`\n  ${show(actual)} was the best card available.`);
+}
+console.log(`  Averaged over ${r.kept} deals consistent with what ${subj} could see at the time.\n`);
+
 console.log("card    PIMC pts   vs played     win%   schn%   set%   120%   stake   vs played     DD(actual)");
 console.log("----   ---------  ------------   -----  ------  -----  -----  ------  -----------  -----------");
 for (const x of rows.sort((a, b) => (onPickerTeam ? b.pts - a.pts : a.pts - b.pts))) {

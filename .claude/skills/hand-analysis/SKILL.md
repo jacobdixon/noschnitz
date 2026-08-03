@@ -1,40 +1,27 @@
 ---
 name: hand-analysis
-description: Analyze a played Sheepshead hand — whether a card was the right play, what a mistake cost, or why a seat did something. Use this whenever the user asks about a specific hand, trick, or card, posts a recap screenshot, asks "was that right", "should I have led X", "what did that cost", "why did the AI play Y", or asks to grade or review play. Also use it before changing engine heuristics on the strength of a hand somebody reported, because the measurement discipline here is what separates a real finding from a plausible one.
+description: Answer "was that the right play?" for a Sheepshead hand by simulating every legal alternative from what that seat could actually see, and reporting the average points and win rate each would have produced. Use whenever someone shares a hand, recap screenshot, or trick and asks whether a card was right, what it cost, what they should have played, or why a seat did something — including hands sent by friends for a quick verdict.
 ---
 
-# Analyzing a hand
+# What each play would likely have produced
 
-The engine already grades hands, and its grade answers a **different question**
-from the one people ask. Getting these two confused is the single failure mode
-this skill exists to prevent, so start here.
+Someone has sent a hand and wants a straight answer: *of the cards I could have
+played there, which ones do best, and by how much?* Produce a short table of
+every legal card with the average points and win rate it leads to — averaged
+over many deals consistent with **what that seat could see at the time**.
 
-- `gradeAllPlays` / the recap solves the **one deal that happened**, with every
-  hand visible. It answers "did this seat find the card that was best given the
-  actual layout".
-- `scripts/pimc.mjs` samples deals consistent with **what the seat could know**
-  and averages the exact solve over them. It answers "was this right given the
-  information available" — which is what a player means by "was that a mistake".
+`npm run pimc` does the simulation. Your job is to get the hand in, check it
+reconstructed correctly, and hand back something quotable.
 
-They disagree constantly, in both directions. Measured over 425 decisions:
-double-dummy called **15%** of decisions clean that cost ≥1 point, and **9%**
-mistakes that cost under 0.5. Within a single trick of one reported hand it
-scored a 4.3-point error at zero and a 0.9-point error at six.
+## Do this
 
-So: **never report a double-dummy cost as "how bad the play was."** Report the
-PIMC number, and show the DD one beside it when the gap is the story.
-
-## The workflow
-
-### 1. Reconstruct the hand into a spec
-
-Hands live in `scripts/hands/<date>-hand<N>.json`. A recap screenshot is enough:
-30 played cards plus 2 buried is the whole 32-card deck, so every hand is
-recoverable exactly.
+**1. Write the hand to `scripts/hands/<date>-<name>.json`.** A recap screenshot
+is enough — 30 played cards plus 2 buried is the whole 32-card deck, so the deal
+is recoverable exactly.
 
 ```json
 {
-  "label": "2026-08-02 hand 1 (v0.46.0) — pickers win, no schneider, 115-5",
+  "label": "2026-08-02 hand 1 — pickers win 115-5",
   "seats": ["You", "Bernie", "Bunny", "Gus", "Fonzie"],
   "picker": 0,
   "calledSuit": "S", "calledRank": "A",
@@ -46,109 +33,82 @@ recoverable exactly.
 }
 ```
 
-`plays` is **by seat, in trick order** — the recap grid, read across each row.
-Play order within a trick is derived from who won the previous one, so it is
-never stored.
+`plays` is **by seat, in trick order** — read straight across each row of the
+recap grid. Order within a trick is derived from who won the last one, so it is
+never stored, and getting the rows transposed is the most common way this breaks.
 
-Always include `expectedWinners` (from the shaded cells). It costs nothing and
-it catches a misread card immediately, which is the most common way this goes
-wrong. `passers` is the seats that had a pick decision and passed — real
-information the sampler uses, and safe to omit if unknown.
+`expectedWinners` comes from the shaded cells and is worth the ten seconds: it
+catches a misread card immediately, which otherwise surfaces as numbers that
+look plausible and are about a different hand. `passers` (seats that had a pick
+decision and passed) is real information the sampler uses; omit it if unknown.
 
-### 2. Run it, and check the verify line
+**2. Run it.**
 
 ```
-npm run pimc -- scripts/hands/<file>.json --trick 3 --seat You --worlds 1200 --seed 1
+npm run pimc -- scripts/hands/<file>.json --trick 3 --seat Gus --worlds 1200 --seed 1
 ```
 
-The output prints `verify: DD costs match gradeAllPlays on all N cards`. **If
-that line is missing or the run throws, stop.** It means the position being
-analyzed is not the position that was played, and every number below it is
-confidently wrong in a way nothing else would reveal.
+The output opens with the table to quote — every legal card, that seat's own
+side's average points out of 120, and how often that side wins the hand.
 
-Run **3–4 seeds**. Read the sign and how many seeds agree, not one number — a
-result worth reporting is consistent across seeds. Quote the paired `vs played`
-column with its ±, never two raw means subtracted: every card is scored on the
-same sampled worlds, so the paired spread is far tighter and is the honest one.
+**Stop if the `verify: DD costs match gradeAllPlays` line is missing.** It means
+the position simulated is not the position played, and every number under it is
+wrong in a way nothing else will reveal.
 
-### 3. Read the table
+**3. Re-run on 2–3 seeds** (`--seed 2`, `--seed 3`) before quoting a gap. Report
+it only if the sign holds across them. The `±` on the cost line is a paired
+standard error — every card is scored on the same sampled deals, which is what
+makes a sub-point difference meaningful.
 
-| column | what it tells you |
-|---|---|
-| `PIMC pts` | picker-team points, averaged over sampled worlds |
-| `vs played` | paired difference against the card actually played, ± SE |
-| `win% / schn%` | where the cost lives — see below |
-| `stake` | the deciding seat's own hand delta under house rules |
-| `DD(actual)` | the exact solve of the real deal — the recap's answer |
+## Reporting it
 
-Orientation flips with the side: a defender's best card **minimises**
-picker-team points. The tool handles this; your prose has to as well.
+Lead with the table and the one-line cost. Then say **why** in a sentence of
+plain Sheepshead — "the 10 is fat and can't win with five power trump still
+out" — because that is the part that transfers to the next hand.
 
-**Check `win%` against `schn%` before writing a conclusion.** Often the win rate
-is flat across every legal card and the whole cost is the schneider line — the
-seat isn't choosing whether to lose, it's choosing whether to lose double. That
-is a materially different thing to tell someone than "you threw the hand away."
+Two things worth calling out when they show up, because they change what the
+answer *means*:
 
-### 4. Price a read with `--partner NAME`
+- **The win rate often doesn't move while the points do.** Then the choice was
+  never about winning the hand, it was about the schneider line — losing once
+  versus losing double. Say that; "you threw the hand away" would be wrong.
+- **The in-app recap can disagree, and it is not a second opinion.** It grades
+  against the deal as it actually was, with all five hands visible, so it
+  forgives a bad card that got lucky and convicts a good one that didn't. If
+  someone quotes their recap grade at you, that is the explanation.
 
-When a seat could have deduced who the partner is, `--partner` restricts
-sampling to worlds where that seat holds the called card. Run it both ways: the
-gap **is** the value of the inference. On the reported hand, a defender's 10♠
-went from 0.9 points behind the best card to 5.9 once the read was pinned — the
-read was worth six times the error it exposed, which was the more useful finding.
+## Tricks 5 and 6 have no answer
 
-## Traps that have already cost time
+From `tricksDone >= 4`, `aiChooseCard` hands off to `solveEndgameCard`, which
+solves the **real deal** — every AI seat plays the last two tricks seeing all
+five hands. Two consequences, and this is the one thing here you will not find
+written down anywhere else in the repo:
 
-**Tricks 5–6 are not analyzable as mistakes.** `aiChooseCard` dispatches them to
-`solveEndgameCard`, which solves the real deal — the AI plays those tricks with
-perfect information (`npm run clairvoyancetest` demonstrates it). Their DD cost
-is 0 by construction, and their PIMC "cost" measures the value of that
-information, not an error. `pimcmine` excludes them; a single-decision analysis
-has to exclude them by hand.
+- The recap's cost for those tricks is 0 by construction, because the seat
+  played the double-dummy card. It is not evidence of good play.
+- A simulated cost there is not an error either. It measures how much the
+  clairvoyant card differs from the best guess under uncertainty — but the seat
+  was not guessing, so there is no mistake to report.
 
-**Regret is a max over noisy means, so it is biased upward.** `pimcmine`
-cross-fits to remove this; `pimc.mjs` on a single decision does not. At low
-`--worlds` treat the magnitude as an upper bound, and raise the world count
-before quoting a number that matters.
+So for a trick-5 or trick-6 question, say there is no number to give and why.
+Check `legalPlays` too: late in a hand a card is very often simply forced, and a
+forced play looks identical to a choice on a replay.
 
-**A defender's information set is not the picker's.** They cannot see the bury,
-and worlds that put the called ace in the picker's hand or in the bury are
-impossible — the call could not have been made. The sampler enforces this via
-`callOptions`; it rejects ~74% of worlds for a defender seat, so acceptance
-rates that look alarming are usually correct.
+## Two more things that will otherwise catch you out
 
-## Before changing the engine because of a hand
+**Small gaps at low `--worlds` are overstated.** The best card is picked as the
+max over noisy averages, so it gets flattered. At 300–400 worlds treat a gap
+under about a point as directional only; raise `--worlds` before quoting it.
 
-One hand is a **detector, not evidence**. Every AI fix that has actually landed
-started from one reported hand, and several correct-looking diagnoses from one
-hand measured as pure noise. The sequence that works:
+**`--partner NAME` prices a read.** It restricts the simulation to deals where
+that seat holds the called ace. Run it both ways and the difference is what
+*knowing* is worth, which is frequently a bigger number — and a better story —
+than the mistake itself.
 
-1. **Reproduce against the engine first** — does `aiChooseCard` actually make
-   this mistake, and through which branch? Print the intermediate values. Often
-   the play code is fine and something upstream is feeding it a bad input.
-2. **Pin it as a constructed assertion with a negative control** in
-   `scripts/aitest.mjs` — the control is what makes the test mean something.
-3. **Measure it**: `npm run abtest` for a one-seat change, and
-   `npm run coalitiontest` as well for anything about co-operating with
-   teammates, which a one-seat A/B structurally cannot see. Both null-test to
-   exactly zero; if your null isn't exactly zero, the harness is wrong, not the
-   result. Read seeds-ahead-of, not the mean alone.
-4. If it touches the partner belief, calibrate in `npm run belieftest` **before**
-   any play code acts on it — an uncalibrated belief is a lie the play code will
-   act on.
+---
 
-**A strong inference can be worth nothing, and that is a normal outcome.** The
-schmear tell calibrated at 8.3:1 and passed every calibration bucket, then
-changed 10 decisions in 92,970 and shipped off. Being able to read a table is
-not the same as being able to do anything about it. When that happens, record it
-as `MEASURED AND NOT SHIPPED` with the funnel that shows why, so the next person
-doesn't rediscover it — that is a real deliverable, not a failure.
-
-## Going wider than one hand
-
-`npm run pimcmine -- <hands.json>` prices every decision in a corpus and ranks
-decision *shapes* by total cost. `--selfplay N` generates clean engine-vs-engine
-hands and needs no corpus at all, which is the only option from a session: the
-egress proxy answers 403 to CONNECT for both noschnitz hosts, so the real corpus
-is reachable only from CI, via **Actions → "Mine hands" → `analysis:
-cost-ranking`**.
+If the question turns into "should we change the engine because of this",
+that is a different job with its own rules, and CLAUDE.md covers them: one hand
+is a detector, not evidence. Reproduce, pin with a negative control, measure on
+`abtest` and `coalitiontest`, and calibrate a belief before any play code acts
+on it.

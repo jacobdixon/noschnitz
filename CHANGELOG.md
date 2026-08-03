@@ -6,6 +6,34 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.53.0] - 2026-08-03 (`PENDING`)
+- **`npm run pimc` leads with the answer somebody actually asked for.** Before
+  the diagnostics it now prints every legal card with the DECIDING SEAT's own
+  side's average points out of 120 and how often that side wins the hand, then a
+  one-line cost against the best card. The table underneath was picker-framed,
+  which meant a defender had to invert every number in their head, and no part of
+  the output was a thing you could paste to a friend.
+  - When the win rate does not move it says so in words rather than leaving two
+    identical columns to be noticed — that case is common and it changes the
+    verdict from "you threw the hand away" to "you were choosing whether to lose
+    double".
+- **The hand-analysis skill is cut roughly in half, to the simulation and the
+  handful of facts written nowhere else.** Evaluated against a no-skill baseline
+  over four cases, and the result was not flattering: the repo's own
+  documentation — `engine.js`'s comments, the harness headers, CLAUDE.md, the
+  MEASURED AND NOT SHIPPED notes — already gets a capable reader to the right
+  procedure. The skill won clearly on one case, tied on one, and **lost** on the
+  engine-change case, where the baseline found a code-path distinction (only 301
+  of 2,160 apparent schmears came from the schmear branch at all; the rest were
+  `shedCard` discarding into a trick already lost) that the skill's own run
+  missed.
+  - So it no longer re-teaches the engine-change discipline, which CLAUDE.md
+    covers better and which was where the time went without buying anything. What
+    it keeps is the workflow, and the one thing genuinely undocumented elsewhere:
+    a simulated cost at tricks 5-6 is meaningless because the seat is not under
+    uncertainty there. That was the case the baseline got wrong — it reported a
+    phantom 2.70-point engine bug from a clairvoyant decision.
+
 ## [0.52.1] - 2026-08-03 (`5ec31ac`)
 - **`pimcmine` was mislabelling what the endgame clairvoyance is worth, and now
   measures it.** It reported the clairvoyant decisions' own PIMC cost as "the

@@ -1,6 +1,6 @@
 {
   "skill_name": "hand-analysis",
-  "notes": "Baseline is 'no skill'. CLAUDE.md is loaded in BOTH arms and already carries a one-paragraph pointer saying to report the PIMC number, so the measured delta is the skill's marginal value over that memory note — which is the decision-relevant number, not a flattering one.",
+  "notes": "Baseline is 'no skill'. CLAUDE.md loads in BOTH arms, so the delta is the skill's marginal value over the repo's own documentation \u2014 the decision-relevant number. Iteration 1 showed that documentation is strong: the skill won clearly on the endgame trap, tied on the straightforward case, and LOST on the engine-change case (the baseline found a code-path distinction the skill's run missed). So the skill was cut to the friend-facing simulation plus the few facts written nowhere else, and the engine-change eval was dropped as out of scope rather than kept as a case the skill is not trying to win.",
   "evals": [
     {
       "id": 0,
@@ -11,7 +11,7 @@
     {
       "id": 1,
       "name": "clairvoyance-trap-trick5",
-      "prompt": "Same hand file (scripts/hands/2026-08-02-hand1.json) — at trick 5 Bernie leads the 9 of spades and Gus follows with the king of spades. Was the king the best card there, and what did it cost? I want a number I can put in a bug report.",
+      "prompt": "Same hand file (scripts/hands/2026-08-02-hand1.json) \u2014 at trick 5 Bernie leads the 9 of spades and Gus follows with the king of spades. Was the king the best card there, and what did it cost? I want a number I can put in a bug report.",
       "expected_output": "Recognises that tricks 5-6 are solved by solveEndgameCard on the real deal so the seat is clairvoyant, that its DD cost is 0 by construction, and that a PIMC cost there is not an error. Should also notice the king is the only legal spade Gus holds, i.e. a forced play with nothing to analyse."
     },
     {
@@ -21,10 +21,10 @@
       "expected_output": "Builds a spec JSON with plays by seat in trick order, includes expectedWinners [0,0,2,1,2,0], runs the analysis, and confirms the verify line matched gradeAllPlays before quoting numbers."
     },
     {
-      "id": 3,
-      "name": "engine-change-discipline",
-      "prompt": "Watching a hand back, one of the AI defenders dumped a ten onto a trick the picker's partner was winning. That is obviously wrong — a defender should never feed the picking team. Can you go into src/engine.js and fix the schmear logic so it stops doing that?",
-      "expected_output": "Does not just patch heuristicCard. Reproduces against the engine first, identifies that the belief (teammateProbability) rather than the play code is the input at fault, and insists on a negative control plus abtest AND coalitiontest before shipping. Should surface that this exact change was already measured and shipped off."
+      "id": 4,
+      "name": "defender-side-framing",
+      "prompt": "mate sent me this from his phone, he was Gus (seat 3) and reckons he got robbed. scripts/hands/2026-08-02-hand1.json is the hand. he played the 10 of spades on trick 3 and wants to know if that was the mistake or if he was sunk already. keep it short, i'm going to paste your answer straight back to him.",
+      "expected_output": "A short quotable answer framed from GUS'S side (his side's points out of 120 and his side's win rate, not picker-team numbers). Should show the 10 of spades cost well under a point, and that the win rate is identical across every legal card \u2014 he was sunk already, the choice was only about the schneider. Should not lecture about engine internals."
     }
   ]
 }
