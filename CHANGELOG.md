@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.0] - 2026-08-03 (`_pending_`)
+## [0.49.0] - 2026-08-03 (`e85447a`)
 - **The cheapest-winner rule now measures "cheapest" in points when rank is
   provably free.** Taking a trick with the weakest card that wins it is right,
   but `power` is the wrong axis for deciding what to *risk*: the trump order
