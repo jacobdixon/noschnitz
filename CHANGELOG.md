@@ -6,6 +6,28 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.1] - 2026-08-03 (`PENDING`)
+- **PIMC now reports a schneider rate next to the win rate.** The win rate goes
+  flat at exactly the decisions where it is least useful: in a hand already
+  decided, every candidate reads 100% and the ranking silently falls back to a
+  mean whose units nobody is paid in. Schneider is the boundary still live in
+  those hands, and it doubles the stake, so it gets its own column. It uses the
+  same one-point asymmetry as the win line (`scoreHand`): the picker's team is
+  schneidered at <= 30 and the defenders at <= 29, so schneidering the *other*
+  side needs 90 as a defender and 91 as a picker.
+
+  Found analysing hand 8 (`scripts/scenarios/hand8-fonzie-ad.mjs`), where all
+  four of the deciding seat's legal leads won 100% of sampled worlds and the
+  schneider rate ranged from 49.5% to 89.9% — the entire content of the
+  decision was invisible in the old report.
+- **New scenario `hand8-fonzie-ad.mjs`.** A defender holding only trump
+  (A-diamonds and three Jacks) leads the Ace into a lone picker. Worth keeping
+  as a reference case for the exact/PIMC disagreement this workflow exists to
+  surface: double-dummy all four leads are *identical* (29 to the picker,
+  schneider either way), while PIMC separates them by 8.3 points and 40
+  points of schneider rate, because the deciding seat could not know where the
+  one outstanding higher trump was.
+
 ## [0.48.0] - 2026-08-02 (`ba00fa9`)
 - **`trickSecurity` now prices a beater by whether its holder could legally
   *play* it.** Holding a card that beats the trick is not the same as being
