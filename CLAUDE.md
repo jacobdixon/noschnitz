@@ -406,6 +406,13 @@ Two consequences, and they are not the same conversation:
   therefore averaging in a guaranteed zero for a third of the hand. `pimcmine`
   excludes those decisions and prices them separately.
 
+**It costs about 1.6 points a hand to remove**, measured over 60 self-play
+hands: 0.42 points per endgame decision, ~3.7 such decisions a hand, and that is
+an UPPER bound since a real uncertainty player would not find the sampled-best
+card every time. Against 120 points in a hand that is ~1.3% — affordable, not
+load-bearing. So the fairness question is now a decision somebody can actually
+make rather than one blocked on an unknown.
+
 **Not fixed, deliberately.** Removing it means playing the endgame under
 uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A —
 which is a strength change to be measured, and a difficulty change to be decided.

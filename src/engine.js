@@ -1323,9 +1323,18 @@ function endgameValue(g) {
 //   its ranking for that reason and prices them separately; the gap there is the
 //   value of the information, not an error.
 //
+// WHAT IT IS WORTH, measured 2026-08-03 over 60 self-play hands: playing the
+// best card under UNCERTAINTY instead would cost 0.42 points per endgame
+// decision on the real deal, about 1.6 points a hand across the ~3.7 endgame
+// decisions a hand has. That is an upper bound on the price of removing it — a
+// real uncertainty player would not find the sampled-best card every time
+// either — and it is ~1.3% of the 120 points in a hand, so this is affordable
+// rather than load-bearing. `npm run pimcmine -- --selfplay N` reproduces it.
+//
 // Not changed here. Removing the clairvoyance means playing the endgame under
 // uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
-// — which is a strength change to be measured, not a one-line deletion.
+// — which is a strength change to be measured, not a one-line deletion. But the
+// number above is the input that decision was missing.
 export function solveEndgameCard(g, opts = {}) {
   const idx = g.turn;
   const legal = legalPlays(g, idx);

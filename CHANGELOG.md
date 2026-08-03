@@ -6,6 +6,20 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.53.2] - 2026-08-03 (`PENDING`)
+- **The endgame clairvoyance now has a price: about 1.6 points a hand.** Measured
+  over 60 self-play hands — playing the best card under uncertainty instead of
+  the clairvoyant one costs 0.42 points per endgame decision on the real deal,
+  across the ~3.7 endgame decisions a hand has. It is an UPPER bound, since a
+  real uncertainty player would not find the sampled-best card every time either.
+  - Against the 120 points in a hand that is ~1.3%: affordable rather than
+    load-bearing. The fairness question — the four AI seats can see the human's
+    last two cards and nothing says so — was blocked on not knowing what fixing
+    it would cost. It is now a decision somebody can make.
+  - Recorded next to `solveEndgameCard` and in CLAUDE.md, both of which described
+    the behaviour without pricing it. Reproduce with
+    `npm run pimcmine -- --selfplay N`.
+
 ## [0.53.1] - 2026-08-03 (`5d4c220`)
 - **The hand-analysis skill now says to answer the question and stop**, which the
   evaluation says is its most valuable instruction rather than a matter of tone.
