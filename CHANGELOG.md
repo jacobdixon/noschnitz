@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.49.0] - 2026-08-03 (`6b21f2c`)
+## [0.49.0] - 2026-08-03 (`PENDING`)
 - **The AI no longer bleeds with a fat trump when a cheaper one is available.**
   "Lead the weakest trump" has always meant weakest by trick-taking POWER, and
   on the diamonds that reads exactly backwards on price: A-D and 10-D rank below
@@ -46,28 +46,59 @@ corresponds to the entries below.
   rebuilt from scratch each time (see the notes in `aiskilltest`). This is that
   script, kept. It null-tests to exactly zero on both columns with nothing
   firing, and `npm test` asserts it.
+- **PIMC reports a schneider rate next to the win rate.** The win rate goes flat
+  at exactly the decisions where it is least useful: in a hand already decided,
+  every candidate reads 100% and the ranking silently falls back to a mean whose
+  units nobody is paid in. Schneider is the boundary still live in those hands,
+  and it doubles the stake, so it gets its own column. It uses the same one-point
+  asymmetry as the win line (`scoreHand`): the picker's team is schneidered at
+  <= 30 and the defenders at <= 29, so schneidering the *other* side needs 90 as
+  a defender and 91 as a picker. On the hand above, all four legal leads won 100%
+  of sampled worlds while the schneider rate ranged from 49.5% to 89.9% — the
+  entire content of the decision was invisible in the old report.
+- **New scenario `hand8-fonzie-ad.mjs`**, transcribed from a recap screenshot and
+  verified against the printed score before anything was run. Worth keeping as a
+  reference case for the exact/PIMC disagreement this workflow exists to surface:
+  double-dummy all four leads are *identical* (29 to the picker, schneider either
+  way), while PIMC separates them by 8.3 points, because the deciding seat could
+  not know where the one outstanding higher trump was.
+- **Standing order added to `CLAUDE.md`: open a PR for finished work without
+  being asked, and merge it once the tests pass.** `master` is protected and
+  takes no direct pushes, so a branch with no PR is work parked where nothing
+  picks it up. Spells out that a check which never queued is not a failing check,
+  that a red check always blocks, and that `master` gets watched *after* the
+  merge too — `Release` is gated on CI succeeding there.
 
-## [0.48.1] - 2026-08-03 (`ff2862c`)
-- **PIMC now reports a schneider rate next to the win rate.** The win rate goes
-  flat at exactly the decisions where it is least useful: in a hand already
-  decided, every candidate reads 100% and the ranking silently falls back to a
-  mean whose units nobody is paid in. Schneider is the boundary still live in
-  those hands, and it doubles the stake, so it gets its own column. It uses the
-  same one-point asymmetry as the win line (`scoreHand`): the picker's team is
-  schneidered at <= 30 and the defenders at <= 29, so schneidering the *other*
-  side needs 90 as a defender and 91 as a picker.
-
-  Found analysing hand 8 (`scripts/scenarios/hand8-fonzie-ad.mjs`), where all
-  four of the deciding seat's legal leads won 100% of sampled worlds and the
-  schneider rate ranged from 49.5% to 89.9% — the entire content of the
-  decision was invisible in the old report.
-- **New scenario `hand8-fonzie-ad.mjs`.** A defender holding only trump
-  (A-diamonds and three Jacks) leads the Ace into a lone picker. Worth keeping
-  as a reference case for the exact/PIMC disagreement this workflow exists to
-  surface: double-dummy all four leads are *identical* (29 to the picker,
-  schneider either way), while PIMC separates them by 8.3 points and 40
-  points of schneider rate, because the deciding seat could not know where the
-  one outstanding higher trump was.
+## [0.48.1] - 2026-08-02 (`897fd68`)
+- **The collected corpus was mined for the first time, and the answer was "no signal".**
+  Docs only, no code change. 131 hands off beta, 126 gradeable, 445 real decisions,
+  142 disagreements with the engine, net **+72 points to the human** — noise, and the
+  shape says why: **87 of the 142 disagreements (61%) cost exactly the same either
+  way.** Of the 55 that mattered the human was better 31 times at +9.2 average and the
+  engine 24 times at −8.9, and 31-vs-24 sits inside one standard deviation of a coin
+  flip. Both sides make real mistakes at the same rate and the same size.
+  - Recorded as a result rather than a dead end. "No large systematic gap against a
+    competent human" is the strongest claim 55 decisions support, and it is worth
+    knowing before anyone re-tunes anything on a hunch.
+  - The one lead — `trick=1`, highest win share at 38%, and the three largest
+    single-decision gaps in the corpus — is filed **with the reason to distrust it**:
+    trick 1 is precisely where double-dummy flatters the human, because nothing is
+    known yet and DD judges with every hand visible. Trick 1 topping that table is what
+    the bias alone would produce.
+  - Also filed: the feature table double-counts, because every decision emits seven
+    features and one big-delta decision lights up seven rows.
+- **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+  then nothing. The promotion moved players to www, whose hands go to a different
+  database. Next run should read www; beta's corpus is now a fixed historical artifact
+  spanning nine engine versions.
+- **Mining cost measured on a real runner**: ~16s a hand, 131 hands in 35 minutes, plus
+  ~7 minutes for the `--selftest 30` preamble. The old note said ~24s from a slow box.
+- Next-session cleanup list written into CLAUDE.md, ordered by what pays: point mining
+  at www, record multiplayer hands, **give `minehands` a significance story** (it
+  reports a signed total and nothing about spread, so a net built from two heavy tails
+  reads exactly like a real edge — that gap is why this run needed a human to say "that
+  is noise"), fix the double-counting, and try grading from trick 2 to see whether any
+  cluster survives without the position DD is worst at.
 
 ## [0.48.0] - 2026-08-02 (`ba00fa9`)
 - **`trickSecurity` now prices a beater by whether its holder could legally
