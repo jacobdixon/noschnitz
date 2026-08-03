@@ -521,6 +521,30 @@ for how it was checked and for the rollback.
 
 Genuinely open:
 
+0. **FIRST: there are two hand-analysis skills and they collide.** `hand-analysis`
+   and `analyze-sheepshead-hand` landed from parallel sessions on 2026-08-03 and
+   their descriptions trigger on the same request — a shared hand, a recap
+   screenshot, "was that the right card". Both will fire, and they route to
+   different tools with different on-disk formats: `analyze-sheepshead-hand` →
+   `scripts/pimc.mjs`, rollouts on `aiChooseCard`'s own policy, hands under
+   `scripts/scenarios/`; `hand-analysis` → `scripts/pimcsolve.mjs`, an exact
+   double-dummy solve per sampled world, hands under `scripts/hands/`. They will
+   give different numbers for the same question and you will not see which one
+   answered.
+   - The scripts were renamed apart so the tools no longer collide. The skills
+     were not, because which one wins is a judgement call rather than a merge
+     conflict, and it was left for a person.
+   - **Options, roughly in order of preference.** One skill with both tools
+     behind it and a line on when each is right — the exact solve is sharper on
+     the last few tricks where the tree is small, the rollout scales better
+     early. Or keep both and narrow each description hard enough that they cannot
+     both match. Or drop one, which loses a genuinely different second opinion.
+   - Do this before using either in anger, and re-run
+     `.claude/skills/hand-analysis/evals/evals.json` afterwards — it is a
+     committed eval set and it will tell you whether whatever you picked still
+     answers the four cases.
+
+
 0. **The first games night on production is the real test, and nothing else is.**
    Every multiplayer bug worth fixing so far came from a person on a phone, not
    from a harness. Two things are newest and least exercised: the arrival flow
