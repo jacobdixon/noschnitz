@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.48.1] - 2026-08-03 (`PENDING`)
+## [0.48.1] - 2026-08-03 (`ff2862c`)
 - **PIMC now reports a schneider rate next to the win rate.** The win rate goes
   flat at exactly the decisions where it is least useful: in a hand already
   decided, every candidate reads 100% and the ranking silently falls back to a
