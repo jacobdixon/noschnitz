@@ -6,6 +6,37 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.48.1] - 2026-08-02
+- **The collected corpus was mined for the first time, and the answer was "no signal".**
+  Docs only, no code change. 131 hands off beta, 126 gradeable, 445 real decisions,
+  142 disagreements with the engine, net **+72 points to the human** — noise, and the
+  shape says why: **87 of the 142 disagreements (61%) cost exactly the same either
+  way.** Of the 55 that mattered the human was better 31 times at +9.2 average and the
+  engine 24 times at −8.9, and 31-vs-24 sits inside one standard deviation of a coin
+  flip. Both sides make real mistakes at the same rate and the same size.
+  - Recorded as a result rather than a dead end. "No large systematic gap against a
+    competent human" is the strongest claim 55 decisions support, and it is worth
+    knowing before anyone re-tunes anything on a hunch.
+  - The one lead — `trick=1`, highest win share at 38%, and the three largest
+    single-decision gaps in the corpus — is filed **with the reason to distrust it**:
+    trick 1 is precisely where double-dummy flatters the human, because nothing is
+    known yet and DD judges with every hand visible. Trick 1 topping that table is what
+    the bias alone would produce.
+  - Also filed: the feature table double-counts, because every decision emits seven
+    features and one big-delta decision lights up seven rows.
+- **Beta stopped collecting on 2026-08-01** — 41/45/40 hands on Jul 29/30/31, then 5,
+  then nothing. The promotion moved players to www, whose hands go to a different
+  database. Next run should read www; beta's corpus is now a fixed historical artifact
+  spanning nine engine versions.
+- **Mining cost measured on a real runner**: ~16s a hand, 131 hands in 35 minutes, plus
+  ~7 minutes for the `--selftest 30` preamble. The old note said ~24s from a slow box.
+- Next-session cleanup list written into CLAUDE.md, ordered by what pays: point mining
+  at www, record multiplayer hands, **give `minehands` a significance story** (it
+  reports a signed total and nothing about spread, so a net built from two heavy tails
+  reads exactly like a real edge — that gap is why this run needed a human to say "that
+  is noise"), fix the double-counting, and try grading from trick 2 to see whether any
+  cluster survives without the position DD is worst at.
+
 ## [0.48.0] - 2026-08-02 (`ba00fa9`)
 - **`trickSecurity` now prices a beater by whether its holder could legally
   *play* it.** Holding a card that beats the trick is not the same as being
