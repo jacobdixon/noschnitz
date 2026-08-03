@@ -13,6 +13,24 @@ over many deals consistent with **what that seat could see at the time**.
 `npm run pimc` does the simulation. Your job is to get the hand in, check it
 reconstructed correctly, and hand back something quotable.
 
+## Answer the question and stop
+
+The failure mode here is not getting it wrong, it is not stopping. A question
+about one card opens onto genuinely interesting work — the engine picks that
+card too, is that a bug, what would fixing it measure at — and following that
+thread produces a research report when what was wanted was a reply to a friend.
+Measured: an unscoped run on a single trick-1 card spent **22 minutes** and
+finished by A/B testing a tuning constant over 10,000 hands. The same question
+answered to scope takes about four.
+
+So: price the cards, say which is best and by how much, say why in a sentence,
+stop. Specifically, do not run `abtest`, `coalitiontest`, `simulate` or
+`pimcmine` unless the person asked about the engine rather than about the hand.
+
+Noticing something about the engine on the way is worth one line — "the engine
+plays this card too, so it is not just you" — and that line is the whole
+deliverable. If it deserves pursuing, say so and let them decide.
+
 ## Do this
 
 **1. Write the hand to `scripts/hands/<date>-<name>.json`.** A recap screenshot
@@ -107,8 +125,9 @@ than the mistake itself.
 
 ---
 
-If the question turns into "should we change the engine because of this",
-that is a different job with its own rules, and CLAUDE.md covers them: one hand
-is a detector, not evidence. Reproduce, pin with a negative control, measure on
-`abtest` and `coalitiontest`, and calibrate a belief before any play code acts
-on it.
+If the question really does turn into "change the engine because of this", that
+is a separate job, started deliberately and not drifted into. CLAUDE.md has the
+rules — one hand is a detector, not evidence; reproduce, pin with a negative
+control, measure on `abtest` and `coalitiontest`, calibrate a belief before any
+play code acts on it. Point at that and let them start it. Do not start it
+inside an answer about a hand.

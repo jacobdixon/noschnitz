@@ -6,6 +6,22 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.53.1] - 2026-08-03 (`PENDING`)
+- **The hand-analysis skill now says to answer the question and stop**, which the
+  evaluation says is its most valuable instruction rather than a matter of tone.
+  The failure mode is not getting a hand wrong, it is not stopping: a question
+  about one card opens onto real work — the engine plays that card too, is that a
+  bug, what would a fix measure at — and following the thread produces a research
+  report when a reply to a friend was wanted. Measured on an unscoped run: **22
+  minutes** on a single trick-1 card, finishing by A/B testing a tuning constant
+  over 10,000 hands. Scoped, the same class of question runs about four.
+  - Named the harnesses not to reach for (`abtest`, `coalitiontest`, `simulate`,
+    `pimcmine`) unless the person asked about the engine rather than the hand,
+    since "be brief" without saying what to skip is not actionable.
+  - Noticing something about the engine is worth one line and that line is the
+    deliverable. The closing pointer now says an engine change is a job started
+    deliberately, not drifted into from an answer about a hand.
+
 ## [0.53.0] - 2026-08-03 (`7c19df8`)
 - **`npm run pimc` leads with the answer somebody actually asked for.** Before
   the diagnostics it now prints every legal card with the DECIDING SEAT's own
