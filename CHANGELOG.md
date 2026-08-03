@@ -6,6 +6,45 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.50.0] - 2026-08-03 (`PENDING`)
+- **`scripts/pimcmine.mjs` — rank the corpus by what mistakes actually COST,
+  and Actions → "Mine hands" grew an `analysis: cost-ranking` mode to run it
+  where the corpus is reachable.** `minehands.mjs` ranks by exact double-dummy
+  cost, and 0.48.x established that ruler is mis-calibrated in both directions
+  at once: inside a single trick of one hand it scored a 4.3-point error at zero
+  and a 0.9-point error at six. That is the right tool for "did this seat find
+  the best card" and the wrong one for "which mistakes are worth fixing", so
+  every worklist sorted by it has the wrong things at the top. This re-prices
+  every decision under uncertainty and ranks decision SHAPES — the same coarse
+  feature buckets `minehands` already used — by TOTAL cost, because a shape that
+  is slightly wrong very often is worth more than one badly wrong once.
+- **Three things it refuses to do, each of which would fake a result:** it does
+  not pre-filter to DD-flagged decisions (that would discard exactly the class
+  where DD says zero and the real cost is large — the 10♦'s class); it grades
+  every seat rather than the human, because the AI's own decisions are what a
+  fix would change; and the budget bounds hands rather than decisions, so no
+  hand is half-graded and whatever went unreached is printed.
+- **The control is paired and nulls to exactly 0.0000.** Every decision is also
+  priced for the card `aiChooseCard` would have played there, so the four engine
+  seats — who played that card — must come out at exactly zero excess, and the
+  noisy seat must come out positive: +2.46 over the decisions it deviated on.
+  The first version compared seat 0's mean cost against the other seats' and
+  measured +0.06, which is not a control: seat 0 is also the picker more often
+  than not, so it was mostly measuring role. That is the same paired-vs-unpaired
+  lesson `abtest` and `coalitiontest` already carry, arrived at again.
+- **`--selfplay N` deals clean engine-vs-engine hands as a source.** A session
+  cannot reach either corpus — the egress proxy still answers 403 to CONNECT for
+  both hosts, verified again — and the thing a fix would change is the engine's
+  own play, which self-play supplies without limit. What it cannot supply is a
+  human's decisions or the real distribution of positions people reach, so a
+  self-play ranking is about the engine in the abstract and the corpus stays the
+  thing to run against.
+- Refactor with no behaviour change: rebuilding a record, the feature buckets and
+  the self-test generator moved to `scripts/lib/handlog.js`, and the PIMC core to
+  `scripts/lib/pimc.js`, so the two miners cannot drift on what a record means.
+  `minehands.mjs --selftest 25` is byte-identical before and after, and both
+  published PIMC results reproduce exactly.
+
 ## [0.49.0] - 2026-08-02 (`5066c23`)
 - **The schmear tell: a new evidence term in the partner belief, calibrated at
   8:1, and shipped OFF because it is almost never actionable.** Every existing

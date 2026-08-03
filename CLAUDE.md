@@ -443,7 +443,20 @@ Genuinely open:
    seats, so it needs dedup, and `handLog.js` says in its own header that collecting
    other people's play needs their consent. Worth doing properly, not hastily, and
    never in the hours before a games night.
-   - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
+   - **Rank it by what mistakes COST with the same workflow, `analysis: cost-ranking`**
+    (`scripts/pimcmine.mjs`). The default `outplays` pass ranks by exact
+    double-dummy cost, and that ruler is mis-calibrated in both directions —
+    measured inside one trick of the 2026-08-02 hand, it scored a 4.3-point error
+    at zero and a 0.9-point error at six. It is the right tool for "did this seat
+    find the best card" and the wrong one for "which mistakes are worth fixing",
+    so any worklist sorted by it has the wrong things at the top. The cost pass
+    re-prices every decision under uncertainty and ranks decision SHAPES by total
+    cost. Its control is paired and nulls to exactly 0.0000; the unpaired
+    seat-vs-seat version measured +0.06 and was measuring role, not skill.
+    A session can also run it without the corpus at all — `--selfplay N` deals
+    clean engine-vs-engine hands, which is a fine source for the engine's own
+    error classes and no source at all for a human's.
+  - **Read the corpus with Actions → "Mine hands"** (`.github/workflows/mine-hands.yml`,
      `workflow_dispatch`). A session cannot fetch it — `beta.noschnitz.com` is a 403
      CONNECT policy denial, the same wall as the deploy checks — so this exists for the
      same reason `verify-beta.yml` does. It needs `HANDS_READ_TOKEN` as an **Actions
