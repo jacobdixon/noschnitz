@@ -100,7 +100,22 @@ jobs:
 
           asset="$(cat bundle.name 2>/dev/null || echo '(none)')"
           size="$(wc -c < bundle.js 2>/dev/null || echo 0)"
-          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l)"
+          # `|| true` is load-bearing. grep exits 1 when it finds NOTHING, and
+          # zero matches is exactly the answer this workflow exists to report —
+          # it IS the flag-off case. The step runs under GitHub's default
+          # `bash -e` shell with `pipefail` set above, so without the guard the
+          # pipeline's exit 1 kills the script before the `-eq 0` test below can
+          # interpret it.
+          #
+          # So the one failure this file was written to detect could not be
+          # detected: it would exit 1 with no message, which reads as "the
+          # workflow is broken" rather than "beta is serving the solo game" —
+          # the opposite of the whole point, which is telling those two apart.
+          # Found when the identical line in verify-production.yml hit it, where
+          # the voice count is legitimately zero on every run.
+          count_in_bundle() { { grep -o -i -- "$1" bundle.js 2>/dev/null || true; } | wc -l; }
+
+          mp="$(count_in_bundle '/api/tables/')"
 
           {
             echo "### beta.noschnitz.com"

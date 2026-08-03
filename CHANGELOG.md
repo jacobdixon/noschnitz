@@ -6,6 +6,35 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.1] - 2026-08-03 (`pending`)
+- **`Verify production` failed at exactly the moment it should have passed.**
+  The audio check added in 0.58.0 counts occurrences of `daily` in the served
+  bundle and expects **zero**, which is the whole point — and `grep` exits 1
+  when it finds nothing. The step runs under GitHub's default `bash -e` shell
+  with `pipefail` set, so that exit 1 killed the script *before* the line that
+  interprets the zero ever ran. The job died with `exit code 1` and no error
+  message, because the code path that prints one was never reached.
+
+  Caught on the first real use, right after the 0.58.0 merge: production was
+  correctly serving v0.58.0, correctly the multiplayer build, correctly with no
+  audio in it — and the workflow that exists to say so reported failure.
+
+- **The same bug was latent in `verify-beta.yml`, where it mattered more.** That
+  file's stated purpose is telling *stale* apart from *flag-off*, and flag-off
+  IS the zero-match case. So the one failure it was written to detect could not
+  be detected — it would have exited 1 with no message, which reads as "the
+  workflow is broken" rather than "beta is serving the solo game". It survived
+  unnoticed because `/api/tables/` has always matched 8 times on both sites;
+  only a genuinely flag-off build would have reached zero, and none has since
+  the check was written.
+
+- Both now count through one guarded helper, `count_in_bundle`, and the reason
+  the `|| true` is load-bearing is written next to it rather than left to be
+  rediscovered. Verified by extracting the workflow's own decision logic and
+  running it under `bash -e` against four fixture bundles — clean, audio leaked,
+  audio expected and present, and flag-off — each producing the intended exit
+  code, including the two that previously died silently.
+
 ## [0.58.0] - 2026-08-03 (`de21287`)
 Per-table audio on beta (COM-1.1/1.2), server and client. Shipped as one
 change; it was developed as two and the halves are kept separate below.
