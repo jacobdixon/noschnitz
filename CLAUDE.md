@@ -278,6 +278,39 @@ Unchanged rules:
   somebody can reword without knowing that file depends on it.
 
 ## Conventions established this session (keep following them)
+- **Open a pull request whenever there is finished work to check in, without being
+  asked, and merge it once the tests pass.** Standing order as of 2026-08-03.
+  `master` is protected and takes no direct pushes, so a branch with no PR is not
+  "work in review", it is work parked where nothing will ever pick it up. Do not
+  wait to be told; the default agent instruction elsewhere ("no PR unless asked")
+  is overridden here.
+
+  "Once the tests pass" means the repo's own suites, and what counts is
+  spelled out because the failure modes differ:
+
+  - `npm test` green locally is the bar for merging — every suite, 0 failures,
+    plus `npm run build`. For engine/AI changes add the measurement the change
+    is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
+    the question), and check its null control really came back zero.
+  - **Prefer CI's verdict when there is one, but a check that never queued is
+    not a failing check.** Actions genuinely lags here, sometimes twenty minutes
+    and several pushes (see "Things a session will try and cannot do"). Waiting
+    for it is right; treating its absence as a red light is not. Merging on a
+    green local run while CI is still missing is acceptable — say so in the PR
+    when you do it, so the record shows what the merge actually rested on.
+  - **Do not merge over a red check, ever**, and do not merge to "see if it
+    passes on master". Red is the one state that blocks, because of the next
+    point.
+  - **Watch `master` after the merge, not just before it.** `Release` is gated
+    on CI *succeeding* on `master`, and a marginal test can pass on a PR and
+    fail on `master` for the identical commit — which does not merely fail a
+    check, it silently withholds the beta deploy and leaves production
+    unverified. The merge is not the end of the job; a green `Release` run is.
+
+  Anything genuinely irreversible or outward-facing beyond this — a production
+  variable flip, a rollback, a repo-settings change — is still a human action
+  and still gets asked about. This order covers merging ordinary work, not
+  deploying by other means.
 - **Watch every PR you open, without being asked.** Subscribe to its activity as
   soon as it exists, and stay subscribed until it is merged or closed. A PR here is
   not finished when it is opened: CI going red on `master` is what silently withholds
