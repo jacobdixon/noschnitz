@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.54.0] - 2026-08-03 (`PENDING`)
+## [0.54.0] - 2026-08-03 (`2f102cd`)
 - **The AI no longer sees your last two cards.** `solveEndgameCard` solved the
   real deal — `endgameValue` recurses over `g.hands`, all five of them — so from
   `tricksDone >= 4` every AI seat played the endgame with perfect information,
