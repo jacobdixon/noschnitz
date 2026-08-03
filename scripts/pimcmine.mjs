@@ -63,7 +63,7 @@ const selfplay = args.includes("--selfplay");
 const startedAt = Date.now();
 
 /* ------------------------------ the mine --------------------------------- */
-const rows = [];
+let rows = [];
 let handsSeen = 0, handsPriced = 0, decisions = 0, skipped = 0, failed = 0;
 
 function mineHand(rec, seats) {
@@ -90,6 +90,16 @@ function mineHand(rec, seats) {
   g.trickHistory.forEach((th, trickIdx) => {
     for (const play of th.trick) {
       const idx = play.player;
+      // `aiChooseCard` dispatches to `solveEndgameCard` from tricks 5-6, which
+      // solves the REAL deal — the seat plays with perfect information. Two
+      // things follow and both would corrupt this ranking. Its double-dummy
+      // cost is 0 by construction, since it played the double-dummy card. And
+      // its PIMC "cost" is not an error at all: it measures the gap between the
+      // clairvoyant card and the best card under uncertainty, which is the
+      // VALUE OF THE INFORMATION, and the seat really has it. Priced separately
+      // and kept out of the ranking rather than dropped, because "what would it
+      // cost to stop doing that" is a real question — just not this one.
+      const clairvoyant = sim.tricksDone >= 4;
       if (trickIdx >= FROM_TRICK && legalPlays(sim, idx).length > 1) {
         const d = ddBy.get(`${trickIdx}:${idx}`);
         if (d) {
@@ -119,7 +129,7 @@ function mineHand(rec, seats) {
             decisions++; priced = true;
             rows.push({
               role: idx === sim.picker ? "picker" : idx === sim.partner ? "partner" : "defender",
-              seat: idx,
+              seat: idx, clairvoyant,
               human: idx === (rec.humanSeat ?? -1),
               pimcCost, ddCost: d.cost, engineCost, engineCard: cid(engineCard),
               excess: engineCost === null ? null : pimcCost - engineCost,
@@ -182,6 +192,18 @@ if (!rows.length) {
 const sum = (rs, k) => rs.reduce((s, r) => s + r[k], 0);
 const mean = (rs, k) => sum(rs, k) / Math.max(1, rs.length);
 
+// The ranking is over decisions the engine makes UNDER UNCERTAINTY. Everything
+// from trick 5 on is a different animal and is reported on its own terms below.
+const seen = rows;
+const clair = rows.filter((r) => r.clairvoyant);
+rows = rows.filter((r) => !r.clairvoyant);
+if (!rows.length) { console.log("\nNothing priced outside the clairvoyant endgame."); process.exit(selftest ? 1 : 0); }
+
+console.log(`\n${seen.length} decisions priced; ${clair.length} of them from tricks 5-6, where the engine solves the real deal and is NOT under uncertainty.`);
+if (clair.length) {
+  console.log(`  those ${clair.length} are excluded from everything below. Their mean DD cost is ${mean(clair, "ddCost").toFixed(2)} — zero by construction, it played the double-dummy card —`);
+  console.log(`  and their mean PIMC cost ${mean(clair, "pimcCost").toFixed(2)} is the value of seeing the other hands, not an error to fix.`);
+}
 console.log(`\n  mean PIMC cost per decision : ${mean(rows, "pimcCost").toFixed(2)} pts`);
 console.log(`  mean DD cost per decision   : ${mean(rows, "ddCost").toFixed(2)} pts`);
 

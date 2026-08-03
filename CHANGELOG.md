@@ -6,6 +6,40 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.51.0] - 2026-08-03 (`PENDING`)
+- **The AI plays the last two tricks with perfect information, and now there is
+  a test that says so.** `aiChooseCard` dispatches tricks 5-6 to
+  `solveEndgameCard`, which recurses over `g.hands` — all five of them — so from
+  `tricksDone >= 4` every AI seat is solving the real deal rather than what its
+  seat could know. Found by the cost ranking rather than by reading the code:
+  every trick-5 decision had a double-dummy cost of exactly 0.00, which is only
+  possible if the mover already knew the answer.
+- **Demonstrated, not inferred.** `npm run clairvoyancetest` moves one card
+  between two OTHER seats — leaving the deciding seat's hand, the played cards
+  and every public fact identical — and the card it chooses changes on **4.8%**
+  of trick-5 decisions with more than one legal play. One swap is probed per
+  decision, so that is a floor on the dependence rather than an estimate of it.
+  A characterisation test: it asserts the behaviour that EXISTS, so removing the
+  clairvoyance later fails loudly instead of changing quietly.
+- **Two consequences, and they are different conversations.** In solo play the
+  four AI opponents can see the human's last two cards and nothing says so —
+  possibly a fine difficulty knob, but it should be a decision somebody made
+  rather than a property nobody noticed. Separately, any double-dummy grade of
+  tricks 5-6 reads 0 by construction, so `gradeAllPlays` cannot see an endgame
+  mistake and never could, and anything averaging over graded decisions has been
+  averaging in a guaranteed zero for the last third of every hand.
+- **Not fixed, deliberately.** Removing it means playing the endgame under
+  uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
+  — which is a strength change to be measured and a difficulty change to be
+  decided, not a one-line deletion.
+- `pimcmine` excludes those decisions from its ranking and prices them
+  separately. Their PIMC cost is the value of seeing the other hands, not an
+  error to fix, and the first run of the ranker reported them as the eight most
+  expensive mistakes in the corpus at 10-17 points each. That list was wrong.
+  The failure mode is worth naming: an instrument that is correct everywhere
+  except one population will report that population's artefacts as its headline,
+  because they are the largest numbers it produces.
+
 ## [0.50.0] - 2026-08-03 (`f21cf4f`)
 - **`scripts/pimcmine.mjs` — rank the corpus by what mistakes actually COST,
   and Actions → "Mine hands" grew an `analysis: cost-ranking` mode to run it

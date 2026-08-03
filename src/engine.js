@@ -1299,6 +1299,33 @@ function endgameValue(g) {
 // what this seat actually knows (`cardEquity` had the Queen at 0 — boss of
 // everything unaccounted for — and would have played the 9). Search decides
 // what wins; judgement decides between things that tie.
+// THIS SEAT PLAYS THE LAST TWO TRICKS WITH PERFECT INFORMATION. `endgameValue`
+// recurses over `g.hands`, which holds all five, so from `tricksDone >= 4` the
+// AI is solving the REAL deal rather than what its seat could know. Measured
+// 2026-08-03: move one card between two OTHER seats — leaving the deciding
+// seat's hand, the played cards and every public fact untouched — and the card
+// it chooses changes on 4.8% of trick-5 decisions with more than one legal play.
+// One swap per decision was probed, so that is a floor on the dependence, not
+// an estimate of it.
+//
+// Two things follow, and they are separate.
+//
+//   FAIRNESS. In solo play the four AI seats can see the human's last two cards.
+//   Nothing tells the player that. Whether that is acceptable is a product call
+//   — it is a real difficulty knob, and it is the whole reason the endgame is
+//   exact — but it should be a decision somebody made on purpose rather than a
+//   property nobody noticed.
+//
+//   MEASUREMENT. Any double-dummy grade of these tricks reads 0 by construction,
+//   because the seat played the double-dummy card. `gradeAllPlays` therefore
+//   cannot see an endgame mistake, and never could — not because grading is
+//   broken but because there is nothing to see. `pimcmine` excludes them from
+//   its ranking for that reason and prices them separately; the gap there is the
+//   value of the information, not an error.
+//
+// Not changed here. Removing the clairvoyance means playing the endgame under
+// uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A
+// — which is a strength change to be measured, not a one-line deletion.
 export function solveEndgameCard(g, opts = {}) {
   const idx = g.turn;
   const legal = legalPlays(g, idx);

@@ -368,6 +368,39 @@ the hand, using the AI's own policy as a consistent yardstick across all six tri
 (cheap, deterministic, no separate heuristic-vs-exact blending needed since
 `aiChooseCard` already dispatches to the exact solver for the last two tricks).
 
+## The AI sees your last two cards
+
+`aiChooseCard` dispatches tricks 5-6 to `solveEndgameCard`, which recurses over
+`g.hands` — all five of them. So from `tricksDone >= 4` every AI seat is solving
+the REAL deal, not what its seat could know. Found 2026-08-03 while ranking the
+corpus, not by reading the code: the trick-5 rows all had a double-dummy cost of
+exactly zero, which is only possible if the mover already knew the answer.
+
+Demonstrated rather than inferred, and pinned in `npm run clairvoyancetest`: move
+one card between two OTHER seats, leaving the deciding seat's hand and every
+public fact identical, and its choice changes on **4.8%** of trick-5 decisions
+with more than one legal play. One swap is probed per decision, so that is a
+floor.
+
+Two consequences, and they are not the same conversation:
+
+- **Fairness.** In solo play the four AI opponents can see the human's last two
+  cards, and nothing says so. That may be a fine difficulty knob — the exact
+  endgame is a headline feature — but it should be a decision somebody made,
+  not a property nobody noticed. It is also the sort of thing a player who
+  suspects it will never un-suspect.
+- **Measurement.** Any double-dummy grade of tricks 5-6 reads 0 by construction.
+  `gradeAllPlays` cannot see an endgame mistake and never could — there is
+  nothing to see. Anything that ranks or averages over graded decisions is
+  therefore averaging in a guaranteed zero for a third of the hand. `pimcmine`
+  excludes those decisions and prices them separately.
+
+**Not fixed, deliberately.** Removing it means playing the endgame under
+uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A —
+which is a strength change to be measured, and a difficulty change to be decided.
+`clairvoyancetest` is a characterisation test: if the clairvoyance is ever
+removed it fails loudly, which is the point.
+
 ## The strategic pivot (why the roadmap looks the way it does)
 Explored "chess.com for Sheepshead" as a real ambition, not a bit — see the
 brainstorm/interview notes at the bottom of `ROADMAP.md` for the full reasoning.
