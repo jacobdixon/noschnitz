@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.53.2] - 2026-08-03 (`PENDING`)
+## [0.53.2] - 2026-08-03 (`f6dfa71`)
 - **The endgame clairvoyance now has a price: about 1.6 points a hand.** Measured
   over 60 self-play hands — playing the best card under uncertainty instead of
   the clairvoyant one costs 0.42 points per endgame decision on the real deal,
