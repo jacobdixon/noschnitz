@@ -6,6 +6,30 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.55.0] - 2026-08-03 (`PENDING`)
+- **Project memory brought in line with the session.** CLAUDE.md's clairvoyance
+  section said "Not fixed, deliberately", which stopped being true in 0.54.0 —
+  a handoff doc that describes a fixed bug as open is worse than one that omits
+  it. Rewritten around how it was FOUND, since that is the transferable part: not
+  by reading the code, but by a number that could only be true if something was
+  wrong (every trick-5 row grading at exactly zero).
+- **New section on skills and what evaluating one showed**, because it changes
+  how the next one should be written. Nine runs against a no-skill baseline:
+  answer quality was never the differentiator, this repo's documentation already
+  walks a capable reader to the right procedure, and the baseline beat the skill
+  outright on one case. What varied was scope — 4 to 30 minutes on comparable
+  questions. A skill here earns its place by carrying the facts written nowhere
+  else and an explicit instruction to stop; adding that took one case from 225
+  tool calls to 36.
+- Recorded that the evals caught two defects in this session's own work that
+  review did not: a summary line printing a win-rate delta as an absolute value,
+  and a corpus ranking contaminated by clairvoyant decisions.
+- Added the first self-play cost ranking to the "where to pick up next" list —
+  double-dummy overstates cost ~2.3x and errs in both directions (13.6% of clean
+  calls cost a point or more; 11.5% of flagged mistakes cost under half a point),
+  with leading the most expensive shape. Flagged as a hypothesis, not a finding:
+  the buckets overlap and have no error bars yet.
+
 ## [0.54.1] - 2026-08-03 (`a85a6e7`)
 - **`pimc`'s summary line stated the opposite of what happened when the played
   card won more often.** The win-rate delta was wrapped in `Math.abs`, so a card

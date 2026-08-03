@@ -277,6 +277,35 @@ Unchanged rules:
   ever need a different discriminator, pick a structural string, not a UI label
   somebody can reword without knowing that file depends on it.
 
+## Skills, and what the evaluation of them showed
+
+`.claude/skills/hand-analysis/` is the procedure for "was that play right", and
+`.claude/skills/hand-analysis/evals/evals.json` is its committed test set — four
+cases, each aimed at a way hand analysis goes wrong rather than at the happy
+path. Re-run them with subagents (one with the skill, one without) if the skill
+is edited.
+
+**The result is worth knowing before writing another skill here.** Measured
+against a no-skill baseline over nine runs: answer QUALITY was never the
+differentiator — every run in both arms got the hand right. This repo's own
+documentation (engine.js's comments, the harness headers, this file, the
+MEASURED AND NOT SHIPPED notes) already walks a capable reader to the right
+procedure, and the baseline beat the skill outright on one case. What varied
+wildly was SCOPE: 4 to 30 minutes on comparable questions, depending entirely on
+whether the agent stopped once the question was answered.
+
+So a skill here earns its place by carrying (a) the handful of facts written
+nowhere else and (b) an explicit instruction to stop. Adding "answer the question
+and stop", naming the harnesses not to reach for, took one case from 225 tool
+calls to 36. Re-teaching what the codebase already teaches is where the time goes
+without buying anything.
+
+**Two defects in this session's own work were caught by the evals rather than by
+review**: a summary line that printed a win-rate delta as an absolute value and
+so read backwards on exactly the tradeoff it existed to surface, and a first
+corpus ranking contaminated by clairvoyant decisions that would have been
+reported as engine errors. Run the evals.
+
 ## Conventions established this session (keep following them)
 - **Watch every PR you open, without being asked.** Subscribe to its activity as
   soon as it exists, and stay subscribed until it is merged or closed. A PR here is
@@ -379,45 +408,44 @@ a bad decision that got lucky and convicts a sound one that did not — measured
 over 425 decisions it called 15% of decisions clean that cost a point or more,
 and 9% mistakes that cost nothing. Report the PIMC number.
 
-## The AI sees your last two cards
+## The AI used to see your last two cards — FIXED in 0.54.0
 
-`aiChooseCard` dispatches tricks 5-6 to `solveEndgameCard`, which recurses over
-`g.hands` — all five of them. So from `tricksDone >= 4` every AI seat is solving
-the REAL deal, not what its seat could know. Found 2026-08-03 while ranking the
-corpus, not by reading the code: the trick-5 rows all had a double-dummy cost of
-exactly zero, which is only possible if the mover already knew the answer.
+Kept because the failure is worth recognising again, not because it is open.
 
-Demonstrated rather than inferred, and pinned in `npm run clairvoyancetest`: move
-one card between two OTHER seats, leaving the deciding seat's hand and every
-public fact identical, and its choice changes on **4.8%** of trick-5 decisions
-with more than one legal play. One swap is probed per decision, so that is a
-floor.
+`aiChooseCard` handed tricks 5-6 to `solveEndgameCard`, which recursed over
+`g.hands` — all five — so from `tricksDone >= 4` every AI seat solved the REAL
+deal rather than what its seat could know. In solo play that meant the four
+opponents could see the human's last two cards, and nothing said so. Nobody put
+it there on purpose: the endgame was built to be exact, and being exact meant
+reading the true layout.
 
-Two consequences, and they are not the same conversation:
+**How it was found is the transferable part.** Not by reading the code — by a
+number that could only be true if something was wrong. Ranking corpus decisions
+by cost, every trick-5 row had a double-dummy cost of exactly zero, which is
+impossible unless the mover already knew the answer. Then demonstrated rather
+than argued: move one card between two OTHER seats, leaving the deciding seat's
+hand and every public fact identical, and its choice changed.
 
-- **Fairness.** In solo play the four AI opponents can see the human's last two
-  cards, and nothing says so. That may be a fine difficulty knob — the exact
-  endgame is a headline feature — but it should be a decision somebody made,
-  not a property nobody noticed. It is also the sort of thing a player who
-  suspects it will never un-suspect.
-- **Measurement.** Any double-dummy grade of tricks 5-6 reads 0 by construction.
-  `gradeAllPlays` cannot see an endgame mistake and never could — there is
-  nothing to see. Anything that ranks or averages over graded decisions is
-  therefore averaging in a guaranteed zero for a third of the hand. `pimcmine`
-  excludes those decisions and prices them separately.
+**Now:** the endgame samples deals from the seat's own information set —
+respecting hand sizes, shown voids, and that the called card cannot sit with the
+picker — and solves each exactly, averaging over them. Seeded from the position
+via `handSeed`, so choices stay reproducible and no hand-playing test goes flaky.
 
-**It costs about 1.6 points a hand to remove**, measured over 60 self-play
-hands: 0.42 points per endgame decision, ~3.7 such decisions a hand, and that is
-an UPPER bound since a real uncertainty player would not find the sampled-best
-card every time. Against 120 points in a hand that is ~1.3% — affordable, not
-load-bearing. So the fairness question is now a decision somebody can actually
-make rather than one blocked on an unknown.
-
-**Not fixed, deliberately.** Removing it means playing the endgame under
-uncertainty — determinized search over the same solver, AI_PERFECT_PLAY.md §A —
-which is a strength change to be measured, and a difficulty change to be decided.
-`clairvoyancetest` is a characterisation test: if the clairvoyance is ever
-removed it fails loudly, which is the point.
+- **Measured cost: +0.0430 stake/seat/hand, ahead in 3 of 3 seeds**
+  (`abtest --opt endgameClairvoyant=true`), about 1.6 card points a hand. A real
+  strength loss, taken deliberately — an opponent that can see your hand is not a
+  difficulty setting, and a player who suspects it will never un-suspect it.
+- `endgameClairvoyant` restores the old path. It is the measurement control and
+  the rollback, not a supported mode.
+- **`npm run clairvoyancetest` is now a LEAK DETECTOR** — it asserts the choice
+  does not move when cards are shuffled between seats the deciding seat cannot
+  see (0 of 251 probes, against 22 before). It is the only test that can catch
+  this class of regression, because a hand reference quietly reintroducing the
+  real layout would fail nothing else: playing better with more information looks
+  exactly like playing better.
+- Consequence still live: `pimcmine` excludes tricks 5-6 from its ranking. That
+  was correct while the endgame was clairvoyant and is now over-cautious — those
+  decisions became honest data in 0.54.0 and the exclusion should come out.
 
 ## The strategic pivot (why the roadmap looks the way it does)
 Explored "chess.com for Sheepshead" as a real ambition, not a bit — see the
@@ -530,6 +558,17 @@ Genuinely open:
      census; the default is beta because that is where the history is, and it should
      move to www once www has more. Do not merge the two without reading the version
      field — they are hands against different builds, which is what that field is for.
+3b. **The engine's own error classes are now measurable without the corpus.**
+   `npm run pimcmine -- --selfplay N` deals clean engine-vs-engine hands and
+   ranks decision shapes by cost under uncertainty. First run, 425 decisions:
+   the exact double-dummy grade OVERSTATES cost roughly 2.3x on average (2.09
+   against 0.89) and is wrong in both directions — it called 13.6% of decisions
+   clean that cost a point or more, and 11.5% mistakes that cost under half a
+   point. Leading is the most expensive decision shape (1.36/decision against
+   0.46 when an opponent holds the trick). Treat that as a hypothesis: the
+   feature buckets are not mutually exclusive and there are no error bars on
+   them yet.
+
 4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
    most likely to ruin a games night, because a backgrounded phone loses its connection
    and its timers at the same time. There is a flight recorder (`src/streamLog.js`,
