@@ -119,7 +119,15 @@ jobs:
 
           asset="$(cat bundle.name 2>/dev/null || echo '(none)')"
           size="$(wc -c < bundle.js 2>/dev/null || echo 0)"
-          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l)"
+          # `|| true` is load-bearing, and the reason is the whole point of this
+          # workflow. grep exits 1 when it matches NOTHING; `set -o pipefail`
+          # above turns that into the pipeline's status; GitHub runs this step
+          # under `bash -e`. So without it the script ABORTS here on a zero
+          # count — which is exactly the flag-off build this check exists to
+          # detect. The `if` below would never run, and the carefully worded
+          # error would never print; the step would just exit 1 with no message.
+          # It has never fired only because a flag-on bundle always matches.
+          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l || true)"
 
           {
             echo "### www.noschnitz.com"
@@ -164,7 +172,13 @@ jobs:
           # against 95 flag-on at v0.47.0. This is the deployed half of that
           # check: the build test stops a regression being merged, this catches
           # an environment variable set on the wrong scope, which no test can.
-          voice="$(grep -o -i 'daily' bundle.js 2>/dev/null | wc -l)"
+          # Same `|| true`, same reason as the mp line above — and this is the
+          # one that was actually failing. Audio is meant to be ABSENT from
+          # production, so the healthy answer here is zero, so this step aborted
+          # on every correct run. Every `Verify production` dispatch since the
+          # audio check was added had failed with a bare `exit 1` and no
+          # diagnostic, while production was in exactly the intended state.
+          voice="$(grep -o -i 'daily' bundle.js 2>/dev/null | wc -l || true)"
 
           if [ "$EXPECT_VOICE" = "absent" ] && [ "$voice" -ne 0 ]; then
             echo "- **audio leaked to production** ($voice references to \`daily\`)" >> "$GITHUB_STEP_SUMMARY"

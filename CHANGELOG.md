@@ -6,6 +6,43 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.6] - 2026-08-04 (`_pending_`)
+**Both deploy verifiers aborted instead of reporting a flag-off build** — the
+one failure they were written to catch. Workflow-only; no application code.
+
+- **The bug.** `verify-production.yml` and `verify-beta.yml` count discriminator
+  strings in the served bundle with `grep -o … | wc -l`. `grep` exits 1 when it
+  matches **nothing**, `set -o pipefail` (already in these scripts) turns that
+  into the pipeline's status, and GitHub runs the step under `bash -e`. So on a
+  zero count the script died *at the assignment*, one line before the `if` that
+  interprets it. Fixed with `|| true` at all three sites.
+
+- **Why that matters more than it sounds.** A zero count is not an edge case
+  here, it is the alarm. `verify-beta.yml`'s own header explains that a
+  flag-off build is the nastier of the two failures "because every signal says
+  green" — and in exactly that case the workflow would have exited 1 with no
+  message at all, rather than printing the error explaining which environment
+  variable to set. The `mp` checks have never fired only because a flag-on
+  bundle always matches `/api/tables/`.
+
+- **The audio check had been failing on every correct run.** Audio is meant to
+  be absent from production, so the healthy answer is zero, so
+  `Verify production` aborted every time it was dispatched. Run #1 (2026-07-31)
+  passed because it predates the audio check; runs #2 (2026-08-03) and #3
+  (2026-08-04) both failed this way. No dispatch has succeeded since the check
+  was added, and the failure said nothing about why.
+
+- **Production was never actually wrong.** Reaching that line and dying there
+  requires grep matching zero, so the crash itself proved audio was absent.
+  At v0.58.5 www.noschnitz.com was verified serving the right version and the
+  multiplayer build, with no audio — the tooling was broken, not the deploy.
+
+- Verified by replaying the step's own logic against three synthetic bundles:
+  healthy (mp=8, voice=0) now exits 0 where it previously exited 1 silently;
+  a flag-off bundle (mp=0) exits 1 **with** its diagnostic; a leaked-audio
+  bundle (voice=2) is unchanged. Non-zero counts behave identically before and
+  after, so the fix cannot mask a real failure.
+
 ## [0.58.5] - 2026-08-04 (`9d4c0d7`)
 The other half of the CI review: **the UI is tested now, and it was not before.**
 0.58.4 made the suite fast; this makes it cover something. No game behaviour
