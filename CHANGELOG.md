@@ -6,6 +6,70 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.4] - 2026-08-04 (`_pending_`)
+CI review: the test suite went from **313s to 31s** (10.1x) with no assertion
+weakened and one flake risk removed. Nothing about the game changed.
+
+- **Two suites were 73% of the runtime, and their sample size was buying
+  nothing.** `npm test` runs `coalitiontest` and `firingtest` with no `--opt`,
+  which makes them null controls: both arms are the same engine on the same
+  seeded shuffles, so the answer must be exactly `0.0000`. That is an exact
+  identity assertion, not a statistical one — sample size buys precision that an
+  answer of exactly zero has no use for. They cost 127s and 103s. Now 500 hands
+  each, 16s and 18s, verified passing identically at 200/500/1000 and at the old
+  4000/3000.
+
+  The big sample was buying one real thing, and it is not precision: breadth,
+  meaning more chances to trip a rare nondeterministic branch. So the wide sweep
+  still happens, nightly, in the new **`.github/workflows/harness-nulls.yml`**
+  (also `workflow_dispatch`, with hands/seeds inputs). That job additionally
+  asserts `abtest`'s null control, which nothing has ever checked — CLAUDE.md
+  calls it "the harness that actually decides things" and it prints without ever
+  exiting non-zero. The assertion lives in the workflow rather than in
+  `abtest.mjs` on purpose: a measurement harness must not fail on a result it
+  dislikes, so only the caller that passed no `--opt` is entitled to check.
+
+- **`npm test` is now `scripts/runtests.mjs`, a worker pool, not a 26-link `&&`
+  chain.** Longest-first across `os.cpus()`, failing suites' output held back and
+  printed at the end so it is readable rather than interleaved with three other
+  suites'. Measured 3.6x on 4 cores. The old chain also ran the cheap suites
+  first and the two 100s+ suites near the end, so an 8-second `voicebuildtest`
+  failure took over four minutes to surface; longest-first fixes that too.
+
+  It guards itself: a script in `package.json` ending in `test` that is not in
+  the runner's list fails the run rather than being silently skipped. A new
+  suite that never runs while CI stays green is precisely the failure this repo
+  cannot afford, since a green CI on master is what releases beta.
+
+- **`gradetest` runs alone, and that is deliberate.** It asserts a timing ratio
+  (grading a hand must cost under 150 reference solves on the same machine). The
+  ratio was designed so machine speed divides out — the right fix for the slow
+  container that once failed it on master having passed on its PR. Contention
+  does *not* divide out, because its numerator is one measurement while the
+  denominator is averaged over five. Measured 72-78x idle against 56-102x under
+  a 4-way load: nothing failed, but headroom to the bound fell from ~1.9x to
+  ~1.5x. Per CLAUDE.md a marginal test here is not a red check, it is a silently
+  withheld beta deploy — so it gets the box to itself for ~6s. It is the only
+  suite that asserts on wall-clock; `leaktest` prints timing without asserting.
+
+- **`ci.yml`: lint ran twice every build**, once as its own step and again
+  inside `npm test`. The separate step existed so a lint error reports as a lint
+  error rather than an anonymous failed test run, which was a good reason and
+  survives without the duplication — lint is now just a suite the runner
+  schedules, named on failure like any other, and it overlaps with the rest
+  instead of holding them up.
+
+- **`ci.yml` gained `workflow_dispatch`.** Actions has been observed taking
+  twenty minutes and four pushes to queue a run on a session-authored PR, and a
+  check that never starts blocks a merge exactly as hard as a red one. Without
+  this there was nothing to re-trigger — a missing run cannot be re-run, only
+  replaced by another push.
+
+- Fixed the header comment claiming the suite was "18 harnesses and ~10s"; both
+  numbers had been wrong for a long time, and that line is what the next person
+  budgets against. Also resynced `package-lock.json`'s version field, which had
+  been left at 0.58.2 by the previous bump.
+
 ## [0.58.3] - 2026-08-03 (`07d965e`)
 A card played under rendered **face up** on a multiplayer table (#113). Two
 defects, one cause, so they are fixed together.

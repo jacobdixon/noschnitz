@@ -122,6 +122,23 @@ console.log(`  (negative = defenders gained, which is what a defender-side chang
 // difference must be exactly zero. That is what makes a fraction of a point
 // readable as a result rather than as noise — and it is why `npm test` runs
 // this with no options: it asserts the harness, not a change.
+//
+// WHICH IS WHY `npm run coalitiontest` PASSES ONLY 500 HANDS. That looks like a
+// weakened test and is not: the assertion is exact identity, not a statistical
+// one, so sample size buys precision that an answer of exactly 0.0000 has no
+// use for. It cost 127s at 4000x2 and costs 16s at 500x2 — 41% of the whole
+// suite's runtime, to re-answer a yes/no question. Verified passing identically
+// at 200, 500, 1000 and 4000 hands.
+//
+// What the sample size DID buy is breadth: more deals mean more chances to trip
+// a rare nondeterministic branch in aiChooseCard. That is real, so it still
+// happens — nightly and on demand, at full width, in
+// .github/workflows/harness-nulls.yml. Do not raise the number here without
+// moving it there too, and do not lower it to the point where the pool of deals
+// stops covering the endgame solver at all.
+//
+// Invoking this to MEASURE something is unaffected: pass your own counts, which
+// is what the usage line above has always described.
 if (!Object.keys(variant).length) {
   if (mean !== 0) {
     console.error(`\nFAIL: null control drifted by ${(100 * mean).toFixed(4)}pp — the harness is not paired.`);

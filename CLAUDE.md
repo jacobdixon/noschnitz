@@ -321,6 +321,20 @@ reported as engine errors. Run the evals.
     plus `npm run build`. For engine/AI changes add the measurement the change
     is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
     the question), and check its null control really came back zero.
+    - **`npm test` is `scripts/runtests.mjs` since 0.58.4 — a worker pool, not a
+      chain.** ~31s on 4 cores against 313s sequential. Read its header before
+      changing it: `gradetest` runs alone on purpose, because it asserts a
+      timing ratio whose numerator is a single measurement and so inflates under
+      contention. Adding a suite to `package.json` without adding it to the
+      runner FAILS the run rather than silently skipping it, which is the point.
+    - **The npm-script sample sizes are CI-sized, not measurement-sized.**
+      `npm run coalitiontest` and `npm run firingtest` pass 500 hands, which is
+      plenty for an exact-zero null control and far too few to measure anything.
+      To measure, invoke the script directly with your own counts, exactly as
+      each file's usage line describes. The full-width null sweep runs nightly
+      in `.github/workflows/harness-nulls.yml`, which also asserts `abtest`'s
+      null — `abtest.mjs` itself prints and never exits non-zero, deliberately,
+      so that a negative measurement is an answer rather than a failed command.
   - **Prefer CI's verdict when there is one, but a check that never queued is
     not a failing check.** Actions genuinely lags here, sometimes twenty minutes
     and several pushes (see "Things a session will try and cannot do"). Waiting
