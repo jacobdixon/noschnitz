@@ -122,6 +122,50 @@ touch.
   makes CI trustworthy; it does not answer that, and the file says so where
   somebody will read it.
 
+### And `gradetest` was reporting a solver bug the engine does not have
+The second red CI run on this PR, on a different suite, also untouched by the
+change. Worth reading as a pair with the one above: two suites, same underlying
+habit, opposite conclusions about whose fault it was.
+
+- **`gradetest` shared ONE transposition table across sixty different deals.**
+  Its own comment said "exactly as a grading pass shares it" — but a grading
+  pass is a single hand. No caller in the project shares across hands:
+  `gradeAllPlays` allocates a `Map` per hand, `pimcsolve` one per world within a
+  hand. The test was exercising a usage that does not exist.
+
+- **Why that breaks.** `ddKey` deliberately omits picker and partner, and it is
+  right to: they are constant within a hand and the key is built at every node,
+  where string construction was most of the solve cost. But the stored value is
+  *points to the picker team from here*, so two deals reaching the same small
+  late-trick layout with the picker on opposite sides collide on the key and
+  disagree about the answer.
+
+- **Reproduced deterministically rather than argued.** Seed 1270, trick 5:
+  `shared=62` against a true 97, a 35-point error. Switching to a per-hand table
+  and re-running the same seeds gives **0 mismatches over 33,704 positions**,
+  that seed included. CI's own failure was the same shape
+  (`shared=39 fresh=43 capped=43 reference=43`) — `shared` alone, always low.
+
+- **So the engine was right and the test was wrong**, which is the more
+  dangerous way round: it reported a solver defect that does not exist,
+  intermittently, on a suite whose red run silently withholds the beta deploy.
+  Three of us would have gone looking at alpha-beta.
+
+- **The arm keeps its teeth, and that was checked, not assumed.** The `shared`
+  comparison exists to catch a bound from a narrowed window being filed as
+  exact. Mutating `ddFuture` to do exactly that (`flag: 0` unconditionally)
+  still fails the per-hand version — 39 mismatches over 1435 positions. Scoping
+  the table did not defang the test.
+
+- **Its deals are seeded now too**, same defect as `clairvoyancetest`: `seed`
+  only ever chose the dealer, and `freshHand` dealt off the unseeded RNG. The
+  position counts were the tell — 1493, 1415, 1421 locally against CI's 1443.
+  Now exactly 1435 every run.
+
+- **The precondition is written down in `engine.js` where it belongs**, on
+  `ddKey`: a memo is valid for one hand only, and if a cross-hand table is ever
+  wanted, put the picker team in the key rather than assuming it away.
+
 ## [0.58.6] - 2026-08-04 (`3133331`)
 **Both deploy verifiers aborted instead of reporting a flag-off build** — the
 one failure they were written to catch. Workflow-only; no application code.

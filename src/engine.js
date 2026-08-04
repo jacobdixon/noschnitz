@@ -2624,6 +2624,26 @@ const handMask = (h) => { let m = 0; for (const c of h) m |= 1 << CARD_BIT[c.sui
 // because `legalPlays` reads them — two states with identical cards but a
 // different ace status have different legal moves. `tricksDone` is implied by
 // the card counts and `leader` by `turn` on an empty trick, so neither is here.
+//
+// PRECONDITION: a memo passed to solveHandValue is valid for ONE HAND ONLY.
+//
+// Picker and partner are deliberately absent. They are constant within a hand,
+// and this function runs at every node of the search — the comment above about
+// masks exists because key construction was most of the solve time. But the
+// stored value is "points to the PICKER TEAM from here", so two positions with
+// identical cards and different picker teams have genuinely different values
+// while sharing a key.
+//
+// That is not hypothetical: reusing one table across sixty deals made the
+// solver return 62 where the truth was 97, because two hands reached the same
+// small late-trick layout with the picker on opposite sides. It is invisible
+// until it happens and it looks exactly like a solver bug. Every caller here
+// respects this — gradeAllPlays allocates per hand, pimcsolve per world within
+// a hand — and gradetest did not until 0.59.0, which cost a red CI run and an
+// afternoon chasing a defect the engine did not have.
+//
+// If a cross-hand table is ever genuinely wanted, put the picker team in the
+// key rather than assuming it away.
 function ddKey(g) {
   const h = g.hands;
   let k = `${handMask(h[0])},${handMask(h[1])},${handMask(h[2])},${handMask(h[3])},${handMask(h[4])}|`;
