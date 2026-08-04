@@ -100,7 +100,15 @@ jobs:
 
           asset="$(cat bundle.name 2>/dev/null || echo '(none)')"
           size="$(wc -c < bundle.js 2>/dev/null || echo 0)"
-          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l)"
+          # `|| true` is load-bearing. grep exits 1 when it matches NOTHING;
+          # `set -o pipefail` above turns that into the pipeline's status; this
+          # step runs under `bash -e`. Without it the script ABORTS here on a
+          # zero count — and a zero count is the flag-off build described at
+          # length in this file's header, the failure this workflow was written
+          # for precisely because "every signal says green". The `if` below
+          # would never run and its error would never print. It has never fired
+          # only because a flag-on bundle always matches.
+          mp="$(grep -o -- '/api/tables/' bundle.js 2>/dev/null | wc -l || true)"
 
           {
             echo "### beta.noschnitz.com"
