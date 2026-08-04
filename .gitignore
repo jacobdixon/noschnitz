@@ -1,5 +1,8 @@
 node_modules
 dist
+# Two-pass coverage output (npm run coverage). Regenerable, and one of the two
+# passes is a full HTML tree — see scripts/coverage.mjs for why there are two.
+coverage
 .DS_Store
 *.local
 .vercel

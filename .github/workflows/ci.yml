@@ -5,15 +5,27 @@
 # reach www.noschnitz.com without someone watching, so this runs on every PR
 # and on master, and is the check the merge rules require.
 #
-# `npm test` is 18 harnesses and takes ~10s locally; the job is dominated by
-# `npm ci`. Nothing here needs secrets — storetest falls back to the in-memory
-# store when no Upstash credentials are present, which is what happens on CI.
+# `npm test` is 26 suites run concurrently by scripts/runtests.mjs, ~35s on a
+# 4-core box; the job is dominated by `npm ci`. (This comment claimed "18
+# harnesses and ~10s" for a long time after both numbers stopped being true —
+# the suite was measured at 313s sequential before the runner landed. If you
+# change what the suite costs, change this line, because it is what the next
+# person budgets against.)
+#
+# Nothing here needs secrets — storetest falls back to the in-memory store when
+# no Upstash credentials are present, which is what happens on CI.
 name: CI
 
 on:
   pull_request:
   push:
     branches: [master]
+  # Actions has been observed taking twenty minutes and four pushes to queue a
+  # run on a session-authored PR, and a check that never starts blocks a merge
+  # exactly as hard as a red one. Without this there is nothing to re-trigger:
+  # a missing run cannot be re-run, only replaced by another push. Two lines to
+  # make that self-service.
+  workflow_dispatch:
 
 # A second push to the same branch makes the first run irrelevant. master is
 # excluded from cancellation because Release keys off its completed run.
@@ -40,11 +52,13 @@ jobs:
       - name: Install
         run: npm ci
 
-      # Lint is inside `npm test` already, but running it first means a lint
-      # error reports as a lint error instead of as a failed test run.
-      - name: Lint
-        run: npm run lint
-
+      # Lint used to run here as its own step AND again inside `npm test`, so it
+      # ran twice every build. The reason for the separate step was good — a
+      # lint error should report as a lint error, not as an anonymous failed
+      # test run — and it survives without the duplication: lint is one of the
+      # suites the runner schedules, and the runner names the suite that failed
+      # and prints its output on its own. It also now overlaps with the rest
+      # instead of holding everything else up for its ~3s.
       - name: Tests
         run: npm test
 

@@ -348,6 +348,51 @@ set rather than leaving the surviving skill unchecked.
     plus `npm run build`. For engine/AI changes add the measurement the change
     is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
     the question), and check its null control really came back zero.
+    - **`npm test` is `scripts/runtests.mjs` since 0.58.4 — a worker pool, not a
+      chain.** ~33s on 4 cores against 313s sequential. Read its header before
+      changing it: `gradetest` runs alone on purpose, because it asserts a
+      timing ratio whose numerator is a single measurement and so inflates under
+      contention. Adding a suite to `package.json` without adding it to the
+      runner FAILS the run rather than silently skipping it, which is the point.
+    - **The UI is tested now, as of 0.58.5, and it was not before.** Every
+      `.jsx` file was at 0% coverage and `useTableStream.js` had nothing at all
+      — the file CLAUDE.md itself called the most likely to ruin a games night.
+      Two suites, both leaning on `scripts/lib/domharness.mjs` (jsdom, a clock
+      you can advance, a fake `EventSource`):
+      - `tablestreamtest` — the reconnect loop: `since=` on reopen, stale and
+        redelivered frames dropped, handoff vs. error, backoff doubling and cap,
+        both watchdogs, the visibility resume, `gone` ending the loop, teardown.
+      - `rendertest` — mounts every screen, modal and all five felt rotations
+        against real engine states and requires that none throw. It loads JSX
+        through Vite's own `ssrLoadModule`, deliberately: a second transform
+        could disagree with the real build and then the suite tests something
+        nobody ships. `no-undef` catches the two bugs eslint.config.js
+        describes; this catches the ones with no free identifier in them.
+      - **Both were mutation-tested when written, and should be again if
+        edited.** Each passed on the first run, which is exactly when a suite
+        deserves to be distrusted — a smoke test that cannot fail is worse than
+        no smoke test, because it reads as coverage. Reintroducing the historic
+        `ScoresModal` bug fails `rendertest`; dropping `since` fails
+        `tablestreamtest`.
+    - **`npm run coverage` runs TWO passes and you must not merge them.**
+      `rendertest` loads app modules both natively and through Vite's SSR
+      transform, so c8 sees two irreconcilable copies of the same path and the
+      merged report UNDER-reports: `engine.js` measured 92.67% from `undertest`
+      alone, 57.36% from `rendertest` alone, and **62.43% merged** — impossible
+      for a union, and low enough to send somebody off fixing a problem that
+      does not exist. The logic pass owns the `.js` answer, the UI pass owns the
+      `.jsx` answer, and `scripts/coverage.mjs` keeps them apart on purpose.
+      Nothing here gates anything: a coverage number is a good question and a
+      bad gate. If the logic pass ever shows `engine.js` near 62%, the split has
+      regressed — that is the canary.
+    - **The npm-script sample sizes are CI-sized, not measurement-sized.**
+      `npm run coalitiontest` and `npm run firingtest` pass 500 hands, which is
+      plenty for an exact-zero null control and far too few to measure anything.
+      To measure, invoke the script directly with your own counts, exactly as
+      each file's usage line describes. The full-width null sweep runs nightly
+      in `.github/workflows/harness-nulls.yml`, which also asserts `abtest`'s
+      null — `abtest.mjs` itself prints and never exits non-zero, deliberately,
+      so that a negative measurement is an answer rather than a failed command.
   - **Prefer CI's verdict when there is one, but a check that never queued is
     not a failing check.** Actions genuinely lags here, sometimes twenty minutes
     and several pushes (see "Things a session will try and cannot do"). Waiting
@@ -765,11 +810,15 @@ Genuinely open:
    feature buckets are not mutually exclusive and there are no error bars on
    them yet.
 
-4. **`src/useTableStream.js` has no automated coverage at all** — and it is the file
-   most likely to ruin a games night, because a backgrounded phone loses its connection
-   and its timers at the same time. There is a flight recorder (`src/streamLog.js`,
-   readable from the in-app menu) precisely because this class of bug cannot be caught
-   by staring at it. If someone reports a frozen table, get that log.
+4. **`src/useTableStream.js` is covered as of 0.58.5** (`npm run tablestreamtest`, 53
+   assertions, 100% of statements) — this entry used to say it had no automated coverage
+   at all, and that is no longer true. It is still the file most likely to ruin a games
+   night, because a backgrounded phone loses its connection and its timers at the same
+   time, and a test can only cover the failures somebody thought to write down.
+   **A suite is not a substitute for the flight recorder** (`src/streamLog.js`, readable
+   from the in-app menu), which exists because this class of bug is found in the wild
+   rather than at a desk. If someone reports a frozen table, still get that log — and if
+   it shows a failure mode the suite does not model, that is a case to add.
 5. **PAT rotation is still open.** A GitHub PAT was used inline in shell commands in an
    early session and flagged for rotation. Assume it may no longer be valid, and note
    that making the repo private would NOT be the remediation — private does not undo

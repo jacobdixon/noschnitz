@@ -1,0 +1,131 @@
+# Harness null controls, at full width.
+#
+# `npm test` runs coalitiontest and firingtest with no `--opt`, which makes them
+# null controls: both arms are the same engine on the same shuffles, so the
+# difference must come back exactly 0.0000. That assertion is what makes a
+# fraction of a point readable as a result anywhere else in this repo, and it is
+# the only thing standing between "the engine is deterministic" and a whole
+# class of measurements quietly being void.
+#
+# WHY THIS WORKFLOW EXISTS. Those two suites were 230 of the suite's 313
+# seconds — 73% of every CI run and every local `npm test` — to re-answer a
+# yes/no question. The assertion is exact identity, not statistical, so sample
+# size buys precision that an answer of exactly zero cannot use, and CI now runs
+# them at 500 hands instead of 4000/3000.
+#
+# But the big sample was buying ONE real thing, and it is not precision: breadth.
+# More deals mean more chances to trip a rare nondeterministic branch — an
+# unseeded path in aiChooseCard, most plausibly in the PIMC endgame, which is
+# seeded from the position via handSeed and would stop being reproducible if
+# somebody reached for Math.random() in it. 500 hands still covers the endgame
+# solver heavily, but it covers the tail less. So the wide sweep still happens;
+# it just happens here, nightly, instead of in front of every pull request.
+#
+# READ A FAILURE HERE AS SERIOUS. This is not a flaky-by-nature job: the
+# assertion is exact, both arms are the same code, and the deals are seeded. It
+# has no tolerance to drift across. If it goes red, the engine has become
+# nondeterministic, and every A/B number this project has recorded since the
+# last green run is suspect — including the ones in CLAUDE.md.
+name: Harness null controls
+
+on:
+  schedule:
+    # 07:00 UTC daily. Nothing depends on the hour; it is simply outside the
+    # window when somebody might be playing or merging.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      hands:
+        description: "Hands per seed. CI uses 500; this defaults far wider because breadth is the entire point of this job."
+        required: false
+        default: "4000"
+        type: string
+      seeds:
+        description: "Distinct seeded populations. More seeds is better coverage here than more hands per seed — each seed is a different deal population."
+        required: false
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+
+# Two of these would burn runner minutes to compute the same zero.
+concurrency:
+  group: harness-nulls
+  cancel-in-progress: false
+
+jobs:
+  nulls:
+    name: full-width null controls
+    runs-on: ubuntu-latest
+    # 4000x5 measures at roughly 5 minutes a suite locally; a runner is slower.
+    # Generous, because the cost of this timing out is a missed sweep and the
+    # cost of it being tight is a red job that means nothing.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Invoked directly rather than through `npm run`, because the npm scripts
+      # deliberately carry the small CI counts. Passing counts on the command
+      # line is the documented way to use these harnesses.
+      - name: Coalition null control
+        env:
+          HANDS: ${{ inputs.hands }}
+          SEEDS: ${{ inputs.seeds }}
+        run: node scripts/coalitiontest.mjs "${HANDS:-4000}" --seeds "${SEEDS:-5}"
+
+      # Not `if: success()` — these are independent questions and finding out
+      # both answers in one run is worth more than failing fast.
+      - name: Firing null control
+        if: always()
+        env:
+          HANDS: ${{ inputs.hands }}
+          SEEDS: ${{ inputs.seeds }}
+        run: node scripts/firingtest.mjs "${HANDS:-4000}" --seeds "${SEEDS:-5}"
+
+      # abtest is not in `npm test` at all — it is a measurement harness that
+      # needs `--opt` to say anything. But CLAUDE.md calls it "the harness that
+      # actually decides things", it shares the pairing contract with the two
+      # above, and nothing anywhere has ever asserted its null. Here is where
+      # that costs nothing.
+      #
+      # The assertion lives HERE rather than in abtest.mjs, deliberately. Unlike
+      # the other two, abtest must not exit non-zero on a result it dislikes: a
+      # negative measurement is a valid answer and a person running it with
+      # `--opt` wants the number, not a failed command. It prints and never
+      # fails, which is correct — so the caller checks, and only the caller that
+      # passed no `--opt` is entitled to.
+      #
+      # Checked by string, which has one limit worth knowing: the mean is
+      # printed via toFixed(4), so a difference smaller than 0.00005 would round
+      # to +0.0000 and pass. A single differing hand moves the mean by 1/hands
+      # (the stake delta is an integer), so this stays sensitive to one bad hand
+      # up to ~10000 hands per seed and goes blind above ~20000. Prefer more
+      # seeds to more hands here for that reason as well as for coverage.
+      - name: A/B null control
+        if: always()
+        env:
+          HANDS: ${{ inputs.hands }}
+          SEEDS: ${{ inputs.seeds }}
+        run: |
+          set -uo pipefail
+          node scripts/abtest.mjs "${HANDS:-4000}" --seeds "${SEEDS:-5}" | tee ab.txt
+          line="$(grep '^  mean ' ab.txt || true)"
+          if [ -z "$line" ]; then
+            echo "::error::abtest printed no mean line — it did not finish, or its output format changed and this check is now blind."
+            exit 1
+          fi
+          case "$line" in
+            *"+0.0000/seat/hand, ahead in 0 of"*) echo "abtest null control is exactly zero" ;;
+            *)
+              echo "::error::abtest null control drifted: ${line}. Both arms are the same engine on the same seeded shuffles, so this must be +0.0000 in every seed. The engine has become nondeterministic, and every A/B number recorded since the last green run of this job is suspect — including the ones quoted in CLAUDE.md."
+              exit 1 ;;
+          esac

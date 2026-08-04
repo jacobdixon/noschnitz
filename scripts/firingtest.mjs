@@ -167,6 +167,15 @@ console.log(
 // fire and no hand may differ. A harness that drifts off zero here is measuring
 // its own nondeterminism, and every small result it has ever reported is void.
 // Same contract as coalitiontest's, and `npm test` runs it for the same reason.
+//
+// And for the same reason it runs only 500 hands: the assertion is exact
+// identity, so a larger sample adds precision to a number that must be 0.0000
+// either way. 103s at 3000x2 against 18s at 500x2, for the same yes/no.
+// Verified passing identically at 200, 500, 1000 and 3000 hands. The breadth
+// the bigger sample bought — more deals, more chance of tripping a rare
+// nondeterministic branch — moved to .github/workflows/harness-nulls.yml, which
+// runs this at full width nightly. Read coalitiontest's note on the same block;
+// the reasoning is identical and is written out at greater length there.
 if (!Object.keys(variant).length) {
   const clean = avg(perSeedRate) === 0 && perSeedOverall.every((d) => d === 0);
   console.log(clean
