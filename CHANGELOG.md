@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.4] - 2026-08-04 (`_pending_`)
+## [0.58.4] - 2026-08-04 (`4f0fd75`)
 CI review: the test suite went from **313s to 31s** (10.1x) with no assertion
 weakened and one flake risk removed. Nothing about the game changed.
 
