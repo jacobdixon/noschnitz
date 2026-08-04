@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.5] - 2026-08-04 (`_pending_`)
+## [0.58.5] - 2026-08-04 (`9d4c0d7`)
 The other half of the CI review: **the UI is tested now, and it was not before.**
 0.58.4 made the suite fast; this makes it cover something. No game behaviour
 changes. Suite goes 26 → 28 suites and 31s → 33s.
