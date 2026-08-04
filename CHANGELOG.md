@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.58.6] - 2026-08-04 (`_pending_`)
+## [0.58.6] - 2026-08-04 (`3133331`)
 **Both deploy verifiers aborted instead of reporting a flag-off build** — the
 one failure they were written to catch. Workflow-only; no application code.
 
