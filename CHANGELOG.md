@@ -6,6 +6,79 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.59.0] - 2026-08-04 (`PENDING`)
+**Table audio never played a sound, and nothing in the app could tell.** COM-1
+shipped in 0.58.0 and was tried for the first time on 2026-08-04, phone to
+MacBook. Both ends joined. Neither heard anything.
+
+- **The bug: in call-object mode, daily-js does not play remote audio.** There
+  are two modes. `createFrame()` renders Daily's own UI in an iframe and that
+  iframe plays audio for you; `createCallObject()` hands you `MediaStreamTrack`s
+  and plays nothing. We use the call object because the felt is a locked,
+  no-scroll viewport with no room for a second UI on top of it — and the cost of
+  that choice, unpaid until now, is that attaching tracks to elements is the
+  application's job. Daily's own React library ships an entire `<DailyAudio>`
+  component to do this; there is nothing automatic underneath it.
+
+  Confirmed against the installed SDK rather than from memory: `daily-esm.js`
+  contains zero occurrences of `srcObject` and creates no media elements — five
+  iframes, a canvas, a script and an anchor, and nothing that could play a
+  track.
+
+- **Why every signal stayed green, which is the part worth remembering.** The
+  room provisioned, both clients joined, microphones were captured with
+  permission granted, the mic chip read "connected", the participant count read
+  2, and audio was genuinely uploaded to Daily and forwarded to the other
+  participant. The only thing that never happened was playback, and playback is
+  the one step the app had no way to observe. There was no error, no failed
+  request, nothing in the flight recorder. It looked exactly like a working call
+  that nobody else had joined — the same trap `ensureRoom` warns about one layer
+  up, arrived at from the other direction.
+
+  55 server checks, a bidirectional build test that proved the code was present
+  on beta and absent on production, and a lazily-loaded SDK chunk: all correct,
+  all passing, and between them unable to notice that the feature did not work.
+  **Everything was verified except whether anyone could hear anything.**
+
+- **`src/voiceAudio.js`** is the fix: an `<audio>` element per remote
+  participant, keyed by Daily session id, attached on `track-started` and torn
+  down on `track-stopped` / `participant-left`. Never the local track — playing
+  your own microphone back is a feedback loop, not something you debug calmly on
+  a games night. `playsInline` is set, because iOS Safari is half the devices
+  this feature exists for. A rejected `play()` — the browser's autoplay policy,
+  the one remaining way to be silently silent — is reported to the flight
+  recorder rather than swallowed.
+
+- **The wiring lives in the same module as the sink, on purpose.** `bindCallAudio`
+  and `sweepExistingAudio` could have stayed inline in the hook, and that is
+  exactly how the bug happened: the defect in 0.58.0 was not a broken sink, it
+  was the *absence* of three `.on()` calls. A sink tested in isolation would
+  have passed perfectly while the room stayed silent, so the wiring had to be
+  somewhere a test could reach it.
+
+- **`scripts/voiceaudiotest.mjs`** (35 checks, in `npm test`) drives a fake call
+  object through the real Daily event names into a real sink. Its negative
+  control is the original bug reproduced exactly — stub out `bindCallAudio` and
+  6 checks fail; drop the post-join sweep and 3 fail. Every other assertion was
+  mutation-tested too: removing `play()` fails 3, leaking the stream on detach
+  fails 2, dropping the idempotence guard or `playsInline` fails 1 each. The
+  document is faked rather than jsdom'd — jsdom has no `MediaStream` and its
+  `play()` is unimplemented, so a realistic DOM would need both stubbed anyway,
+  and a fake can assert the element was actually asked to play.
+
+- **Two paths reach the same track and that is deliberate.** Daily replays
+  `track-started` for participants already in the room, so the post-join sweep
+  of `call.participants()` is usually redundant — but "usually" is the wrong
+  strength for the difference between hearing the table and sitting in silence.
+  `attach()` is idempotent on the same track, so running both costs nothing and
+  neither interrupts audio already playing.
+
+- **`voicebuildtest` gains `srcObject` as a fifth token**, so the playback path
+  is now pinned absent-on-production and present-on-beta like everything else.
+  It is a property access on a DOM object, so minifiers leave it alone, and it
+  appears nowhere else in `src/`. Verified: production's bundle still contains
+  no audio code at all, and the new module is eliminated with the rest.
+
 ## [0.58.6] - 2026-08-04 (`3133331`)
 **Both deploy verifiers aborted instead of reporting a flag-off build** — the
 one failure they were written to catch. Workflow-only; no application code.

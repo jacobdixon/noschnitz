@@ -7,7 +7,11 @@
    would honour, and the join option is what stops THIS browser lighting up a
    camera indicator even for an instant.
 
-   Three properties this file exists to hold:
+   Four properties this file exists to hold, and the fourth was missing for
+   the whole of 0.58.0 — see voiceAudio.js. In call-object mode daily-js hands
+   you tracks and plays nothing, so a call could connect, count its
+   participants and capture microphones while remaining completely silent at
+   both ends. Everything below was correct and the room made no sound.
 
    1. **It is inert unless VOICE_ENABLED.** Every entry point returns the idle
       shape when the flag is off, so the `import()` below is unreachable and
@@ -28,6 +32,10 @@
       demand your microphone before you have decided to be in the conversation.
       That is COM-1.2's "listen only or step away" taken one step earlier.
 
+   4. **Remote audio is attached to elements we create.** Nothing plays by
+      itself; see voiceAudio.js for what that costs and why the failure is so
+      hard to spot from inside the app.
+
    Deliberately NOT here: any mapping from Daily participants to seats. It is
    tempting — a speaking ring on the felt would be lovely — but it needs an
    identity join between two systems, and getting it wrong lights up the wrong
@@ -38,6 +46,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { VOICE_ENABLED } from "./flags.js";
 import * as api from "./api.js";
 import { logStream } from "./streamLog.js";
+import { createAudioSink, bindCallAudio, sweepExistingAudio } from "./voiceAudio.js";
 
 // What the UI switches on. "connecting" is its own state rather than a boolean
 // because it spans two slow things — provisioning the room server-side and the
@@ -95,9 +104,16 @@ export function useVoice({ tableId, playerId, seat } = {}) {
   // a dead component, which leaves a LIVE MICROPHONE with nothing on screen to
   // stop it. Every teardown invalidates whatever join is in flight.
   const genRef = useRef(0);
+  // The <audio> elements playing everyone else. See voiceAudio.js — in
+  // call-object mode nothing plays remote audio unless we do it ourselves.
+  const sinkRef = useRef(null);
 
   const teardown = useCallback(async () => {
     genRef.current++;
+    // Before leaving, not after: leave() resolves whenever the network says so,
+    // and until the elements are gone they are still holding live tracks.
+    sinkRef.current?.destroy();
+    sinkRef.current = null;
     const call = callRef.current;
     callRef.current = null;
     if (!call) return;
@@ -149,6 +165,15 @@ export function useVoice({ tableId, playerId, seat } = {}) {
       });
       callRef.current = call;
 
+      // Wired BEFORE join(), so no track that starts during the handshake is
+      // missed. A track we never hear about is a participant nobody can hear.
+      const sink = createAudioSink({
+        onFailure: (id, err) => logStream("voice-play-blocked", { err: err?.name || "?" }),
+      });
+      sinkRef.current = sink;
+
+      bindCallAudio(call, sink);
+
       call
         .on("participant-joined", () => setCount(call.participantCounts().present))
         .on("participant-left", () => setCount(call.participantCounts().present))
@@ -168,6 +193,8 @@ export function useVoice({ tableId, playerId, seat } = {}) {
         userName: Number.isInteger(seat) && seat >= 0 ? `seat-${seat}` : "watcher",
         startVideoOff: true,
       });
+
+      sweepExistingAudio(call, sink);
 
       setCount(call.participantCounts().present);
       setMuted(!call.localAudio());

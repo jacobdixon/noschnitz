@@ -89,6 +89,7 @@ const SUITES = [
   { name: "scoringtest", weight: 1 },
   { name: "flagtest", weight: 1 },
   { name: "voicetest", weight: 1 },
+  { name: "voiceaudiotest", weight: 1 },
   { name: "statustest", weight: 1 },
   { name: "narrationtest", weight: 1 },
   { name: "calltest", weight: 1 },

@@ -51,6 +51,11 @@ const TOKENS = [
   "/voice",       // the API route the client calls
   "toggleMute",   // the hook's surface
   "Join audio",   // the menu entry — see the caveat above
+  // The playback path (src/voiceAudio.js), added in 0.59.0 when it turned out
+  // there wasn't one. A property access on a DOM object, so minifiers leave it
+  // alone, and it appears nowhere else in src/ — which makes it a clean
+  // structural marker for "this build can actually hear people".
+  "srcObject",
 ];
 
 const build = (label, env) => {
