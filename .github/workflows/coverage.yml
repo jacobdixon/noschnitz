@@ -1,0 +1,80 @@
+# Coverage — what does the suite actually reach?
+#
+# NON-GATING, and that is a design decision rather than a stage it will grow out
+# of. There is no threshold, nothing fails on a percentage, and this is not a
+# required check. A coverage number is a good question and a bad gate: gate on
+# it and people write tests that touch lines instead of tests that catch bugs,
+# which is the opposite of how every real defect in this repo was found (one
+# reported hand at a time — see CLAUDE.md).
+#
+# It is a workflow rather than something in `npm test` because instrumentation
+# roughly doubles the suite's runtime, 70s against 31s. That is a fine price
+# once in a while and a bad one on every pull request.
+#
+# TWO PASSES, NEVER MERGED. scripts/coverage.mjs explains this at length and it
+# is worth repeating wherever somebody might try to simplify it: rendertest
+# loads app modules through Vite's SSR transform *and* natively, so a merged
+# report under-reports .js files badly — engine.js measured 92.67% from
+# undertest alone and 62.43% merged, which is impossible for a union and would
+# send somebody hunting a problem that does not exist. The logic pass owns the
+# .js answer; the UI pass owns the .jsx answer.
+name: Coverage
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monthly. Coverage moves when somebody adds a suite or a screen, not daily,
+    # and a report nobody asked for on a cadence nobody reads is just noise.
+    - cron: "0 6 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    name: two-pass coverage report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Measure
+        run: |
+          set -uo pipefail
+          # --html, because the artifact below is the whole point of running
+          # this somewhere other than a laptop: the text tables answer "how
+          # much", the HTML tree answers "which lines".
+          node scripts/coverage.mjs --html | tee coverage.txt
+          {
+            echo "### Coverage"
+            echo ""
+            echo "Two passes, deliberately not one — see \`scripts/coverage.mjs\`."
+            echo ""
+            echo '```'
+            # The per-file tables only; the suite's own pass/fail chatter is
+            # already visible in the step log and just crowds the summary.
+            grep -E '^(=|PASS [12] of 2|All files| [A-Za-z_./-]+\.(js|jsx) *\||-+\|)' coverage.txt || cat coverage.txt
+            echo '```'
+            echo ""
+            echo "Nothing here gates a merge. A drop is a question, not a failure."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the HTML report
+        if: always() && hashFiles('coverage/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14

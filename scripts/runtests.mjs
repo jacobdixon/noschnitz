@@ -16,10 +16,11 @@
    failing suite printed at the end rather than interleaved with three other
    suites' output.
 
-   MEASURED: 313s sequential -> ~35s here, on 4 cores, with the null-control
+   MEASURED: 313s sequential -> ~33s here, on 4 cores, with the null-control
    sample sizes cut in the same change (see package.json). The floor is now
    `undertest` at ~31s, so that is the suite to look at if this needs to get
-   faster again.
+   faster again — everything else fits inside its shadow, which is why adding
+   the two UI suites in 0.58.5 cost about two seconds rather than ten.
 
    ---------------------------------------------------------------------------
    THE ONE THING THAT IS NOT SAFE TO PARALLELISE, and why it is called out
@@ -66,7 +67,15 @@ const SUITES = [
   { name: "belieftest", weight: 10 },
   { name: "voicebuildtest", weight: 9 },
   { name: "clairvoyancetest", weight: 5 },
+  // Runs a Vite SSR server to load JSX; 2.6s alone, ~7s in the pool.
+  //
+  // It was 21s until the server was told not to watch or pre-scan (see the
+  // comment on createServer in rendertest.mjs). If this suite ever balloons
+  // again, suspect startup crawling something new in the project root before
+  // suspecting the tests — a coverage run alone put it from 8s to 21s.
+  { name: "rendertest", weight: 7 },
   { name: "leaktest", weight: 4 },
+  { name: "tablestreamtest", weight: 1 },
   { name: "lint", weight: 4 },
   { name: "soaktest", weight: 4 },
   { name: "pacingtest", weight: 1 },
@@ -112,6 +121,30 @@ if (unknown.length) {
   process.exit(1);
 }
 
+/* ---------------------------------------------------------------------------
+   --only / --skip, which exist for exactly one caller: scripts/coverage.mjs.
+
+   Coverage has to be measured in two passes that must never be merged (that
+   file's header explains why at length), and the only way to do that is to be
+   able to run the suite with rendertest and without it.
+   ------------------------------------------------------------------------ */
+const argv = process.argv.slice(2);
+const listArg = (flag) => {
+  const i = argv.indexOf(flag);
+  return i >= 0 && argv[i + 1] ? argv[i + 1].split(",").map((s) => s.trim()) : null;
+};
+const only = listArg("--only");
+const skip = listArg("--skip");
+for (const name of [...(only ?? []), ...(skip ?? [])]) {
+  if (!declared.has(name)) {
+    console.error(`FAIL — --only/--skip names a suite that does not exist: ${name}`);
+    process.exit(1);
+  }
+}
+const SELECTED = SUITES
+  .filter((s) => (only ? only.includes(s.name) : true))
+  .filter((s) => (skip ? !skip.includes(s.name) : true));
+
 /* ------------------------------- running -------------------------------- */
 const CONCURRENCY = Math.max(1, os.cpus().length);
 const results = [];
@@ -136,12 +169,12 @@ function run(suite) {
 }
 
 const t0 = Date.now();
-console.log(`running ${SUITES.length} suites across ${CONCURRENCY} workers\n`);
+console.log(`running ${SELECTED.length} suites across ${CONCURRENCY} workers\n`);
 
 // Exclusive suites first, alone, before anything else is competing for CPU.
-for (const suite of SUITES.filter((s) => s.exclusive)) await run(suite);
+for (const suite of SELECTED.filter((s) => s.exclusive)) await run(suite);
 
-const queue = SUITES.filter((s) => !s.exclusive).sort((a, b) => b.weight - a.weight);
+const queue = SELECTED.filter((s) => !s.exclusive).sort((a, b) => b.weight - a.weight);
 let next = 0;
 await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
   while (next < queue.length) await run(queue[next++]);

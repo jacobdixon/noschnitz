@@ -6,6 +6,81 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.58.5] - 2026-08-04 (`_pending_`)
+The other half of the CI review: **the UI is tested now, and it was not before.**
+0.58.4 made the suite fast; this makes it cover something. No game behaviour
+changes. Suite goes 26 → 28 suites and 31s → 33s.
+
+- **Every `.jsx` file was at 0% coverage**, including `TableScreen.jsx` at 1331
+  lines, and `src/useTableStream.js` had nothing at all — the file CLAUDE.md
+  itself calls the most likely to ruin a games night. The only thing standing
+  behind the UI was `npm run build`, and a build resolves modules; it has no
+  opinion about whether a component throws when React calls it.
+
+- **`scripts/tablestreamtest.mjs`** (53 assertions) covers the reconnect loop:
+  `since=` carried on every reopen, stale and redelivered frames dropped so the
+  table cannot rewind mid-trick, the scheduled ~50s handoff distinguished from a
+  real failure, backoff doubling and capping, both watchdogs (including the
+  three-and-a-half-hour stall from a real flight recorder trace), the
+  visibility-resume path, `gone` ending the loop for good, and teardown leaving
+  no live stream or timer behind.
+
+- **`scripts/rendertest.mjs`** (40 assertions) mounts every screen, modal and all
+  five felt seat rotations against real engine-produced states and requires that
+  none throw. It loads JSX through Vite's own `ssrLoadModule` — deliberately the
+  same transform the app is built with, because a second toolchain could
+  disagree about JSX or `import.meta.env` and then the suite would be testing
+  something nobody ships. `no-undef` already catches the two bugs
+  `eslint.config.js` describes; this catches the ones with no free identifier in
+  them, like a dropped `?.` that only crashes when a worker has not answered yet.
+
+- **Both suites were mutation-tested rather than trusted.** Each passed on the
+  first run, which is exactly when a suite deserves suspicion. Six mutations to
+  `useTableStream` (drop `since`, apply stale frames, kill the visibility
+  reconnect, let `gone` retry, remove cleanup, freeze the backoff) and three to
+  the UI — including reintroducing the historic `ScoresModal` bug verbatim — were
+  each caught by the assertions that should catch them. A smoke test that cannot
+  fail is worse than none, because it reads as coverage.
+
+- **`npm run coverage` runs two passes that must never be merged**, and this is
+  the part most likely to be "simplified" into a wrong number later.
+  `rendertest` loads app modules both natively and through Vite's SSR transform,
+  so c8 sees two irreconcilable copies of one path and the merged report
+  *under*-reports: `engine.js` measures 92.67% from `undertest` alone, 57.36%
+  from `rendertest` alone, and **62.43% merged** — impossible for a union, and
+  low enough to send somebody fixing a problem that does not exist. The logic
+  pass owns `.js`, the UI pass owns `.jsx`. Non-gating by design: no thresholds,
+  nothing fails on a percentage, and it is out of `npm test` because
+  instrumentation roughly doubles the runtime. `Coverage` workflow is dispatchable
+  and runs monthly.
+
+- Coverage moved from 0% to: `ui.jsx` 99.5, `modals.jsx` 97.8, `decisions.jsx`
+  92.1, `felt.jsx` 85.5, `header.jsx` 73.7, `App.jsx` 72.9, `Sheepshead.jsx`
+  60.7, `TableScreen.jsx` 28.5, and `useTableStream.js` to 100% of statements.
+  `engine.js` reads 98.2% as it always did — if the logic pass ever shows it near
+  62%, the two passes have been merged and the split has regressed.
+
+- **`rendertest` deals a SEEDED hand**, and the reason is worth keeping. It
+  originally rendered whatever `freshHand` dealt, which is an unseeded shuffle —
+  so it rendered a different hand every run. That surfaced as coverage wobbling
+  between runs (`modals.jsx` 98.03, then 96.45, as different branches were
+  reached), which is the harmless symptom; the real problem is that a suite
+  rendering a different state each run can fail only sometimes, and per the
+  deploy notes a marginal test here silently withholds the beta deploy rather
+  than merely going red. Seeded from `ALL_CARDS` in the same way the measurement
+  harnesses were fixed in 0.58.2 — shuffling the already-shuffled deck composes
+  with the unseeded shuffle instead of replacing it. Now byte-identical across
+  runs, verified three times.
+
+- **A trap worth knowing:** `rendertest` ballooned from 8s to 21s the moment a
+  `coverage/` directory existed, because Vite's dev server crawls and watches the
+  project root on startup. It now starts with the watcher and dependency scan
+  off — 2.6s — since a headless SSR transform needs neither. `coverage/` is
+  gitignored. If this suite ever gets slow again, suspect startup crawling
+  something new before suspecting the tests.
+
+- New dev-only dependencies: `jsdom` and `c8`. Neither reaches the bundle.
+
 ## [0.58.4] - 2026-08-04 (`4f0fd75`)
 CI review: the test suite went from **313s to 31s** (10.1x) with no assertion
 weakened and one flake risk removed. Nothing about the game changed.
