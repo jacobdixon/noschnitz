@@ -276,6 +276,41 @@ Unchanged rules:
   build; measured at v0.44.0 it is 0 occurrences flag-off against 8 flag-on. If you
   ever need a different discriminator, pick a structural string, not a UI label
   somebody can reword without knowing that file depends on it.
+- **BOTH verifiers were unable to report a flag-off build until 0.58.6, and the
+  reason is a shell gotcha that will bite again.** They count the discriminator
+  with `grep -o ... | wc -l`. `grep` exits 1 when it matches **nothing**;
+  `set -o pipefail` (already at the top of these scripts) makes that the
+  pipeline's status; GitHub runs every `run:` step under `bash -e`. So on a zero
+  count the script **aborted at the assignment**, one line before the `if` that
+  interprets it — no diagnostic, no summary, just `Process completed with exit
+  code 1`.
+
+  Read that again with what a zero means here: **a zero count is not an edge
+  case, it is the alarm.** The flag-off build these workflows exist to catch is
+  precisely the case in which they died silently. They had never fired only
+  because a flag-on bundle always matches `/api/tables/` 8 times, so the bug sat
+  in the one branch nobody had exercised.
+
+  The audio check made it visible, because there the healthy answer IS zero:
+  *Verify production* failed on **every** dispatch from the day the check was
+  added (2026-07-31) until 0.58.6 — three runs, each a bare exit 1 — while
+  production was in exactly the intended state the whole time. Fixed with
+  `|| true` on all three counting pipelines.
+
+  **The general rule, for any workflow here:** a `grep | wc -l` whose count may
+  legitimately be zero needs `|| true`, or `bash -e` + `pipefail` will kill the
+  step before it can report the thing you are counting. `release.yml` is safe by
+  accident rather than design — its greps sit inside `if` conditions and a
+  function called from `if`, where `-e` is suspended. Do not copy a counting
+  line out of one of these files without the `|| true`.
+
+  Verified live after the fix: production prints `audio is absent on production
+  (0 references to daily)` — a line that had never once appeared — and beta
+  prints `multiplayer is present (8 references)`. Note beta's run is a *control*,
+  not a demonstration: its count is non-zero, so it proves only that the fix is
+  inert on the path that already worked. The zero-count path is verified by
+  replaying the step's logic against synthetic bundles, because confirming it
+  live would mean deliberately shipping a flag-off build.
 
 ## Skills, and what the evaluation of them showed
 
