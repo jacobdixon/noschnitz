@@ -79,6 +79,49 @@ MacBook. Both ends joined. Neither heard anything.
   appears nowhere else in `src/`. Verified: production's bundle still contains
   no audio code at all, and the new module is eliminated with the rest.
 
+### Also — `clairvoyancetest` was a marginal test, and it withheld this deploy
+Caught by this PR's own CI run, which went red on a suite the change does not
+touch.
+
+- **It was missed by the 0.58.2 seeding sweep.** That release fixed `abtest`,
+  `coalitiontest`, `undertest` and `firingtest`, all of which seeded a shuffle
+  over the deck *as `freshHand` left it* — already shuffled by `makeDeck`'s
+  unseeded RNG, so the Fisher-Yates composed with it instead of replacing it.
+  `clairvoyancetest` has the identical bug and was not in the list. Its own
+  output gave it away once looked at: 250, 253, 251, 253, 252 probes across five
+  consecutive local runs. "250 probes" named a different 250 every time.
+
+- **This is the exact failure CLAUDE.md warns about, arriving on schedule.** The
+  suite *asserts*, so it passed locally and on the PR and failed on CI for the
+  identical commit — 1 flip in 250. A red run on `master` does not merely go
+  red; it silently withholds the beta deploy. `undertest`'s own header calls
+  this out as the sharper risk of the two; `clairvoyancetest` is the same shape
+  and nobody had noticed.
+
+- **Fixed the same way**: shuffle from `ALL_CARDS`, a fixed canonical order.
+  Now exactly 403 probes every run.
+
+- **Sample raised from 250 to 400** (`CLAIRVOYANCE_PROBES` to override).
+  Seeding freezes one population, so more of it is worth 1s: 5.5s alone, 11s
+  under pool contention, weight updated in `runtests.mjs`.
+
+- **The detector is still a detector, and this was checked rather than assumed.**
+  Running the seeded population against the clairvoyant path
+  (`opts.endgameClairvoyant`) flips **30 of 403**. A leak detector that has
+  quietly lost the ability to fail is precisely what this file exists to prevent,
+  and seeding it is exactly the kind of change that could cause that.
+
+- **What is NOT resolved, stated plainly.** The 1-in-250 flip CI saw could not
+  be reproduced in **14,071 probes** locally on the same Node version (22 in both
+  places), so the rate is under ~2e-4 per probe. Everything the endgame choice is
+  supposed to depend on was checked and is invariant under this swap: the seed is
+  `handSeed(own hand + seen cards)`, the unseen pool is an `ALL_CARDS` filter so
+  content *and* order are fixed, `sampleEndgameWorld` reads only other seats'
+  hand *lengths*, and the heuristic tiebreak touches only `g.hands[idx]`. So
+  either something subtler is reachable or CI found a ~1-in-14k case. Seeding
+  makes CI trustworthy; it does not answer that, and the file says so where
+  somebody will read it.
+
 ## [0.58.6] - 2026-08-04 (`3133331`)
 **Both deploy verifiers aborted instead of reporting a flag-off build** — the
 one failure they were written to catch. Workflow-only; no application code.

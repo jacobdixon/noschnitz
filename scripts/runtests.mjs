@@ -66,7 +66,7 @@ const SUITES = [
   { name: "aitest", weight: 14 },
   { name: "belieftest", weight: 10 },
   { name: "voicebuildtest", weight: 9 },
-  { name: "clairvoyancetest", weight: 5 },
+  { name: "clairvoyancetest", weight: 11 }, // 400 probes since 0.59.0, was 250
   // Runs a Vite SSR server to load JSX; 2.6s alone, ~7s in the pool.
   //
   // It was 21s until the server was told not to watch or pre-scan (see the
