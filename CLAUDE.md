@@ -279,11 +279,19 @@ Unchanged rules:
 
 ## Skills, and what the evaluation of them showed
 
-`.claude/skills/hand-analysis/` is the procedure for "was that play right", and
-`.claude/skills/hand-analysis/evals/evals.json` is its committed test set — four
-cases, each aimed at a way hand analysis goes wrong rather than at the happy
-path. Re-run them with subagents (one with the skill, one without) if the skill
-is edited.
+`.claude/skills/analyze-sheepshead-hand/` is the procedure for "was that play
+right", and as of 2026-08-04 it is the only one — see "Analyzing a reported hand"
+below for what was deleted and why.
+
+**There is no committed eval set any more.** The four-case set lived at
+`.claude/skills/hand-analysis/evals/evals.json` and went with that skill, so
+nothing currently checks a change to the surviving skill. That is a real gap:
+the cases were each aimed at a way hand analysis goes wrong rather than at the
+happy path, and two defects in this repo's own work were caught by them rather
+than by review. Recover the file from git history before editing the skill —
+`git show eedd846:.claude/skills/hand-analysis/evals/evals.json` —
+and note the cases were written against the deleted skill's tool, so they need
+re-pointing at `scripts/pimc.mjs` before they will run.
 
 **The result is worth knowing before writing another skill here.** Measured
 against a no-skill baseline over nine runs: answer QUALITY was never the
@@ -304,7 +312,8 @@ without buying anything.
 review**: a summary line that printed a win-rate delta as an absolute value and
 so read backwards on exactly the tradeoff it existed to surface, and a first
 corpus ranking contaminated by clairvoyant decisions that would have been
-reported as engine errors. Run the evals.
+reported as engine errors. That is the strongest argument for restoring an eval
+set rather than leaving the surviving skill unchecked.
 
 ## Conventions established this session (keep following them)
 - **Open a pull request whenever there is finished work to check in, without being
@@ -472,8 +481,36 @@ the hand, using the AI's own policy as a consistent yardstick across all six tri
 
 ## Analyzing a reported hand — use the skill
 
-`.claude/skills/hand-analysis/SKILL.md` is the procedure, and it triggers on its
-own when somebody asks whether a play was right. The one thing worth repeating
+`.claude/skills/analyze-sheepshead-hand/SKILL.md` is the procedure, and it
+triggers on its own when somebody asks whether a play was right. It routes to
+`scripts/pimc.mjs` — Monte Carlo rollouts on `aiChooseCard`'s own policy, hands
+under `scripts/scenarios/`.
+
+**There used to be a second skill, `hand-analysis`, and it was deleted on
+2026-08-04.** It routed to `scripts/pimcsolve.mjs` (an exact double-dummy solve
+per sampled world, hands under `scripts/hands/`) and collided with this one on
+every request. Two things about that are worth carrying forward, because the
+deletion did not make them untrue:
+
+- **`scripts/pimcsolve.mjs` is still here and still used.** It was the deleted
+  skill's tool, but `scripts/pimcmine.mjs` imports `scripts/lib/pimcsolve.js`
+  for corpus cost-ranking, and the *Mine hands* workflow runs on it. Deleting
+  the skill did not retire the solver, and `npm run pimcsolve` still works.
+- **The two disagreed, and not by a little.** Run head-to-head on one decision
+  (2026-08-04, Fonzie's 7♦ on trick 3 of the v0.48.0 hand 3; inputs kept at
+  `scripts/hands/2026-08-03-fonzie-t3.json` and
+  `scripts/scenarios/hand3-fonzie-7d.mjs`) they returned **opposite verdicts**.
+  The exact solve priced a queen ~2.8 points ahead of the 7♦; the surviving
+  rollout priced it 7.7 points behind. The split sat almost entirely in the 7♦
+  line — the two methods disagree about how well the seats behind the picker
+  punish a low trump, because the rollout's defenders are `aiChooseCard` and the
+  solver's are perfect. So the surviving skill is the one that **inherits engine
+  defects on exactly the lines you are usually questioning**, and its own
+  SKILL.md warns that a candidate which secures a trick for its own side gets
+  scored too harshly. Take a result that turns on that shape to `pimcsolve` by
+  hand for a second opinion before acting on it.
+
+The one thing worth repeating
 here because it is the easy mistake: **the recap's double-dummy grade and PIMC
 answer different questions**, and the grade is the wrong one for "how bad was
 that". It solves the deal that happened, with every hand visible, so it forgives
@@ -558,29 +595,12 @@ for how it was checked and for the rollback.
 
 Genuinely open:
 
-0. **FIRST: there are two hand-analysis skills and they collide.** `hand-analysis`
-   and `analyze-sheepshead-hand` landed from parallel sessions on 2026-08-03 and
-   their descriptions trigger on the same request — a shared hand, a recap
-   screenshot, "was that the right card". Both will fire, and they route to
-   different tools with different on-disk formats: `analyze-sheepshead-hand` →
-   `scripts/pimc.mjs`, rollouts on `aiChooseCard`'s own policy, hands under
-   `scripts/scenarios/`; `hand-analysis` → `scripts/pimcsolve.mjs`, an exact
-   double-dummy solve per sampled world, hands under `scripts/hands/`. They will
-   give different numbers for the same question and you will not see which one
-   answered.
-   - The scripts were renamed apart so the tools no longer collide. The skills
-     were not, because which one wins is a judgement call rather than a merge
-     conflict, and it was left for a person.
-   - **Options, roughly in order of preference.** One skill with both tools
-     behind it and a line on when each is right — the exact solve is sharper on
-     the last few tricks where the tree is small, the rollout scales better
-     early. Or keep both and narrow each description hard enough that they cannot
-     both match. Or drop one, which loses a genuinely different second opinion.
-   - Do this before using either in anger, and re-run
-     `.claude/skills/hand-analysis/evals/evals.json` afterwards — it is a
-     committed eval set and it will tell you whether whatever you picked still
-     answers the four cases.
-
+0. **The skill collision is RESOLVED — `hand-analysis` was deleted 2026-08-04**,
+   leaving `analyze-sheepshead-hand` as the only one. See "Analyzing a reported
+   hand" above for what that costs: the exact-solve second opinion is no longer
+   a skill (though `scripts/pimcsolve.mjs` is still there and still driving
+   `pimcmine`), and the repo's only committed eval set went with the deleted
+   skill. Restoring an eval set for the survivor is the open piece.
 
 0. **The first games night on production is the real test, and nothing else is.**
    Every multiplayer bug worth fixing so far came from a person on a phone, not
