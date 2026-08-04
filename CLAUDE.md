@@ -323,6 +323,24 @@ set rather than leaving the surviving skill unchecked.
   wait to be told; the default agent instruction elsewhere ("no PR unless asked")
   is overridden here.
 
+  **Turn on auto-merge as soon as the PR exists — that is the default, not a
+  special case.** Standing order as of 2026-08-04. `enable_pr_auto_merge` on the
+  PR you just opened; GitHub then merges it the moment the required check goes
+  green, with no session sitting on the PR waiting to press a button. This is
+  strictly safer than merging by hand against the rule two bullets down: auto-merge
+  cannot fire on a red check, so it can never merge over one.
+
+  Two things it does NOT do, and both are still yours:
+
+  - **It does not fire when CI never queues.** Actions genuinely lags here (see
+    below), and a PR whose required check never started will sit under auto-merge
+    indefinitely — the one case where auto-merge is worse than a hand merge,
+    because nothing is failing and nothing is happening. That is what the
+    "green local run while CI is missing" escape hatch below is for, and taking
+    it means merging manually.
+  - **It does not watch `master` afterwards.** Auto-merge gets the PR in; it says
+    nothing about whether `Release` went green and the deploy shipped.
+
   "Once the tests pass" means the repo's own suites, and what counts is
   spelled out because the failure modes differ:
 
