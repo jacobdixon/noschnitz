@@ -6,6 +6,166 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.59.0] - 2026-08-04 (`54476e0`)
+**Table audio never played a sound, and nothing in the app could tell.** COM-1
+shipped in 0.58.0 and was tried for the first time on 2026-08-04, phone to
+MacBook. Both ends joined. Neither heard anything.
+
+- **The bug: in call-object mode, daily-js does not play remote audio.** There
+  are two modes. `createFrame()` renders Daily's own UI in an iframe and that
+  iframe plays audio for you; `createCallObject()` hands you `MediaStreamTrack`s
+  and plays nothing. We use the call object because the felt is a locked,
+  no-scroll viewport with no room for a second UI on top of it — and the cost of
+  that choice, unpaid until now, is that attaching tracks to elements is the
+  application's job. Daily's own React library ships an entire `<DailyAudio>`
+  component to do this; there is nothing automatic underneath it.
+
+  Confirmed against the installed SDK rather than from memory: `daily-esm.js`
+  contains zero occurrences of `srcObject` and creates no media elements — five
+  iframes, a canvas, a script and an anchor, and nothing that could play a
+  track.
+
+- **Why every signal stayed green, which is the part worth remembering.** The
+  room provisioned, both clients joined, microphones were captured with
+  permission granted, the mic chip read "connected", the participant count read
+  2, and audio was genuinely uploaded to Daily and forwarded to the other
+  participant. The only thing that never happened was playback, and playback is
+  the one step the app had no way to observe. There was no error, no failed
+  request, nothing in the flight recorder. It looked exactly like a working call
+  that nobody else had joined — the same trap `ensureRoom` warns about one layer
+  up, arrived at from the other direction.
+
+  55 server checks, a bidirectional build test that proved the code was present
+  on beta and absent on production, and a lazily-loaded SDK chunk: all correct,
+  all passing, and between them unable to notice that the feature did not work.
+  **Everything was verified except whether anyone could hear anything.**
+
+- **`src/voiceAudio.js`** is the fix: an `<audio>` element per remote
+  participant, keyed by Daily session id, attached on `track-started` and torn
+  down on `track-stopped` / `participant-left`. Never the local track — playing
+  your own microphone back is a feedback loop, not something you debug calmly on
+  a games night. `playsInline` is set, because iOS Safari is half the devices
+  this feature exists for. A rejected `play()` — the browser's autoplay policy,
+  the one remaining way to be silently silent — is reported to the flight
+  recorder rather than swallowed.
+
+- **The wiring lives in the same module as the sink, on purpose.** `bindCallAudio`
+  and `sweepExistingAudio` could have stayed inline in the hook, and that is
+  exactly how the bug happened: the defect in 0.58.0 was not a broken sink, it
+  was the *absence* of three `.on()` calls. A sink tested in isolation would
+  have passed perfectly while the room stayed silent, so the wiring had to be
+  somewhere a test could reach it.
+
+- **`scripts/voiceaudiotest.mjs`** (35 checks, in `npm test`) drives a fake call
+  object through the real Daily event names into a real sink. Its negative
+  control is the original bug reproduced exactly — stub out `bindCallAudio` and
+  6 checks fail; drop the post-join sweep and 3 fail. Every other assertion was
+  mutation-tested too: removing `play()` fails 3, leaking the stream on detach
+  fails 2, dropping the idempotence guard or `playsInline` fails 1 each. The
+  document is faked rather than jsdom'd — jsdom has no `MediaStream` and its
+  `play()` is unimplemented, so a realistic DOM would need both stubbed anyway,
+  and a fake can assert the element was actually asked to play.
+
+- **Two paths reach the same track and that is deliberate.** Daily replays
+  `track-started` for participants already in the room, so the post-join sweep
+  of `call.participants()` is usually redundant — but "usually" is the wrong
+  strength for the difference between hearing the table and sitting in silence.
+  `attach()` is idempotent on the same track, so running both costs nothing and
+  neither interrupts audio already playing.
+
+- **`voicebuildtest` gains `srcObject` as a fifth token**, so the playback path
+  is now pinned absent-on-production and present-on-beta like everything else.
+  It is a property access on a DOM object, so minifiers leave it alone, and it
+  appears nowhere else in `src/`. Verified: production's bundle still contains
+  no audio code at all, and the new module is eliminated with the rest.
+
+### Also — `clairvoyancetest` was a marginal test, and it withheld this deploy
+Caught by this PR's own CI run, which went red on a suite the change does not
+touch.
+
+- **It was missed by the 0.58.2 seeding sweep.** That release fixed `abtest`,
+  `coalitiontest`, `undertest` and `firingtest`, all of which seeded a shuffle
+  over the deck *as `freshHand` left it* — already shuffled by `makeDeck`'s
+  unseeded RNG, so the Fisher-Yates composed with it instead of replacing it.
+  `clairvoyancetest` has the identical bug and was not in the list. Its own
+  output gave it away once looked at: 250, 253, 251, 253, 252 probes across five
+  consecutive local runs. "250 probes" named a different 250 every time.
+
+- **This is the exact failure CLAUDE.md warns about, arriving on schedule.** The
+  suite *asserts*, so it passed locally and on the PR and failed on CI for the
+  identical commit — 1 flip in 250. A red run on `master` does not merely go
+  red; it silently withholds the beta deploy. `undertest`'s own header calls
+  this out as the sharper risk of the two; `clairvoyancetest` is the same shape
+  and nobody had noticed.
+
+- **Fixed the same way**: shuffle from `ALL_CARDS`, a fixed canonical order.
+  Now exactly 403 probes every run.
+
+- **Sample raised from 250 to 400** (`CLAIRVOYANCE_PROBES` to override).
+  Seeding freezes one population, so more of it is worth 1s: 5.5s alone, 11s
+  under pool contention, weight updated in `runtests.mjs`.
+
+- **The detector is still a detector, and this was checked rather than assumed.**
+  Running the seeded population against the clairvoyant path
+  (`opts.endgameClairvoyant`) flips **30 of 403**. A leak detector that has
+  quietly lost the ability to fail is precisely what this file exists to prevent,
+  and seeding it is exactly the kind of change that could cause that.
+
+- **What is NOT resolved, stated plainly.** The 1-in-250 flip CI saw could not
+  be reproduced in **14,071 probes** locally on the same Node version (22 in both
+  places), so the rate is under ~2e-4 per probe. Everything the endgame choice is
+  supposed to depend on was checked and is invariant under this swap: the seed is
+  `handSeed(own hand + seen cards)`, the unseen pool is an `ALL_CARDS` filter so
+  content *and* order are fixed, `sampleEndgameWorld` reads only other seats'
+  hand *lengths*, and the heuristic tiebreak touches only `g.hands[idx]`. So
+  either something subtler is reachable or CI found a ~1-in-14k case. Seeding
+  makes CI trustworthy; it does not answer that, and the file says so where
+  somebody will read it.
+
+### And `gradetest` was reporting a solver bug the engine does not have
+The second red CI run on this PR, on a different suite, also untouched by the
+change. Worth reading as a pair with the one above: two suites, same underlying
+habit, opposite conclusions about whose fault it was.
+
+- **`gradetest` shared ONE transposition table across sixty different deals.**
+  Its own comment said "exactly as a grading pass shares it" — but a grading
+  pass is a single hand. No caller in the project shares across hands:
+  `gradeAllPlays` allocates a `Map` per hand, `pimcsolve` one per world within a
+  hand. The test was exercising a usage that does not exist.
+
+- **Why that breaks.** `ddKey` deliberately omits picker and partner, and it is
+  right to: they are constant within a hand and the key is built at every node,
+  where string construction was most of the solve cost. But the stored value is
+  *points to the picker team from here*, so two deals reaching the same small
+  late-trick layout with the picker on opposite sides collide on the key and
+  disagree about the answer.
+
+- **Reproduced deterministically rather than argued.** Seed 1270, trick 5:
+  `shared=62` against a true 97, a 35-point error. Switching to a per-hand table
+  and re-running the same seeds gives **0 mismatches over 33,704 positions**,
+  that seed included. CI's own failure was the same shape
+  (`shared=39 fresh=43 capped=43 reference=43`) — `shared` alone, always low.
+
+- **So the engine was right and the test was wrong**, which is the more
+  dangerous way round: it reported a solver defect that does not exist,
+  intermittently, on a suite whose red run silently withholds the beta deploy.
+  Three of us would have gone looking at alpha-beta.
+
+- **The arm keeps its teeth, and that was checked, not assumed.** The `shared`
+  comparison exists to catch a bound from a narrowed window being filed as
+  exact. Mutating `ddFuture` to do exactly that (`flag: 0` unconditionally)
+  still fails the per-hand version — 39 mismatches over 1435 positions. Scoping
+  the table did not defang the test.
+
+- **Its deals are seeded now too**, same defect as `clairvoyancetest`: `seed`
+  only ever chose the dealer, and `freshHand` dealt off the unseeded RNG. The
+  position counts were the tell — 1493, 1415, 1421 locally against CI's 1443.
+  Now exactly 1435 every run.
+
+- **The precondition is written down in `engine.js` where it belongs**, on
+  `ddKey`: a memo is valid for one hand only, and if a cross-hand table is ever
+  wanted, put the picker team in the key rather than assuming it away.
+
 ## [0.58.6] - 2026-08-04 (`3133331`)
 **Both deploy verifiers aborted instead of reporting a flag-off build** — the
 one failure they were written to catch. Workflow-only; no application code.

@@ -21,6 +21,7 @@
    Usage: node scripts/gradetest.mjs
    ========================================================================= */
 import {
+  ALL_CARDS,
   freshHand, assignPartner, applyPlay, resolveTrick, handStrength, aiBuryAndCall,
   aiChooseCard, legalPlays, solveHandValue, gradeHandPlays, pickerTeamOf,
   sortHand, cid, NAMES,
@@ -48,8 +49,31 @@ function referenceValue(g) {
   return best;
 }
 
+// Deterministic deals. Same defect as clairvoyancetest and the four harnesses
+// fixed in 0.58.2: `freshHand` deals off makeDeck's unseeded RNG, so `seed`
+// here only ever chose the DEALER and every run cross-checked a different
+// population. The position counts said so out loud — 1493, 1415, 1421 locally
+// against CI's 1443 — and a suite that asserts over a fresh sample every run is
+// a deploy outage waiting for a rare deal, which is exactly how the shared-table
+// collision above surfaced. Shuffling from ALL_CARDS replaces the unseeded deal
+// instead of stirring it.
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 function dealAndPick(seed) {
   let g = freshHand(seed % 5, [0, 0, 0, 0, 0], 1);
+  const rand = mulberry32(seed + 1);
+  const deck = [...ALL_CARDS];
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  g = { ...g, hands: [0, 1, 2, 3, 4].map((p) => deck.slice(p * 6, p * 6 + 6)), blind: deck.slice(30, 32) };
   while (g.phase === "picking" && g.passes < 5) {
     const idx = g.pickTurn;
     const hs = handStrength(g.hands[idx]);
@@ -66,14 +90,33 @@ function dealAndPick(seed) {
   return g;
 }
 
-// One table shared across every position in the run, exactly as a grading pass
+// One table shared across every position in a HAND, exactly as a grading pass
 // shares it — a table that is only correct when freshly allocated would pass a
 // per-call test and still corrupt real grades.
-const sharedTable = new Map();
+//
+// PER HAND, and that word was missing until 0.59.0. This was one table across
+// the whole run, i.e. across sixty different deals, which no caller in the
+// project does: gradeAllPlays allocates a Map per hand (engine.js), and
+// pimcsolve allocates one per world within a hand. Sharing across deals breaks
+// an unstated precondition of `ddKey` — it omits picker and partner, correctly,
+// because they are constant within a hand and it runs at every node. Two
+// different deals reaching the same small late-trick layout therefore collide
+// on the key while disagreeing about which side banks the points.
+//
+// It was not theoretical. This test failed CI on v0.59.0 with
+// `shared=39 fresh=43 capped=43 reference=43`, and the collision reproduces
+// deterministically at seed 1270 (shared=62 against a true 97 — a 35-point
+// error) with a table shared across deals, and vanishes entirely with a
+// per-hand table: 0 mismatches over 33,704 positions covering that same seed.
+//
+// So the engine was right and the test was wrong, which is the more dangerous
+// way round: it reported a solver defect that does not exist, intermittently,
+// on a suite whose red run silently withholds the beta deploy.
 let compared = 0, mismatches = 0;
 for (let i = 0; i < 60 && compared < 1500; i++) {
   let g = dealAndPick(i);
   if (g.phase !== "playing") continue;
+  const sharedTable = new Map();
   // Play into the hand first: the reference is exponential, so compare where it
   // can still finish. This is also the window the grader actually uses.
   while (g.phase === "playing" && g.tricksDone < 3) {

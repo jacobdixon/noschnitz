@@ -1,7 +1,7 @@
 {
   "name": "sheepshead",
   "private": true,
-  "version": "0.58.6",
+  "version": "0.59.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
     "storetest": "node scripts/storetest.mjs",
     "voicetest": "node scripts/voicetest.mjs",
     "voicebuildtest": "node scripts/voicebuildtest.mjs",
+    "voiceaudiotest": "node scripts/voiceaudiotest.mjs",
     "aitest": "node scripts/aitest.mjs",
     "streamtest": "node scripts/streamtest.mjs",
     "e2etest": "node scripts/e2etest.mjs",
