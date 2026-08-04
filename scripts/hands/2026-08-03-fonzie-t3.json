@@ -1,0 +1,18 @@
+{
+  "label": "2026-08-03 hand 3 (v0.48.0) — defenders win 77-43; Fonzie's 7D on trick 3",
+  "seats": ["You", "Gus", "Kopps", "Fonzie", "Miller"],
+  "picker": 3,
+  "calledSuit": "S",
+  "calledRank": "A",
+  "buried": ["AC", "7C"],
+  "firstLeader": 2,
+  "passers": [2],
+  "plays": [
+    ["KS", "8H", "10C", "9C", "10D", "QD"],
+    ["AS", "10H", "8S", "8C", "9D", "JS"],
+    ["9S", "AH", "10S", "AD", "JD", "JC"],
+    ["7S", "9H", "7D", "QH", "8D", "QS"],
+    ["KD", "7H", "JH", "KC", "QC", "KH"]
+  ],
+  "expectedWinners": [4, 2, 4, 3, 4, 3]
+}
