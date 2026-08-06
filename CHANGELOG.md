@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.59.3] - 2026-08-06 (`PENDING`)
+## [0.59.3] - 2026-08-06 (`b3700b8`)
 **The deploy chain had the same timeout bug 0.59.2 fixed in CI, and `release.yml`
 also had a second one nobody had hit.** All three remaining workflows —
 `release.yml`, `verify-beta.yml`, `verify-production.yml` — carried a 10-minute
