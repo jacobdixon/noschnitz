@@ -103,6 +103,16 @@ A few things about the transcription that are easy to get subtly wrong:
   `card()` (exported from `scripts/pimc.mjs`) parses.
 - **`picker`** is the seat with the PICKER badge. **`buried`** are the two
   cards shown at the top of the recap.
+- **A small glyph after a card is a marker, not part of the card.** Since
+  0.60.0 there are three: a dim lowercase `b` ("picked up in the blind"), a
+  brass `U` ("played under"), and a green `!` / red `?` (the graded best and
+  worst play of the hand). Transcribe the card and drop the glyph — reading
+  `7♦b` as a rank is a transcription error that will survive the points
+  check in Step 2 only if you are unlucky.
+  The two `b`-marked cards are the blind, which is a genuine fact about the
+  hand: they are the two cards the picker did NOT start with. Nothing in the
+  scenario file records that, so it is context for judging the pick and the
+  bury, not a field to fill in.
 - **`calledSuit` / `calledRank`** aren't printed as text in the recap grid —
   derive them. Find the PARTNER-badged seat (if the hand shows one) and look
   for the Ace of a plain suit (clubs/spades/hearts — never diamonds, those

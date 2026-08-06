@@ -6,6 +6,28 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.60.0] - 2026-08-06 (`PENDING`)
+**The recap now says which two cards came out of the blind.** A trailing dim
+lowercase `b` on the two cards the picker took, wherever they ended up —
+played in the grid, or sitting in the buried pair at the top.
+
+- **Why it can be shown at all**: `g.blind` survives the pick. The cards are
+  merged into the picker's hand rather than moved out of the pile, and
+  `viewFor` discloses the blind at `handEnd` — so this needed no engine change
+  and no new field crossing the wire, at a table or in solo play.
+- **It is a fourth channel, deliberately kept clear of the other three.** The
+  underline says who led, the shading says who won, and the trailing glyphs say
+  something about the card itself: brass `U` for played under, green `!` and
+  red `?` for the graded best and worst play. `b` is lowercase and dim so it
+  reads as provenance rather than as a verdict, and so it never competes with a
+  grade sitting beside it on the same card. It appears in the key only when the
+  blind was actually taken.
+- **Assertions, not a smoke pass.** `rendertest` checks the count is exactly
+  two and that each mark sits against the right card face — "renders without
+  throwing" is precisely what marking the wrong cards would also do. Mutation
+  tested when written: marking every card, dropping the grid mark, dropping the
+  buried mark, and removing the nobody-picked guard each fail it.
+
 ## [0.59.0] - 2026-08-04 (`54476e0`)
 **Table audio never played a sound, and nothing in the app could tell.** COM-1
 shipped in 0.58.0 and was tried for the first time on 2026-08-04, phone to
