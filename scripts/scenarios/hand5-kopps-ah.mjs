@@ -5,6 +5,24 @@
 // 9♦, and Kopps — void in clubs and last to act — discarded A♥, handing the
 // picking side 11 points into a trick they had already won. Was there any case
 // for it over a blank 8♥/9♥, or is it a straight schmear to the wrong team?
+//
+// Left UNCONDITIONED deliberately, which is what makes it a useful case: run as
+// it stands, the sampler spreads the called A♠ over Patty/Bunny/Bernie evenly,
+// two worlds in three have Bernie ruffing for the DEFENCE, and the A♥ scores
+// second of four because in those worlds it is a schmear onto Kopps's own
+// trick. Add `assumePartner: 4` and the ranking inverts — the A♥ goes last,
+// 3.63 behind a blank heart with the win rate more than halved (6.9% against
+// 15.9%). The gap between those two runs is the whole point of the hand: it is
+// the price of the read, not of the card.
+//
+// The read was available and the engine's own numbers say so. Bernie opened
+// trick 2 with the 8♦ — a non-picker leading trump — which engine.js measures
+// at 60.4% partner against a 25% base rate, and then declines to act on
+// (PLAIN_TRUMP_LEAD_ODDS = 1, "MEASURED AND NOT SHIPPED"). So
+// teammateProbability hands Kopps a flat 66.7% for all three seats here. This
+// is the spot that comment reserves — "the day something else consults the
+// belief in a spot a losing lead still matters" — since Bernie's low trump lead
+// duly lost to Patty's Q♥ and mattered anyway, two tricks later.
 import { card } from "../pimc.mjs";
 
 const t = (...pairs) => pairs.map(([player, c]) => ({ player, card: card(c) }));

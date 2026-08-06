@@ -6,6 +6,41 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.59.1] - 2026-08-06 (`PENDING`)
+**PIMC could not be told what the table had already told the player.** The
+sampler spreads the called ace uniformly over every seat that could still hold
+it, which is right when the deciding seat genuinely has nothing to go on and
+wrong the moment it does — and it prices the decision against a table nobody was
+sitting at.
+
+- **`assumePartner: <seat>` in a scenario conditions the sample on a read.**
+  Validated against the evidence rather than trusted: it refuses a seat that is
+  the picker, one the cards have already proved is somebody else, and one that
+  is out of cards or has shown void in the called suit. The report prints a
+  CONDITIONED banner so a pinned run can never be mistaken for a plain one, and
+  only when the pin actually constrained the sample — with the partner already
+  settled by the cards it is a consistency check that changed nothing, and
+  saying otherwise would overstate what the run assumed.
+- **It is not a rounding error.** On the new `hand5-kopps-ah.mjs` the two runs
+  give opposite verdicts on the played card: second of four unconditioned, last
+  of four pinned, 3.63 points and 9pp of win rate apart. Both numbers are
+  correct and they answer different questions, so the guidance added to
+  CLAUDE.md is to run both — a card that only looks good unconditioned is a card
+  whose case rests on the player not having noticed something.
+- **Default unchanged.** With `assumePartner` unset the sampler is the old one;
+  verified by re-running the reference `hand1-jh.mjs` and the new hand and
+  getting the prior ranking back.
+- **New hand: the 2026-08-05 Kopps trick-3 A♥ discard**, off the same Hand 5
+  screenshot as `hand5-patty-ac.mjs`. Transcription re-derived independently and
+  byte-identical to the committed one. Exact double-dummy calls all four legal
+  cards tied at cost 0; the interesting number is the gap between the two PIMC
+  runs, not either one alone.
+- Also recorded in CLAUDE.md: this hand is a live instance of the case
+  `PLAIN_TRUMP_LEAD_ODDS` reserves for itself. A non-picker's low trump lead is
+  the partner 60.4% of the time against a 25% base rate and the constant still
+  ships at 1, so `teammateProbability` handed Kopps a flat 66.7% across all
+  three candidates on a hand where one of them had opened trick 2 with a trump.
+
 ## [0.59.0] - 2026-08-04 (`54476e0`)
 **Table audio never played a sound, and nothing in the app could tell.** COM-1
 shipped in 0.58.0 and was tried for the first time on 2026-08-04, phone to

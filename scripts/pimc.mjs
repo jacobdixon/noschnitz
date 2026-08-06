@@ -118,7 +118,7 @@ export function runPimc(scenario) {
   const {
     names = ["P0", "P1", "P2", "P3", "P4"],
     picker, calledSuit, calledRank = "A", calledUnder = false, underCard = null,
-    buried, trickHistory, decision, samples = 400,
+    buried, trickHistory, decision, samples = 400, assumePartner = null,
   } = scenario;
   const { trickIdx, player } = decision;
 
@@ -215,12 +215,41 @@ export function runPimc(scenario) {
     : unseen;
   // Drawn in proportion to how many unknown cards each seat still holds, which
   // is what uniform dealing implies once the picker and the bury are ruled out.
-  const aceSeats = aceMustBePlaced
+  const eligibleAceSeats = aceMustBePlaced
     ? otherSeats.filter((s) => s !== picker && capacities[s] > 0 && !voidSuits[s]?.has(calledSuit))
     : [];
-  if (aceMustBePlaced && !aceSeats.length) {
+  if (aceMustBePlaced && !eligibleAceSeats.length) {
     throw new Error(`no seat can hold the called ${calledRank} of ${calledSuit} — check the scenario's picker/called suit`);
   }
+
+  // `assumePartner` conditions the whole sample on a READ rather than on
+  // something the cards have proved. The default sampler spreads the called
+  // ace uniformly over every seat that could still hold it, which is right when
+  // the deciding player genuinely has nothing to go on and wrong the moment
+  // they do — table evidence the model cannot see (a non-picker opening with
+  // trump, the picker declining to overtrump a trick and paying into it
+  // instead) routinely makes one seat far likelier than the other two, and
+  // averaging over worlds a competent player had already ruled out prices the
+  // decision against a table nobody was sitting at.
+  //
+  // It answers a different question from the unconditioned run, so it does not
+  // replace it: that one asks "what was this worth knowing nothing", this one
+  // asks "what was it worth given the read". Run both — a card that only looks
+  // good in the unconditioned run is a card whose case rests on the deciding
+  // player not having noticed something.
+  if (assumePartner !== null) {
+    if (!calledSuit) throw new Error("assumePartner is meaningless on an alone hand — there is no partner");
+    if (assumePartner === picker) throw new Error("assumePartner: the picker is never their own partner");
+    if (partnerFixed !== null && partnerFixed !== assumePartner) {
+      throw new Error(`assumePartner: ${names[assumePartner]} contradicts the evidence — the called ${calledRank}${calledSuit} is already known to be ${names[partnerFixed]}'s`);
+    }
+    if (aceMustBePlaced && !eligibleAceSeats.includes(assumePartner)) {
+      throw new Error(`assumePartner: ${names[assumePartner]} cannot hold the called ${calledRank}${calledSuit} — they are out of cards or have shown void in ${calledSuit}`);
+    }
+  }
+  const aceSeats = assumePartner !== null
+    ? eligibleAceSeats.filter((s) => s === assumePartner)
+    : eligibleAceSeats;
 
   function dealOnce() {
     if (!aceMustBePlaced) return dealRespectingVoids(unseen, capacities, voidSuits);
@@ -396,11 +425,18 @@ export function runPimc(scenario) {
   return {
     player, playerName: names[player], decisionTeam: iAmOnPickerTeam ? "picker team" : "defenders",
     actualCard, results, samples, winLine, schneiderLine,
+    // Only worth reporting when it actually constrained the sample. With the
+    // partner already settled by the cards it is a consistency check that
+    // changed nothing, and printing it would overstate what the run assumed.
+    assumedPartnerName: (assumePartner !== null && partnerMustBeSampled) ? names[assumePartner] : null,
   };
 }
 
-export function printReport({ playerName, decisionTeam, actualCard, results, samples, winLine, schneiderLine }) {
+export function printReport({ playerName, decisionTeam, actualCard, results, samples, winLine, schneiderLine, assumedPartnerName }) {
   console.log(`PIMC — ${playerName}'s decision (${decisionTeam}), ${samples} sampled worlds, common-random-numbers across candidates`);
+  if (assumedPartnerName) {
+    console.log(`CONDITIONED on ${assumedPartnerName} being the partner — a read, not something the cards have proved.`);
+  }
   console.log(`points are ${decisionTeam}'s own total out of 120; a win needs ${winLine}, a schneider ${schneiderLine}\n`);
   const best = results[0];
   for (const r of results) {
