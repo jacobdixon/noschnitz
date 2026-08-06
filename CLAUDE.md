@@ -616,6 +616,31 @@ a bad decision that got lucky and convicts a sound one that did not — measured
 over 425 decisions it called 15% of decisions clean that cost a point or more,
 and 9% mistakes that cost nothing. Report the PIMC number.
 
+**PIMC spreads the called ace uniformly, and on a hand where the table has
+already told you where it is, that is its own kind of hindsight-in-reverse.**
+`assumePartner: <seat>` (added 0.59.1) conditions the sample on a read. It is
+not a nicety: on `hand5-kopps-ah.mjs` the two runs give OPPOSITE verdicts on the
+played card — second of four unconditioned, last of four pinned, 3.63 points and
+9pp of win rate apart — because two sampled worlds in three had the ruffer on
+the defence when a person at the table could see he wasn't. **Run both.** The
+unconditioned number is the honest default; a card that only looks good there is
+a card whose case rests on the player not having noticed something. Pinning is a
+claim about evidence, so say what the evidence was.
+
+That hand is also a live instance of a gap the engine documents about itself.
+`PLAIN_TRUMP_LEAD_ODDS` is **MEASURED AND NOT SHIPPED** — a non-picker opening
+with a low trump is the partner 60.4% of the time against a 25% base rate, and
+the constant still ships at 1 because the only gate consulting the belief is the
+schmear, and a low trump lead gets overtrumped nine times in ten so there is no
+trick left to schmear into. Its comment reserves "the day something else
+consults the belief in a spot a losing lead still matters." This is that day:
+Bernie's 8♦ lead lost to a Q♥ and still decided a discard two tricks later, and
+`teammateProbability` handed Kopps a flat 66.7% across all three candidates.
+**Before concluding a seat was blind to something, ask the engine what it
+believed** — `teammateProbability(g, viewer, target)` is cheap and it is
+calibrated, and here it is the difference between "Kopps guessed wrong" and "the
+engine cannot hear the tell Kopps was being asked to act on."
+
 ## The AI used to see your last two cards — FIXED in 0.54.0
 
 Kept because the failure is worth recognising again, not because it is open.
