@@ -24,8 +24,26 @@ on:
   # Actions has been observed taking twenty minutes and four pushes to queue a
   # run on a session-authored PR, and a check that never starts blocks a merge
   # exactly as hard as a red one. Without this there is nothing to re-trigger:
-  # a missing run cannot be re-run, only replaced by another push. Two lines to
-  # make that self-service.
+  # a missing run cannot be re-run, only replaced by another push.
+  #
+  # IT DOES NOT UNBLOCK THE MERGE, THOUGH — this comment used to say "two lines
+  # to make that self-service" and that was only half right. Measured on #138,
+  # 2026-08-06: no pull_request run had queued an hour and three pushes after
+  # the PR opened, so the workflow was dispatched by hand. Run 137 got a runner
+  # in 5 seconds, went green in 57, reported a check run named exactly
+  # `lint, tests, build` against the PR's head SHA, and listed PR #138 in its
+  # own `pull_requests` array. The merge was still refused:
+  #
+  #     405 Repository rule violations found
+  #     Required status check "lint, tests, build" is expected.
+  #
+  # So a dispatched run answers "do the tests pass on this commit" — which is
+  # worth a lot, and is why this trigger stays — but it does not satisfy the
+  # ruleset. Only a run from `pull_request` does. Deliberately not writing down
+  # a mechanism for that: the observations above are what was demonstrated, and
+  # this file has been wrong before by recording a tidy explanation that fit
+  # every observation and was not the cause (see the Actions-lag note in
+  # CLAUDE.md). If you need the merge unblocked, push a commit.
   workflow_dispatch:
 
 # A second push to the same branch makes the first run irrelevant. master is

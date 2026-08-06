@@ -477,6 +477,22 @@ set rather than leaving the surviving skill unchecked.
     | `steps` present, one red | a real failure — read that step. |
     | `steps` present, one hung | `npm test` names the wedged suite itself since 0.59.2. |
 
+  - **`workflow_dispatch` on `ci.yml` runs the tests but does NOT unblock the
+    merge.** `ci.yml` carried a comment calling that trigger "two lines to make
+    that self-service", and it is only half true. Measured on #138 (2026-08-06):
+    an hour and three pushes after the PR opened, no `pull_request` run had
+    queued at all, so CI was dispatched by hand. The run got a runner in 5
+    seconds, went green in 57, reported a check named exactly
+    `lint, tests, build` against the PR head SHA, and listed the PR in its own
+    `pull_requests` array. The merge was still refused with
+    `405 ... Required status check "lint, tests, build" is expected`.
+    So dispatch is worth having — it answers "do the tests pass on this commit"
+    when nothing else will — but **only a `pull_request` run satisfies the
+    ruleset, and the only way to get one is to push a commit.** Deliberately
+    recording the observation and not a mechanism: this file has been wrong
+    before by writing down a tidy explanation that fit every observation and was
+    not the cause (see the Actions-lag entry below).
+
     Get it with `actions_get` / `list_workflow_jobs` on the run. 0.59.2 raised
     the job budget to 45 minutes and moved the real bounds to step-level
     `timeout-minutes`, whose clock starts when the step starts — so queue time
