@@ -215,14 +215,68 @@ the user wants more confidence than that, rerun at a higher `samples`
 convention (see `CLAUDE.md`) is to read the sign and the sample count, not
 one number, and the same logic applies here.
 
+### Step 4b — When the table had already told the player where the ace was
+
+By default PIMC spreads the called ace **uniformly** over every seat that could
+still hold it. That is right when the deciding seat genuinely has nothing to go
+on, and wrong the moment it does — and on a hand where somebody had a read, it
+prices the decision against a table nobody was sitting at. It is its own kind of
+hindsight, running backwards: the player is charged for uncertainty they had
+already resolved.
+
+`assumePartner: <seat>` in the scenario conditions the whole sample on that
+read. It validates against the evidence rather than trusting you — it refuses a
+seat that is the picker, one the cards have already proved is somebody else, and
+one that is out of cards or has shown void in the called suit — and the report
+prints a `CONDITIONED on <name>` banner, but only when the pin actually
+constrained the sample.
+
+**Run it as a second pass whenever the user's argument turns on a read**, e.g.
+"he could see Bernie was the partner", "she knew the ace was gone". Keep both:
+
+- **The unconditioned run is the honest default.** A card that only looks good
+  there is a card whose case rests on the player not having noticed something.
+- **The conditioned run is a claim about evidence**, so when you report it, say
+  what the evidence was. "Conditioned on Bernie being the partner, which his
+  trick-2 trump lead suggests" is an argument; `assumePartner: 4` on its own is
+  an assumption wearing a number's clothes.
+
+This is not a rounding error. On `scripts/scenarios/hand5-kopps-ah.mjs` the two
+runs give **opposite verdicts on the same card**: A♥ ranks second of four
+unconditioned and last of four pinned, about 3.5 points apart with the win rate
+roughly halved. Both are correct; they answer different questions.
+
+Two traps in reading a pair of runs like that:
+
+- **Never compare a mean across the two runs.** Conditioning changes which
+  worlds exist, so the whole scale moves — on that hand the defenders' average
+  drops from the mid-50s to about 30 simply because pinning the partner removes
+  the worlds where the defence had an extra body. Compare rankings and gaps
+  *within* a run.
+- **Don't quote exact digits from a previous run as if they'd reproduce.** This
+  is Monte Carlo with a standard error; re-running that hand today gives -3.48
+  and 6.8% where an earlier note recorded -3.63 and 6.9%. Same conclusion,
+  different digits. Report the size and the sign, and the SE alongside.
+
+If the user's read is about something other than the partner's identity, there
+is no flag for it — say so plainly rather than approximating it with this one.
+
 ## Step 5 — Report
 
 Give the user:
 
 1. The PIMC ranking — mean ± SE per legal card, with the actually-played
    card marked.
-2. The hindsight grade, for contrast, if you ran it.
-3. A plain-English verdict that keeps the two questions separate: was this
-   defensible given real uncertainty, versus was it actually optimal once
-   everyone's cards are known. State the gap between the two whenever it's
-   there — it's usually the interesting part of the answer, not a footnote.
+2. The conditioned ranking too, if you ran one (Step 4b), labelled with the
+   read it assumes and the evidence for that read. Never silently replace the
+   unconditioned numbers with it.
+3. The hindsight grade, for contrast, if you ran it.
+4. A plain-English verdict that keeps the questions separate: was this
+   defensible given real uncertainty, versus given the read that was actually
+   available, versus was it optimal once everyone's cards are known. State the
+   gap between them whenever it's there — it's usually the interesting part of
+   the answer, not a footnote. Where two of them disagree, the disagreement
+   *is* the finding: say which piece of information moved the verdict.
+
+And then stop — see the Scope section at the top. A verdict is the deliverable.
+If the analysis turned up an engine defect, name it and leave it there.

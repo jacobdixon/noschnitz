@@ -53,6 +53,25 @@ by accident and are now enforced.
   never landed here: comparable questions ran 4 to 30 minutes depending only on
   whether the agent stopped once the question was answered, and one case went
   from 225 tool calls to 36 on that instruction alone.
+- **And it documents `assumePartner`, which it did not** — so an agent following
+  the skill would never run the conditioned pass, while CLAUDE.md says to always
+  run both. A live contradiction between the procedure and the handoff doc, in
+  the direction that silently produces the weaker answer. New Step 4b covers
+  when to reach for it, that the unconditioned run stays the honest default, and
+  that a pin is a claim about evidence and has to be reported with the evidence.
+  Two traps written down because both are easy to walk into:
+  - **Never compare a mean across the two runs.** Conditioning changes which
+    worlds exist, so the scale moves — on `hand5-kopps-ah.mjs` the defenders'
+    average drops from the mid-50s to ~30 purely because pinning the partner
+    removes the worlds where the defence had an extra body. Rankings and gaps
+    are comparable *within* a run; means are not comparable across them.
+  - **Don't quote old digits as if they reproduce.** Re-running that hand for
+    this change gives the A♥ at -3.48 and 6.8% where the scenario's own comment
+    records -3.63 and 6.9% — same conclusion, Monte Carlo noise on the digits.
+    The skill now says to report size, sign and SE rather than a remembered
+    number. Both passes were re-run to check the claim rather than copying it,
+    and the verdict inversion holds: second of four unconditioned, last of four
+    pinned.
 
 ## [0.59.2] - 2026-08-06 (`67f48e7`)
 **CI was timing out, and the tests were not the reason.** Four runs on
