@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.59.1] - 2026-08-06 (`PENDING`)
+## [0.59.1] - 2026-08-06 (`a253a83`)
 **PIMC could not be told what the table had already told the player.** The
 sampler spreads the called ace uniformly over every seat that could still hold
 it, which is right when the deciding seat genuinely has nothing to go on and
