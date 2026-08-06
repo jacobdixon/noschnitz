@@ -16,11 +16,49 @@
    failing suite printed at the end rather than interleaved with three other
    suites' output.
 
-   MEASURED: 313s sequential -> ~33s here, on 4 cores, with the null-control
-   sample sizes cut in the same change (see package.json). The floor is now
-   `undertest` at ~31s, so that is the suite to look at if this needs to get
-   faster again — everything else fits inside its shadow, which is why adding
-   the two UI suites in 0.58.5 cost about two seconds rather than ten.
+   MEASURED: 313s sequential -> 36.5s here, on 4 cores, with the null-control
+   sample sizes cut in the same change (see package.json).
+
+   That 36.5s is now at the packing limit and it is worth knowing why, because
+   the next person to try to speed this up should not start by guessing. Total
+   work is 133s across 4 workers, so 33s is the arithmetic floor, and the
+   longest single suite (`undertest`, 28s) sits just under it. The run is
+   therefore within ~10% of what this machine can do with these suites; nothing
+   is being wasted on scheduling any more. Getting meaningfully faster from here
+   means doing LESS WORK, not packing it better — and the remaining work is real:
+   profiled, the top suites are all dominated by `endgameValue`, i.e. by playing
+   out the hands they exist to play out. Cutting their sample sizes trades
+   coverage for seconds, and CI is currently spending ~30s on this in a job that
+   takes over a minute to check out and install. Don't.
+
+   ---------------------------------------------------------------------------
+   A STALE WEIGHT IS NOT FREE, and this file used to say it was.
+
+   The note on `weight` below claimed a stale one "costs a little packing
+   efficiency and nothing else". That was wrong in a way worth recording,
+   because the sentence is what stopped anyone checking. `rendertest` was
+   declared at 7 and measured at 33 — off by 4.7x — so longest-first scheduled
+   the LONGEST suite tenth. It started once the pool had drained and then ran
+   for 33 seconds with three cores idle. Wall clock was 71s against a 48s
+   critical path: a comment, not a bug, cost 40% of the run.
+
+   Two things now guard that. The weights below were re-measured rather than
+   guessed, and the runner PRINTS a warning for any suite that overruns its
+   declared weight by more than 2x. It warns rather than fails on purpose —
+   timing on a loaded CI box is exactly the marginal signal CLAUDE.md says not
+   to gate a deploy on — but it means the next 4.7x error announces itself
+   instead of waiting to be profiled.
+
+   ---------------------------------------------------------------------------
+   A HUNG SUITE USED TO BE A FIFTEEN-MINUTE MYSTERY.
+
+   Nothing bounded a suite's runtime, so a suite that wedged took `npm test`
+   down with it, silently, until the CI job timeout killed the whole thing —
+   and a killed job reports no per-suite output at all, so the log said only
+   that something took too long. Each suite now runs under a watchdog and a
+   suite that trips it is reported BY NAME, with its partial output, exactly
+   like a failure. The bound is deliberately loose (see SUITE_TIMEOUT_MS): it
+   is there to name a hang, not to police a slow box.
 
    ---------------------------------------------------------------------------
    THE ONE THING THAT IS NOT SAFE TO PARALLELISE, and why it is called out
@@ -53,31 +91,37 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
    sizes as arguments, and those are the numbers a person tunes. Duplicating
    them here would mean a change to package.json silently not reaching CI.
 
-   `weight` is a rough measured cost in seconds, used only to schedule the
-   expensive suites first (longest-processing-time). A stale weight costs a
-   little packing efficiency and nothing else, so it does not need maintaining
-   precisely — but if a suite grows a lot, bump it or it will start straggling.
+   `weight` is a measured cost in seconds, used to schedule the expensive
+   suites first (longest-processing-time). Keep it honest — the header explains
+   what the last stale one cost — and note the runner will warn if you don't.
+   The numbers below are wall-clock for `npm run <suite>` alone on a 4-core box,
+   re-measured 2026-08-06.
    ------------------------------------------------------------------------ */
 const SUITES = [
-  { name: "gradetest", weight: 6, exclusive: true }, // see header
-  { name: "undertest", weight: 31 },
-  { name: "firingtest", weight: 18 },
+  { name: "gradetest", weight: 5, exclusive: true }, // see header
+  { name: "undertest", weight: 27 },
+  { name: "firingtest", weight: 17 },
   { name: "coalitiontest", weight: 16 },
-  { name: "aitest", weight: 14 },
+  { name: "aitest", weight: 13 },
+  // 6s alone but ~15s in the pool — the worst contention ratio in the suite,
+  // because it shells out to two full `vite build`s and each of those wants
+  // every core for its esbuild workers. Weighted for what it actually occupies
+  // a worker for, not for its idle-box number.
+  { name: "voicebuildtest", weight: 12 },
   { name: "belieftest", weight: 10 },
-  { name: "voicebuildtest", weight: 9 },
-  { name: "clairvoyancetest", weight: 11 }, // 400 probes since 0.59.0, was 250
-  // Runs a Vite SSR server to load JSX; 2.6s alone, ~7s in the pool.
-  //
-  // It was 21s until the server was told not to watch or pre-scan (see the
-  // comment on createServer in rendertest.mjs). If this suite ever balloons
-  // again, suspect startup crawling something new in the project root before
-  // suspecting the tests — a coverage run alone put it from 8s to 21s.
-  { name: "rendertest", weight: 7 },
-  { name: "leaktest", weight: 4 },
+  { name: "clairvoyancetest", weight: 7 }, // 400 probes since 0.59.0, was 250
+  // Runs a Vite SSR server to load JSX. The server is not what this costs —
+  // profiled at 650ms for startup and all eight ssrLoadModule calls together.
+  // It was 33s until 0.59.2, and 32 of those seconds were one exact
+  // double-dummy grade of the fixture hand; see the long note on the seed in
+  // rendertest.mjs. If it balloons again, check the grade cost first and the
+  // Vite server second (a coverage run in the project root once took it from
+  // 8s to 21s by giving the file watcher something to crawl).
+  { name: "rendertest", weight: 3 },
+  { name: "leaktest", weight: 3 },
   { name: "tablestreamtest", weight: 1 },
-  { name: "lint", weight: 4 },
-  { name: "soaktest", weight: 4 },
+  { name: "lint", weight: 3 },
+  { name: "soaktest", weight: 3 },
   { name: "pacingtest", weight: 1 },
   { name: "aiskilltest", weight: 1 },
   { name: "tabletest", weight: 1 },
@@ -150,20 +194,72 @@ const SELECTED = SUITES
 const CONCURRENCY = Math.max(1, os.cpus().length);
 const results = [];
 
+/* The watchdog bound, per suite. Deliberately loose: 8x the declared weight,
+   floor 180s. This exists to give a HANG a name, not to police a slow box —
+   the slowest suite here is 27s, so even a runner three times slower than this
+   one stays comfortably inside it, and per CLAUDE.md a timing assertion that
+   can fire on an unlucky box is a withheld deploy rather than a red check.
+
+   A tripped watchdog is reported as a failure named `<suite> TIMED OUT`, with
+   whatever the suite had printed before it wedged — which is the thing the CI
+   log could not tell you before, because a job killed from outside prints no
+   per-suite output at all. */
+const SUITE_TIMEOUT_MS = (suite) => Math.max(180_000, suite.weight * 8_000);
+
+/* Every child that is currently alive, so an interrupt can reap them.
+   `detached` is what makes the watchdog able to kill a suite's grandchildren,
+   and it also takes the children OUT of this process's group — which means a
+   Ctrl-C at the terminal no longer reaches them, and four suites would go on
+   burning a core each after the runner exited. So the runner forwards it. */
+const live = new Set();
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    for (const pid of live) { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } }
+    process.exit(130);
+  });
+}
+
 function run(suite) {
   const started = Date.now();
   return new Promise((resolve) => {
     // The package.json command directly, not `npm run <name>` — npm's wrapper
     // costs ~200ms a suite, which across 26 of them is most of a second for
     // nothing.
-    const child = spawn(pkg.scripts[suite.name], { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    //
+    // `detached` so the child gets its own process group. Several suites spawn
+    // their own children (voicebuildtest shells out to two `vite build`s), and
+    // killing only the shell would leave those orphaned and still holding a
+    // core — so the watchdog signals the whole group.
+    const child = spawn(pkg.scripts[suite.name], {
+      shell: true, stdio: ["ignore", "pipe", "pipe"], detached: true,
+    });
+    live.add(child.pid);
     let out = "";
+    let timedOut = false;
     child.stdout.on("data", (d) => { out += d; });
     child.stderr.on("data", (d) => { out += d; });
+
+    const killGroup = (signal) => {
+      try { process.kill(-child.pid, signal); }
+      catch { try { child.kill(signal); } catch { /* already gone */ } }
+    };
+    const watchdog = setTimeout(() => {
+      timedOut = true;
+      killGroup("SIGTERM");
+      // A suite wedged in a tight loop will not service SIGTERM. Give it a
+      // moment to exit cleanly, then stop asking.
+      setTimeout(() => killGroup("SIGKILL"), 5_000).unref();
+    }, SUITE_TIMEOUT_MS(suite));
+
     child.on("close", (code) => {
+      clearTimeout(watchdog);
+      live.delete(child.pid);
       const ms = Date.now() - started;
-      results.push({ name: suite.name, code, ms, out });
-      process.stdout.write(`${code === 0 ? "  ok  " : "FAIL  "}${String(ms).padStart(6)}ms  ${suite.name}\n`);
+      // A killed process exits with a null code; normalise so the caller's
+      // `code !== 0` test cannot read it as a pass.
+      results.push({ name: suite.name, code: timedOut ? "timeout" : (code ?? 1), ms, out, timedOut });
+      const tag = timedOut ? "TIME  " : code === 0 ? "  ok  " : "FAIL  ";
+      process.stdout.write(`${tag}${String(ms).padStart(6)}ms  ${suite.name}\n`);
       resolve();
     });
   });
@@ -189,14 +285,38 @@ const work = results.reduce((s, r) => s + r.ms, 0) / 1000;
 // A failing suite's output, held back until now. Interleaving four suites'
 // stdout live makes the one that matters unreadable.
 for (const f of failed) {
-  console.log(`\n${"=".repeat(70)}\nFAILED: ${f.name}  (exit ${f.code})\n${"=".repeat(70)}`);
-  console.log(f.out.trimEnd());
+  const banner = f.timedOut
+    ? `TIMED OUT: ${f.name}  (killed after ${(f.ms / 1000).toFixed(0)}s — it hung, it did not fail)`
+    : `FAILED: ${f.name}  (exit ${f.code})`;
+  console.log(`\n${"=".repeat(70)}\n${banner}\n${"=".repeat(70)}`);
+  console.log(f.out.trim() ? f.out.trimEnd() : "(no output before it was killed)");
 }
 
 console.log(
   `\n${results.length - failed.length}/${results.length} suites passed in ${wall.toFixed(1)}s` +
   ` (${work.toFixed(1)}s of work, ${(work / wall).toFixed(1)}x parallel)`
 );
+
+/* Stale weights, reported rather than left to be profiled. See the header for
+   what the last one cost. Only suites that ran are checked, and only ones
+   overrunning by both 2x AND 5s — the sub-second suites are all declared at 1
+   and a 300ms wobble in one of them is not news.
+
+   This never changes the exit code. A CI box under load legitimately overruns,
+   and a deploy that hangs on a timing ratio is the failure mode this repo has
+   already paid for twice. */
+const stale = results
+  .filter((r) => !r.timedOut)
+  .map((r) => ({ r, weight: SUITES.find((s) => s.name === r.name).weight }))
+  .filter(({ r, weight }) => r.ms > weight * 2000 && r.ms - weight * 1000 > 5000)
+  .sort((a, b) => b.r.ms - a.r.ms);
+if (stale.length) {
+  console.log(`\nnote — declared weight is well under measured time, so longest-first is mis-ordering these:`);
+  for (const { r, weight } of stale) {
+    console.log(`  ${r.name}: weight ${weight}, took ${(r.ms / 1000).toFixed(1)}s`);
+  }
+  console.log(`  (harmless if the box was loaded; if it reproduces on an idle box, fix the weight in scripts/runtests.mjs)`);
+}
 
 if (failed.length) {
   console.log(`\nFAIL — ${failed.map((f) => f.name).join(", ")}`);
