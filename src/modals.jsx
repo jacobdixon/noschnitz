@@ -43,6 +43,29 @@ const recapCardColor = (c) =>
   isTrump(c) ? felt.brass : c.suit === "H" ? felt.red : c.suit === "C" ? felt.blue : felt.cream;
 const signed = (n) => `${n >= 0 ? "+" : ""}${n}`;
 
+// The "came out of the blind" mark. Deliberately the fourth distinct channel
+// in the recap grid: the underline says who led, the shading says who won, and
+// the trailing glyphs say something about the card itself. Within those
+// glyphs it has to stay apart from brass `U`, green `!` and red `?`, so it is
+// lowercase and dim — provenance is context, not a verdict, and it must not
+// out-shout the grade it sits next to.
+// `legend` drops the superscript sizing: at 9px against 11px legend text the
+// mark reads as a speck rather than as the thing being explained.
+const BlindMark = ({ legend = false }) => (
+  <span
+    title={legend ? undefined : "picked up in the blind"}
+    style={{
+      color: felt.creamDim,
+      opacity: 0.7,
+      fontWeight: 800,
+      letterSpacing: 0.3,
+      ...(legend ? {} : { fontSize: 9, marginLeft: 2 }),
+    }}
+  >
+    b
+  </span>
+);
+
 // "You" wherever it's your own seat. Solo has always called seat 0 "You" via
 // NAMES; a table has to derive it, and getting this wrong reads as a stranger
 // sitting in your chair.
@@ -337,6 +360,14 @@ export function RecapModal({
   const worst = grades?.worst;
   const pending = Boolean(grades?.pending);
 
+  // Which two cards came out of the blind. `g.blind` survives the pick — the
+  // cards are merged into the picker's hand rather than moved out of the pile
+  // — and viewFor discloses it at handEnd, so the recap is the only screen
+  // that can say where the picker's eight cards came from. Empty when nobody
+  // picked, since an unpicked blind was never taken by anyone.
+  const blindIds = new Set(g.picker !== null ? (g.blind || []).map(cid) : []);
+  const fromBlind = (c) => blindIds.has(cid(c));
+
   return (
     <Modal maxWidth={480} onClose={onBack}>
       {/* Only Share lives outside the capture. Hand number and build moved
@@ -384,6 +415,7 @@ export function RecapModal({
             {g.buried.map((c) => (
               <span key={cid(c)} style={{ color: recapCardColor(c), fontWeight: 700 }}>
                 {c.rank}{SUIT_SYM[c.suit]}
+                {fromBlind(c) && <BlindMark />}
               </span>
             ))}
           </div>
@@ -445,6 +477,7 @@ export function RecapModal({
                           borderBottom: isLeader ? `2px solid ${felt.brass}` : "2px solid transparent",
                         }}>
                           {card.rank}{SUIT_SYM[card.suit]}
+                          {fromBlind(card) && <BlindMark />}
                           {played.under && (
                             <span style={{ color: felt.brass, fontWeight: 800, fontSize: 9, marginLeft: 2, letterSpacing: 0.3 }}>
                               U
@@ -464,6 +497,13 @@ export function RecapModal({
 
         <div style={{ fontSize: 11, color: felt.creamDim, marginBottom: 14 }}>
           <span style={{ borderBottom: `2px solid ${felt.brass}` }}>underline</span> = led the trick · shaded = won the trick
+          {/* Both blind cards always surface somewhere in this recap — the
+              picker's eight are six played plus two buried — so the key can
+              key off the pair existing rather than scanning for a rendered
+              mark. Nobody picking is the only case that hides them. */}
+          {blindIds.size > 0 && (
+            <> · <BlindMark legend /> = picked up in the blind</>
+          )}
           {(g.trickHistory || []).some((th) => th.trick.some((x) => x.under)) && (
             <> · <span style={{ color: felt.brass, fontWeight: 800 }}>U</span> = played under</>
           )}

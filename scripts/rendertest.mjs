@@ -306,8 +306,34 @@ const grades = engine.gradeHandPlays(finished);
   await renders("HandEndModal",
     React.createElement(m.HandEndModal, { g: finished, names: NAMES, mySeat: 0, onNext() {}, onRecap() {} }));
 
-  await renders("RecapModal (graded)",
+  const recap = await renders("RecapModal (graded)",
     React.createElement(m.RecapModal, { g: finished, names: NAMES, mySeat: 0, grades, onBack() {}, onNext() {} }));
+
+  /* The blind marks get a real assertion rather than a smoke pass, because
+     "renders without throwing" is exactly what a mark on the WRONG cards also
+     does. Both blind cards always surface — the picker's eight are six played
+     plus two buried — so the count is knowable, and each is checked against
+     the glyph that should sit immediately after it. Marking every card, or
+     the picker's whole hand, fails on the count; marking the wrong two fails
+     on the adjacency. */
+  const marks = recap.html.match(/title="picked up in the blind"/g) ?? [];
+  check("RecapModal marks exactly the two blind cards", marks.length === 2,
+    `found ${marks.length}`);
+  for (const c of finished.blind) {
+    const face = `${c.rank}${engine.SUIT_SYM[c.suit]}`;
+    check(`RecapModal marks ${face} as from the blind`,
+      recap.html.includes(`${face}<span title="picked up in the blind"`));
+  }
+  check("RecapModal explains the blind mark in its key",
+    recap.html.includes("= picked up in the blind"));
+
+  // Nobody picked means nobody took the blind, and `g.blind` is still sitting
+  // there populated — the state the guard in RecapModal exists for.
+  const unpicked = await renders("RecapModal (nobody picked up the blind)",
+    React.createElement(m.RecapModal,
+      { g: { ...finished, picker: null, partner: null }, names: NAMES, mySeat: 0, grades: null, onBack() {}, onNext() {} }));
+  check("RecapModal marks nothing when the blind was never taken",
+    !unpicked.html.includes("picked up in the blind"));
   // The grade arrives from a worker, so the recap's first paint is always
   // ungraded. A crash here would only ever be seen by someone with a slow
   // phone, which is the worst possible way to find it.
