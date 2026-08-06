@@ -5,12 +5,13 @@
 # reach www.noschnitz.com without someone watching, so this runs on every PR
 # and on master, and is the check the merge rules require.
 #
-# `npm test` is 26 suites run concurrently by scripts/runtests.mjs, ~35s on a
-# 4-core box; the job is dominated by `npm ci`. (This comment claimed "18
-# harnesses and ~10s" for a long time after both numbers stopped being true —
-# the suite was measured at 313s sequential before the runner landed. If you
-# change what the suite costs, change this line, because it is what the next
-# person budgets against.)
+# `npm test` is 29 suites run concurrently by scripts/runtests.mjs, ~36s on a
+# 4-core box; the job is dominated by checkout and `npm ci`. (This comment
+# claimed "18 harnesses and ~10s" for a long time after both numbers stopped
+# being true, then "26 suites, ~35s" while the real figure was 71s — the
+# rendertest weight had gone stale and mis-ordered the pool. If you change what
+# the suite costs, change this line, because it is what the next person budgets
+# against.)
 #
 # Nothing here needs secrets — storetest falls back to the in-memory store when
 # no Upstash credentials are present, which is what happens on CI.
@@ -23,8 +24,26 @@ on:
   # Actions has been observed taking twenty minutes and four pushes to queue a
   # run on a session-authored PR, and a check that never starts blocks a merge
   # exactly as hard as a red one. Without this there is nothing to re-trigger:
-  # a missing run cannot be re-run, only replaced by another push. Two lines to
-  # make that self-service.
+  # a missing run cannot be re-run, only replaced by another push.
+  #
+  # IT DOES NOT UNBLOCK THE MERGE, THOUGH — this comment used to say "two lines
+  # to make that self-service" and that was only half right. Measured on #138,
+  # 2026-08-06: no pull_request run had queued an hour and three pushes after
+  # the PR opened, so the workflow was dispatched by hand. Run 137 got a runner
+  # in 5 seconds, went green in 57, reported a check run named exactly
+  # `lint, tests, build` against the PR's head SHA, and listed PR #138 in its
+  # own `pull_requests` array. The merge was still refused:
+  #
+  #     405 Repository rule violations found
+  #     Required status check "lint, tests, build" is expected.
+  #
+  # So a dispatched run answers "do the tests pass on this commit" — which is
+  # worth a lot, and is why this trigger stays — but it does not satisfy the
+  # ruleset. Only a run from `pull_request` does. Deliberately not writing down
+  # a mechanism for that: the observations above are what was demonstrated, and
+  # this file has been wrong before by recording a tidy explanation that fit
+  # every observation and was not the cause (see the Actions-lag note in
+  # CLAUDE.md). If you need the merge unblocked, push a commit.
   workflow_dispatch:
 
 # A second push to the same branch makes the first run irrelevant. master is
@@ -40,7 +59,34 @@ jobs:
   test:
     name: lint, tests, build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+
+    # THE JOB TIMEOUT IS A QUEUE BUDGET, NOT A TEST BUDGET, and getting that
+    # backwards cost four red runs on 2026-08-06 — two of them on master, which
+    # per CLAUDE.md means the beta deploy was silently withheld twice.
+    #
+    # What happened: runs 131, 132, 134 and 135 each burnt exactly 15.0-15.1
+    # minutes and reported `cancelled`. That reads as "the tests hung", and it
+    # is not what happened. The tests never ran. Each of those jobs has
+    # `runner_id: 0`, an empty `runner_name`, and NO steps array at all in the
+    # API — they sat waiting for a runner and were cancelled at the
+    # `timeout-minutes: 15` mark without ever being assigned one. Run 133, in
+    # the middle of them, got a runner and went green in 2.1 minutes on the same
+    # code. The suite was ~52s throughout.
+    #
+    # So the job-level bound has to sit above any plausible queue wait, or a
+    # busy Actions pool presents itself as a test failure. The real bound on
+    # execution moved to the steps below: a step's timeout starts when the STEP
+    # starts, so queue time cannot eat it.
+    #
+    # HOW TO TELL THE TWO APART next time, without guessing: look at the job in
+    # the API (or at whether the web UI shows any steps at all).
+    #   no steps + runner_id 0  -> never scheduled. Nothing is wrong with the
+    #                              repo. Re-run it.
+    #   steps, one of them red  -> a real failure; read that step.
+    #   steps, one of them hung -> `npm test` names the wedged suite itself now
+    #                              (see the watchdog in scripts/runtests.mjs).
+    timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +96,7 @@ jobs:
           cache: npm
 
       - name: Install
+        timeout-minutes: 10
         run: npm ci
 
       # Lint used to run here as its own step AND again inside `npm test`, so it
@@ -59,10 +106,17 @@ jobs:
       # suites the runner schedules, and the runner names the suite that failed
       # and prints its output on its own. It also now overlaps with the rest
       # instead of holding everything else up for its ~3s.
+      #
+      # 10 minutes against a measured ~30s (52s before 0.59.2). The generous
+      # margin is deliberate: scripts/runtests.mjs already kills and NAMES an
+      # individual wedged suite well inside this, so if this bound is ever the
+      # thing that fires, the problem is the whole runner and not one suite.
       - name: Tests
+        timeout-minutes: 10
         run: npm test
 
       # The bundle is what actually ships, and a build that fails is invisible
       # to every harness above — none of them touch Vite.
       - name: Build
+        timeout-minutes: 10
         run: npm run build

@@ -384,11 +384,31 @@ set rather than leaving the surviving skill unchecked.
     is claimed on (`abtest`, `coalitiontest`, `firingtest` — whichever answers
     the question), and check its null control really came back zero.
     - **`npm test` is `scripts/runtests.mjs` since 0.58.4 — a worker pool, not a
-      chain.** ~33s on 4 cores against 313s sequential. Read its header before
+      chain.** ~36s on 4 cores against 313s sequential. Read its header before
       changing it: `gradetest` runs alone on purpose, because it asserts a
       timing ratio whose numerator is a single measurement and so inflates under
       contention. Adding a suite to `package.json` without adding it to the
       runner FAILS the run rather than silently skipping it, which is the point.
+      - **It is at the packing limit as of 0.59.2, so do not start by trying to
+        schedule it better.** 133s of work over 4 workers is a 33s floor and the
+        longest suite is 28s, so 36s is within ~10% of what the box can do. The
+        remaining time is real: profiled, every heavy suite is dominated by
+        `endgameValue`, i.e. by playing out the hands it exists to play out.
+        Faster from here means less coverage, and CI spends ~30s on this inside
+        a job that costs over a minute to check out and install.
+      - **A suite's `weight` is load-bearing and goes stale silently — or it
+        did.** `rendertest` was declared at 7 and measured 33, so longest-first
+        scheduled the longest suite tenth and it ran alone at the end with three
+        cores idle: 71s wall against a 48s critical path. The file's own comment
+        ("a stale weight costs a little packing efficiency and nothing else") is
+        what stopped anyone checking. The runner now warns when a suite overruns
+        its weight by 2x — a warning, never a failure, because a timing gate on
+        a loaded CI box is the marginal-test trap this repo has paid for twice.
+      - **A wedged suite is killed and named** (watchdog at 8x weight, floor
+        180s). Before 0.59.2 a hang took `npm test` down silently until the CI
+        job timeout killed the job from outside, which prints no per-suite
+        output at all — so a hang and a never-scheduled job looked identical in
+        the log. See the next bullet for why that mattered.
     - **The UI is tested now, as of 0.58.5, and it was not before.** Every
       `.jsx` file was at 0% coverage and `useTableStream.js` had nothing at all
       — the file CLAUDE.md itself called the most likely to ruin a games night.
@@ -403,6 +423,13 @@ set rather than leaving the surviving skill unchecked.
         could disagree with the real build and then the suite tests something
         nobody ships. `no-undef` catches the two bugs eslint.config.js
         describes; this catches the ones with no free identifier in them.
+        **Its fixture seed is chosen, not arbitrary** — the `grades` object comes
+        from a real `gradeHandPlays`, an exact double-dummy solve whose cost
+        ranges from 275ms to 89 SECONDS depending on the deal (measured over 21
+        seeds). The old seed cost 18s, three quarters of the suite. Seed 11 costs
+        275ms and still produces both a `best` and a `worst`, so nothing is
+        mocked and nothing is skipped. If this suite balloons, check the grade
+        cost first and re-scan for a cheap seed; do not stop grading.
       - **Both were mutation-tested when written, and should be again if
         edited.** Each passed on the first run, which is exactly when a suite
         deserves to be distrusted — a smoke test that cannot fail is worse than
@@ -434,9 +461,52 @@ set rather than leaving the surviving skill unchecked.
     for it is right; treating its absence as a red light is not. Merging on a
     green local run while CI is still missing is acceptable — say so in the PR
     when you do it, so the record shows what the merge actually rested on.
+  - **A CI job can go red WITHOUT RUNNING, and it looks exactly like a hung test
+    suite. Check before you debug.** On 2026-08-06, runs 131/132/134/135 each
+    burnt exactly 15.0-15.1 minutes and reported `cancelled` — two of them on
+    `master`, so the beta deploy was silently withheld twice. Nothing was slow.
+    Every one of those jobs sat in the Actions queue and was cancelled at the
+    `timeout-minutes` mark without ever being given a runner; run 133, in the
+    middle of them, got one and went green in 2.1 minutes on the same code.
+    The tell is in the job, not the log, because a job killed from outside
+    prints no per-suite output to read:
+
+    | what you see | means |
+    |---|---|
+    | no `steps` array, `runner_id: 0`, `runner_name: ""` | never scheduled. Re-run it; nothing is wrong with the repo. |
+    | `steps` present, one red | a real failure — read that step. |
+    | `steps` present, one hung | `npm test` names the wedged suite itself since 0.59.2. |
+
+  - **`workflow_dispatch` on `ci.yml` runs the tests but does NOT unblock the
+    merge.** `ci.yml` carried a comment calling that trigger "two lines to make
+    that self-service", and it is only half true. Measured on #138 (2026-08-06):
+    an hour and three pushes after the PR opened, no `pull_request` run had
+    queued at all, so CI was dispatched by hand. The run got a runner in 5
+    seconds, went green in 57, reported a check named exactly
+    `lint, tests, build` against the PR head SHA, and listed the PR in its own
+    `pull_requests` array. The merge was still refused with
+    `405 ... Required status check "lint, tests, build" is expected`.
+    So dispatch is worth having — it answers "do the tests pass on this commit"
+    when nothing else will — but **only a `pull_request` run satisfies the
+    ruleset, and the only way to get one is to push a commit.** Deliberately
+    recording the observation and not a mechanism: this file has been wrong
+    before by writing down a tidy explanation that fit every observation and was
+    not the cause (see the Actions-lag entry below).
+
+    Get it with `actions_get` / `list_workflow_jobs` on the run. 0.59.2 raised
+    the job budget to 45 minutes and moved the real bounds to step-level
+    `timeout-minutes`, whose clock starts when the step starts — so queue time
+    can no longer masquerade as a test failure. **The other workflows still have
+    the old shape**: `release.yml`, `verify-beta.yml` and `verify-production.yml`
+    are all on a 10-minute job timeout, and a queue-starved `Release` is the
+    worst version of this, since it fails in the one place this repo reads as
+    "the deploy never shipped". Not changed in 0.59.2 on purpose — a deploy
+    workflow does not belong in a test-cleanup change — but it is the same bug
+    waiting in a more expensive place.
   - **Do not merge over a red check, ever**, and do not merge to "see if it
     passes on master". Red is the one state that blocks, because of the next
-    point.
+    point. The bullet above is the exception that is not really an exception: a
+    job that never ran is not a red check, it is an absent one.
   - **Watch `master` after the merge, not just before it.** `Release` is gated
     on CI *succeeding* on `master`, and a marginal test can pass on a PR and
     fail on `master` for the identical commit — which does not merely fail a
@@ -583,6 +653,29 @@ the hand, using the AI's own policy as a consistent yardstick across all six tri
 triggers on its own when somebody asks whether a play was right. It routes to
 `scripts/pimc.mjs` — Monte Carlo rollouts on `aiChooseCard`'s own policy, hands
 under `scripts/scenarios/`.
+
+**Analysis is READ-ONLY, and it is never part of `npm test`.** Both halves of
+that are enforced rather than asked for, as of 0.59.2:
+
+- **It does not change code.** The only file the workflow writes is the scenario
+  under `scripts/scenarios/` — the transcription is the input, not a product.
+  `src/`, `api/`, the harnesses and the workflows are off limits, *especially*
+  when the analysis has just found a real defect. Finding one is the success
+  condition; fixing it in the same pass is not, because an engine change here is
+  tuned empirically and never guessed (paired A/B, a null control that came back
+  exactly zero, consistent across seeds). One hand is where such a change starts
+  and nowhere near enough to justify one. The skill states this in its own Scope
+  section, which also carries the measured instruction to answer and stop.
+- **It cannot be wired into CI.** `scripts/runtests.mjs` refuses any suite whose
+  command runs, or whose entry file imports, `pimc.mjs` / `pimcsolve.mjs` /
+  `pimcmine.mjs` / `minehands.mjs` / `gradedecision.mjs` / `scripts/scenarios/` /
+  `scripts/hands/` — see the `ANALYSIS_ONLY` note there for the three separate
+  reasons. The sharpest: a scenario is one person's transcription of one
+  screenshot, so conscripting them into CI lets a misread card turn master red,
+  and per the deploy section a red master does not merely fail a check — it
+  withholds the beta deploy. The guard reads command lines and top-level
+  imports; a transitive import would slip through. It is a tripwire, not a
+  sandbox.
 
 **There used to be a second skill, `hand-analysis`, and it was deleted on
 2026-08-04.** It routed to `scripts/pimcsolve.mjs` (an exact double-dummy solve

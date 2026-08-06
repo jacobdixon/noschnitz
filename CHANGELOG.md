@@ -6,6 +6,135 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.59.3] - 2026-08-06 (`b3700b8`)
+**The deploy chain had the same timeout bug 0.59.2 fixed in CI, and `release.yml`
+also had a second one nobody had hit.** All three remaining workflows —
+`release.yml`, `verify-beta.yml`, `verify-production.yml` — carried a 10-minute
+*job* timeout, so a queue-starved run reports as a failure having done nothing.
+`Release` is the worst place for that: a cancelled Release is exactly what "the
+deploy never shipped" looks like, and it can leave beta moved but unverified.
+
+- **Job timeouts are now queue budgets; the real bounds are on the steps.**
+  `release.yml` 45 min (steps 5/5/20/5), the two verifiers 30 min (step 10).
+- **`release.yml`'s own worst case exceeded its old budget, independently of any
+  queueing.** "Make sure production actually deployed" is a retry ladder — six
+  attempts at up to 40s of curl plus a 20s sleep, then the deploy hook, then ten
+  more at up to 60s — which is **~16 minutes against a 10-minute job timeout**.
+  Never noticed because the fast path exits in seconds, but it means the repair
+  path this workflow exists to provide could be cut off after firing the hook
+  and before confirming it worked. That step now has 20 minutes of its own.
+
+**Hand analysis is read-only, and it cannot be wired into CI.** Both were true
+by accident and are now enforced.
+
+- **`scripts/runtests.mjs` refuses any suite** whose command runs, or whose entry
+  file imports, `pimc.mjs` / `pimcsolve.mjs` / `pimcmine.mjs` / `minehands.mjs` /
+  `gradedecision.mjs` / `scripts/scenarios/` / `scripts/hands/`. The `ANALYSIS_ONLY`
+  note gives three separate reasons; the sharpest is that a scenario is one
+  person's transcription of one screenshot, so conscripting them into CI lets a
+  misread card turn master red — and a red master withholds the beta deploy. The
+  existing completeness check made this worse rather than better: a future
+  `pimctest` would fail the run, and the obvious way to make it pass is to add
+  it to `SUITES`, which is the wrong answer. Verified with two negative controls
+  (command reference, and an innocent command whose file imports `pimc.mjs`);
+  both refuse, and the suite is unaffected. Stated plainly in the note: it reads
+  command lines and top-level imports, so a transitive import slips through. A
+  tripwire, not a sandbox.
+- **The skill now has a Scope section**, which it did not. It never said not to
+  change code — and its own guidance ("when one candidate scores oddly, check
+  what the engine actually plays next") reads as an invitation to go tune one.
+  The rule: the scenario file is the only thing the workflow writes; `src/`,
+  `api/`, harnesses and workflows are off limits *especially* when the analysis
+  has just found a real defect, because an engine change here needs a paired
+  A/B, a null control at exactly zero and consistency across seeds, and one hand
+  is where that starts rather than what justifies it. Finding a defect is the
+  success condition; fixing it in the same pass is not.
+- **It also carries the instruction to stop**, which CLAUDE.md had measured and
+  never landed here: comparable questions ran 4 to 30 minutes depending only on
+  whether the agent stopped once the question was answered, and one case went
+  from 225 tool calls to 36 on that instruction alone.
+- **And it documents `assumePartner`, which it did not** — so an agent following
+  the skill would never run the conditioned pass, while CLAUDE.md says to always
+  run both. A live contradiction between the procedure and the handoff doc, in
+  the direction that silently produces the weaker answer. New Step 4b covers
+  when to reach for it, that the unconditioned run stays the honest default, and
+  that a pin is a claim about evidence and has to be reported with the evidence.
+  Two traps written down because both are easy to walk into:
+  - **Never compare a mean across the two runs.** Conditioning changes which
+    worlds exist, so the scale moves — on `hand5-kopps-ah.mjs` the defenders'
+    average drops from the mid-50s to ~30 purely because pinning the partner
+    removes the worlds where the defence had an extra body. Rankings and gaps
+    are comparable *within* a run; means are not comparable across them.
+  - **Don't quote old digits as if they reproduce.** Re-running that hand for
+    this change gives the A♥ at -3.48 and 6.8% where the scenario's own comment
+    records -3.63 and 6.9% — same conclusion, Monte Carlo noise on the digits.
+    The skill now says to report size, sign and SE rather than a remembered
+    number. Both passes were re-run to check the claim rather than copying it,
+    and the verdict inversion holds: second of four unconditioned, last of four
+    pinned.
+
+## [0.59.2] - 2026-08-06 (`67f48e7`)
+**CI was timing out, and the tests were not the reason.** Four runs on
+2026-08-06 — 131, 132, 134 and 135, two of them on `master` — each burnt exactly
+15.0-15.1 minutes and reported `cancelled`. That is the shape of a hung test
+suite and it was nothing of the kind: every one of those jobs has `runner_id: 0`,
+an empty `runner_name`, and no steps array at all. They sat in the Actions queue
+waiting for a runner and were cancelled at the `timeout-minutes: 15` mark without
+ever being assigned one. Run 133, in the middle of them, got a runner and went
+green in 2.1 minutes on the same code. Per CLAUDE.md, two of those reds silently
+withheld the beta deploy.
+
+- **The job timeout is now a queue budget (45 min) and the real bounds moved to
+  the steps** (`Install`/`Tests`/`Build`, 10 min each). A step's clock starts
+  when the step starts, so a busy Actions pool can no longer present itself as a
+  test failure. The workflow now also records how to tell the two apart in one
+  look: no steps and `runner_id: 0` means never scheduled — re-run it, nothing is
+  wrong with the repo.
+
+While in there, the suite itself got measured rather than assumed, and it was
+**half waste**: 71.4s wall, now **36.5s**, with total work down from 190.9s to
+133.3s and parallelism up from 2.7x to 3.6x.
+
+- **`rendertest` was 33s and 32 of them were one card-game solve.** It builds
+  its `grades` fixture by calling the real `gradeHandPlays`, which is an EXACT
+  double-dummy solve of every decision in the hand — and what that costs depends
+  enormously on the deal. Measured across 21 seeds it ranges from 275ms to 89
+  seconds, a 300x spread. The old fixture seed sat near the bad end; a CPU
+  profile put `ddFuture` plus its GC pressure at 16 of the file's 22 seconds. A
+  UI smoke test that needs a grades object of the right shape, and has no opinion
+  about the numbers in it, was spending three quarters of its life solving
+  Sheepshead. Seed 11 grades in ~275ms and still yields both a `best` and a
+  `worst` over 15 real decisions, so **no fidelity is given up** — same real
+  engine grade of a real hand, cheaper deal. 33.0s -> 3.1s, same 40 assertions.
+  Mutation-tested both ways per CLAUDE.md: an unguarded `grades.best` fails the
+  `no grades at all` case, and breaking the marker legend fails the `graded`
+  case, so the real-grade path still has teeth.
+- **A stale weight is not free, and `runtests.mjs` used to say it was.** Its own
+  comment claimed a stale weight "costs a little packing efficiency and nothing
+  else". `rendertest` was declared at 7 and measured 33 — off by 4.7x — so
+  longest-first scheduled the longest suite tenth, and it ran for 33s at the end
+  with three cores idle. A comment cost 40% of the run. Weights re-measured, and
+  the runner now PRINTS a warning for any suite overrunning its declared weight
+  by 2x. It warns rather than fails on purpose: timing on a loaded CI box is
+  exactly the marginal signal this repo has twice been burnt gating a deploy on.
+- **A hung suite is now named instead of taking the job down silently.** Nothing
+  bounded a suite's runtime, so a wedged one hung `npm test` until the job
+  timeout killed everything — and a job killed from outside prints no per-suite
+  output at all, which is why a hang and a queue starvation looked identical in
+  the log. Each suite now runs under a watchdog (8x its weight, floor 180s,
+  loose on purpose) and a tripped one is reported by name with its partial
+  output. Children are spawned detached so the watchdog can reap a suite's
+  grandchildren — `voicebuildtest` shells out to two `vite build`s — and the
+  runner forwards SIGINT/SIGTERM to them, so Ctrl-C does not leave four
+  processes burning a core each.
+- **What was deliberately NOT cut.** At 36.5s the run is within ~10% of this
+  machine's floor: 133s of work over 4 workers is 33s arithmetic, and the
+  longest suite is 28s. Profiling the rest found no second `rendertest` — the
+  heavy suites are all dominated by `endgameValue`, i.e. by playing out the hands
+  they exist to play out. Going faster from here means less coverage, and CI
+  spends ~30s on this inside a job that takes over a minute to check out and
+  install. Sample sizes left alone.
+
 ## [0.59.1] - 2026-08-06 (`a253a83`)
 **PIMC could not be told what the table had already told the player.** The
 sampler spreads the called ace uniformly over every seat that could still hold
