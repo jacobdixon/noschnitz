@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.60.0] - 2026-08-06 (`PENDING`)
+## [0.60.0] - 2026-08-06 (`ae7ef5c`)
 **The recap now says which two cards came out of the blind.** A trailing dim
 lowercase `b` on the two cards the picker took, wherever they ended up —
 played in the grid, or sitting in the buried pair at the top.
