@@ -982,6 +982,49 @@ Genuinely open:
      invocation. It was offered twice in earlier sessions and declined both times, so
      nobody should assume from the silence that it came back clean.
 
+## GitHub troubleshooting: check the status page FIRST
+
+**Standing rule as of 2026-08-06.** When something on GitHub that previously worked
+stops working, the order is fixed and it is not the order that comes naturally:
+
+1. **https://www.githubstatus.com/** — is GitHub itself degraded right now?
+2. **What changed since the last successful run?** Diff against the last green
+   commit, not against your memory of the config.
+3. Only then start reasoning about the repo's own configuration.
+
+The reason it has to be written down is that steps 1 and 3 produce the *same
+symptom* and step 3 is far more satisfying to investigate. A queued job that never
+gets a runner, a `pull_request` run that never queues, a webhook that never
+arrives — each of those looks exactly like a misconfiguration, and a misconfigured
+repo is a puzzle with a solution, so that is where the time goes.
+
+**What it cost on 2026-08-06.** An entire evening. Five CI runs were cancelled at
+the `timeout-minutes` mark without ever being assigned a runner, and the session
+spent hours on `timeout-minutes` semantics, dispatch-versus-`pull_request` event
+differences, concurrency groups, billing and runner capacity — building a
+carefully evidenced case for each. The status page had the answer. Note the
+inference that made it *look* like a repo problem and was wrong: a dispatched run
+got a runner in 5 seconds while `pull_request` runs sat for 15 minutes, which
+reads as "something about pull_request runs in THIS repo is broken" and is equally
+consistent with a partial Actions degradation.
+
+**A session cannot check the status page.** `www.githubstatus.com:443` is a 403
+CONNECT policy denial from the agent proxy — `connect_rejected`, verified
+2026-08-06 — exactly like www./beta.noschnitz.com. `WebFetch` gets 403, the
+`api/v2/summary.json` endpoint gets 403, curl gets `CONNECT tunnel failed`. So
+the rule has two halves and the second is the one a session must not skip:
+**ask the person to look.** One sentence — "before I keep digging, can you check
+githubstatus.com?" — costs nothing and is the highest-value question available
+when a previously-working thing breaks.
+
+**The corollary for anything already fixed under a red status page:** a fix
+authored while GitHub was degraded may be correct, unnecessary, or both, and the
+evidence for it is contaminated. 0.59.2/0.59.3's timeout work is genuinely right
+on its own terms — a job budget consumed by queue time is a real bug and the
+step-level bounds are the correct shape — but the *measurements* motivating it
+were taken during the incident, so do not treat "15 minutes was too short" as a
+calibrated number. Re-measure the real queue wait once the status page is green.
+
 ## Things a session will try and cannot do
 
 All of these were established the expensive way. They are recorded so the next session
