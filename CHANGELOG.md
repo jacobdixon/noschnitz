@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.59.2] - 2026-08-06 (`PENDING`)
+## [0.59.2] - 2026-08-06 (`67f48e7`)
 **CI was timing out, and the tests were not the reason.** Four runs on
 2026-08-06 — 131, 132, 134 and 135, two of them on `master` — each burnt exactly
 15.0-15.1 minutes and reported `cancelled`. That is the shape of a hung test
