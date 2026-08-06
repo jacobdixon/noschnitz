@@ -1802,7 +1802,87 @@ function bleedTrump(g, idx, trumps, opts = {}) {
   return pool[pool.length - 1];
 }
 
+// Points this seat can PROVE its own side has already banked.
+//
+// Deliberately a LOWER BOUND. Seats whose side the table has not settled are
+// left out entirely (`provenSide` returns null there, and `knowsTeammate` would
+// answer optimistically — wrong by construction, see teammateProbability), and
+// only the picker has seen the bury. That is sound for the one question asked
+// of it: a lower bound that clears the line means the true total clears it too.
+//
+// The bury needs no belief here, which is what makes the whole rule cheap. It
+// is the picker's by definition, so a defender counting its OWN side's taken
+// points never has to know what is in it — and the partner, who knows it is
+// theirs but not what it is worth, counts zero and stays inside the bound.
+function provenTeamPoints(g, viewer) {
+  let pts = 0;
+  for (let p = 0; p < 5; p++) if (provenSide(g, viewer, p) === true) pts += g.ptsTaken[p];
+  if (viewer === g.picker) pts += g.buried.reduce((s, c) => s + cardPts(c), 0);
+  return pts;
+}
+
+// A card that ends the hand in our favour on the spot, or null.
+//
+// Reported 2026-08-06: a defender holding J-C and 7-D played last on trick 5,
+// with its own side already holding the trick and 59 points on the table. J-C
+// is two points and is dead — the only card that beats it is Q-S, and a picker
+// never buries a Queen — so dumping it banks 61 and wins the hand. The engine
+// played 7-D, kept the dead Jack, and lost 61-59. Both components that could
+// have caught it optimize POINTS: `solveEndgameCard` averages card points over
+// sampled worlds, and sheepshead does not pay in card points, it pays in a step
+// at 60/61. A 2-point error that crosses the line beats a 20-point error that
+// does not, and neither component can see the difference.
+//
+// This fires only where every term is EXACT, so it needs no sampling, no prior
+// and no belief — it is a proof, not a tuning:
+//
+//   - last to act, so the trick cannot change hands after this card. Only this
+//     seat and the current holder can win it, and both are on our side.
+//   - the holder is a PROVEN teammate, not a guessed one.
+//   - the count is the lower bound above.
+//   - the thresholds are the real ones and they are not the same number: the
+//     picker's team needs 61 and the defenders 60, because 60-60 goes to the
+//     defence. Same asymmetry scoreHand documents.
+//
+// Points banked in a trick our side takes are permanent, so nothing later in
+// the hand can take this back. That is the whole argument for letting it
+// override a search that is otherwise more informed than it is.
+//
+// It does NOT pick the card itself. Everything that crosses wins the hand, so
+// the residual question is only about the multiplier — whether to bank the fat
+// card now or keep a boss to win another trick — and the existing stack already
+// reasons about that. Restricting it is the same move solveEndgameCard makes to
+// settle its own ties. Above `tricksDone >= 4` this does bypass the solver, and
+// that is the intended trade: the result is already decided, and the solver's
+// sampler is the component that got this wrong in the first place.
+//
+// `opts.clinchWonHand === false` disables it, for measurement.
+function clinchingCard(g, idx, opts = {}) {
+  if (opts.clinchWonHand === false) return null;
+  if (g.trick.length !== 4) return null;
+  const legal = legalPlays(g, idx);
+  if (legal.length < 2) return null;
+  if (provenSide(g, idx, trickWinner(g.trick)) !== true) return null;
+
+  const need = idx === g.picker || idx === g.partner ? 61 : 60;
+  const banked = provenTeamPoints(g, idx)
+    + g.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0);
+  const crosses = legal.filter((c) => banked + cardPts(c) >= need);
+  // Nothing wins, or everything does — either way there is no choice to make
+  // here and the normal stack should have the decision.
+  if (!crosses.length || crosses.length === legal.length) return null;
+
+  const pick = heuristicCard(g, idx, { ...opts, restrictTo: crosses });
+  return crosses.some((c) => cid(c) === cid(pick)) ? pick : crosses[0];
+}
+
 export function aiChooseCard(g, idx, opts = {}) {
+  // Ahead of the dispatch on purpose. A third of the decisions this catches sit
+  // at `tricksDone >= 4`, where solveEndgameCard owns the choice outright and a
+  // branch inside heuristicCard would never be consulted — including the hand
+  // that prompted it.
+  const won = clinchingCard(g, idx, opts);
+  if (won) return won;
   // Last two tricks: solve exactly rather than using heuristics, and let the
   // heuristics settle any tie the solve leaves behind — see solveEndgameCard.
   if (g.tricksDone >= 4) return solveEndgameCard(g, opts);
