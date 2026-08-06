@@ -147,6 +147,48 @@ const SUITES = [
      coalitiontest and firingtest. */
 const NOT_IN_CI = new Set(["test", "abtest"]);
 
+/* ---------------------------------------------------------------------------
+   HAND ANALYSIS IS NOT A TEST, AND MUST NOT BECOME ONE.
+
+   `pimc.mjs`, `pimcsolve.mjs`, `pimcmine.mjs`, `gradedecision.mjs` and the
+   hands under `scripts/scenarios/` and `scripts/hands/` are the tooling for
+   "was that play right" (see the skill, and CLAUDE.md's "Analyzing a reported
+   hand"). None of them belongs in `npm test`, for three reasons that are worth
+   stating because each is a different kind of wrong:
+
+     1. PIMC IS AN ESTIMATE. It reports a mean and a standard error and it
+        samples worlds; two runs of a close decision can rank the candidates
+        differently and both be right. Asserting on it is precisely the
+        marginal test this repo has twice been burnt by — and per CLAUDE.md a
+        marginal test on master does not go red, it silently withholds the
+        beta deploy.
+     2. SCENARIOS ARE AD-HOC DATA, not fixtures. A file under scripts/scenarios/
+        is one person's transcription of one screenshot, added whenever somebody
+        argued about a hand. Conscripting them into CI means a misread card in a
+        transcription can turn master red and stop a deploy — a defect in an
+        argument becoming a defect in the release pipeline.
+     3. ITS VERDICTS ARE QUESTIONS. "The engine picked the second-best card
+        here" is a finding to look into, not a build failure. Tests answer
+        pass/fail; analysis answers how-much-and-how-sure. Wiring one into the
+        other destroys both.
+
+   The scripts do not end in `test`, so the completeness check above never
+   conscripts them today. This guard is for the day somebody adds `pimctest` —
+   at which point that check FAILS the run and the obvious way to make it pass
+   is to add it to SUITES, which is the wrong answer. So: refuse it here, with
+   the reason attached.
+
+   WHAT THIS DOES NOT CATCH, said plainly rather than implied: it reads the
+   suite's command line and its own top-level imports. A suite that reaches
+   analysis code transitively — through a lib, or a dynamic import — goes
+   through. It is a tripwire for the obvious mistake, not a sandbox.
+   ------------------------------------------------------------------------ */
+const ANALYSIS_ONLY = [
+  "scripts/pimc.mjs", "scripts/pimcsolve.mjs", "scripts/pimcmine.mjs",
+  "scripts/minehands.mjs", "scripts/gradedecision.mjs",
+  "scripts/scenarios/", "scripts/hands/",
+];
+
 /* A new suite added to package.json and forgotten here would simply never run,
    and `npm test` would still go green — the exact shape of failure this repo
    cannot afford, since a green CI on master is what releases beta. So the list
@@ -163,6 +205,42 @@ if (missing.length) {
 const unknown = SUITES.filter((s) => !pkg.scripts[s.name]);
 if (unknown.length) {
   console.error(`FAIL — no such package.json script: ${unknown.map((s) => s.name).join(", ")}`);
+  process.exit(1);
+}
+
+/* The analysis tripwire. Checks each suite's command, and — since a command
+   naming `node scripts/foo.mjs` says nothing about what foo.mjs imports — that
+   entry file's own top-level imports too. A comment mentioning a scenario is
+   fine and common (aiskilltest and aitest both cite the hands their assertions
+   were built from); only real code paths are refused, so the match is against
+   import/require statements rather than the file text. */
+const analysisRefs = [];
+for (const suite of SUITES) {
+  const cmd = pkg.scripts[suite.name];
+  for (const path of ANALYSIS_ONLY) {
+    if (cmd.includes(path)) analysisRefs.push(`${suite.name}: its command runs ${path}`);
+  }
+  const entry = cmd.match(/\bscripts\/[\w.-]+\.mjs\b/)?.[0];
+  if (!entry) continue;
+  let src;
+  try { src = readFileSync(new URL(`../${entry}`, import.meta.url), "utf8"); } catch { continue; }
+  for (const line of src.split("\n")) {
+    if (!/^\s*(import\b|.*\brequire\s*\()/.test(line)) continue;
+    for (const path of ANALYSIS_ONLY) {
+      if (line.includes(path.replace(/^scripts\//, "./")) || line.includes(path)) {
+        analysisRefs.push(`${suite.name}: ${entry} imports ${path}`);
+      }
+    }
+  }
+}
+if (analysisRefs.length) {
+  console.error(`FAIL — hand-analysis tooling is wired into the test suite. It must not be:`);
+  for (const r of analysisRefs) console.error(`  ${r}`);
+  console.error(`\nSee the note on ANALYSIS_ONLY in this file. PIMC reports an estimate with a`);
+  console.error(`standard error, scenarios are one person's transcription of one screenshot, and`);
+  console.error(`"the engine picked the second-best card" is a question, not a build failure.`);
+  console.error(`Run the analysis by hand (\`npm run pimcsolve\`, the analyze-sheepshead-hand`);
+  console.error(`skill) and file what it finds; do not make a deploy depend on it.`);
   process.exit(1);
 }
 

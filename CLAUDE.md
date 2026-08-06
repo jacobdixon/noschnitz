@@ -638,6 +638,29 @@ triggers on its own when somebody asks whether a play was right. It routes to
 `scripts/pimc.mjs` — Monte Carlo rollouts on `aiChooseCard`'s own policy, hands
 under `scripts/scenarios/`.
 
+**Analysis is READ-ONLY, and it is never part of `npm test`.** Both halves of
+that are enforced rather than asked for, as of 0.59.2:
+
+- **It does not change code.** The only file the workflow writes is the scenario
+  under `scripts/scenarios/` — the transcription is the input, not a product.
+  `src/`, `api/`, the harnesses and the workflows are off limits, *especially*
+  when the analysis has just found a real defect. Finding one is the success
+  condition; fixing it in the same pass is not, because an engine change here is
+  tuned empirically and never guessed (paired A/B, a null control that came back
+  exactly zero, consistent across seeds). One hand is where such a change starts
+  and nowhere near enough to justify one. The skill states this in its own Scope
+  section, which also carries the measured instruction to answer and stop.
+- **It cannot be wired into CI.** `scripts/runtests.mjs` refuses any suite whose
+  command runs, or whose entry file imports, `pimc.mjs` / `pimcsolve.mjs` /
+  `pimcmine.mjs` / `minehands.mjs` / `gradedecision.mjs` / `scripts/scenarios/` /
+  `scripts/hands/` — see the `ANALYSIS_ONLY` note there for the three separate
+  reasons. The sharpest: a scenario is one person's transcription of one
+  screenshot, so conscripting them into CI lets a misread card turn master red,
+  and per the deploy section a red master does not merely fail a check — it
+  withholds the beta deploy. The guard reads command lines and top-level
+  imports; a transitive import would slip through. It is a tripwire, not a
+  sandbox.
+
 **There used to be a second skill, `hand-analysis`, and it was deleted on
 2026-08-04.** It routed to `scripts/pimcsolve.mjs` (an exact double-dummy solve
 per sampled world, hands under `scripts/hands/`) and collided with this one on

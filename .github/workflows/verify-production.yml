@@ -70,13 +70,19 @@ jobs:
   verify:
     name: check what www.noschnitz.com serves
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+
+    # A queue budget, not a work budget — see the note in ci.yml. The check
+    # below is a retry ladder bounded at six attempts of up to 40s of curl plus
+    # a 20s sleep, so ~6 minutes worst case; that bound lives on the step, where
+    # the clock starts when the step does and a busy Actions pool cannot eat it.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: master
 
       - name: Check the served bundle
+        timeout-minutes: 10
         env:
           WANT_INPUT: ${{ inputs.version }}
           EXPECT: ${{ inputs.expect }}

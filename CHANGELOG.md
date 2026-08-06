@@ -6,6 +6,54 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.59.3] - 2026-08-06 (`PENDING`)
+**The deploy chain had the same timeout bug 0.59.2 fixed in CI, and `release.yml`
+also had a second one nobody had hit.** All three remaining workflows —
+`release.yml`, `verify-beta.yml`, `verify-production.yml` — carried a 10-minute
+*job* timeout, so a queue-starved run reports as a failure having done nothing.
+`Release` is the worst place for that: a cancelled Release is exactly what "the
+deploy never shipped" looks like, and it can leave beta moved but unverified.
+
+- **Job timeouts are now queue budgets; the real bounds are on the steps.**
+  `release.yml` 45 min (steps 5/5/20/5), the two verifiers 30 min (step 10).
+- **`release.yml`'s own worst case exceeded its old budget, independently of any
+  queueing.** "Make sure production actually deployed" is a retry ladder — six
+  attempts at up to 40s of curl plus a 20s sleep, then the deploy hook, then ten
+  more at up to 60s — which is **~16 minutes against a 10-minute job timeout**.
+  Never noticed because the fast path exits in seconds, but it means the repair
+  path this workflow exists to provide could be cut off after firing the hook
+  and before confirming it worked. That step now has 20 minutes of its own.
+
+**Hand analysis is read-only, and it cannot be wired into CI.** Both were true
+by accident and are now enforced.
+
+- **`scripts/runtests.mjs` refuses any suite** whose command runs, or whose entry
+  file imports, `pimc.mjs` / `pimcsolve.mjs` / `pimcmine.mjs` / `minehands.mjs` /
+  `gradedecision.mjs` / `scripts/scenarios/` / `scripts/hands/`. The `ANALYSIS_ONLY`
+  note gives three separate reasons; the sharpest is that a scenario is one
+  person's transcription of one screenshot, so conscripting them into CI lets a
+  misread card turn master red — and a red master withholds the beta deploy. The
+  existing completeness check made this worse rather than better: a future
+  `pimctest` would fail the run, and the obvious way to make it pass is to add
+  it to `SUITES`, which is the wrong answer. Verified with two negative controls
+  (command reference, and an innocent command whose file imports `pimc.mjs`);
+  both refuse, and the suite is unaffected. Stated plainly in the note: it reads
+  command lines and top-level imports, so a transitive import slips through. A
+  tripwire, not a sandbox.
+- **The skill now has a Scope section**, which it did not. It never said not to
+  change code — and its own guidance ("when one candidate scores oddly, check
+  what the engine actually plays next") reads as an invitation to go tune one.
+  The rule: the scenario file is the only thing the workflow writes; `src/`,
+  `api/`, harnesses and workflows are off limits *especially* when the analysis
+  has just found a real defect, because an engine change here needs a paired
+  A/B, a null control at exactly zero and consistency across seeds, and one hand
+  is where that starts rather than what justifies it. Finding a defect is the
+  success condition; fixing it in the same pass is not.
+- **It also carries the instruction to stop**, which CLAUDE.md had measured and
+  never landed here: comparable questions ran 4 to 30 minutes depending only on
+  whether the agent stopped once the question was answered, and one case went
+  from 225 tool calls to 36 on that instruction alone.
+
 ## [0.59.2] - 2026-08-06 (`67f48e7`)
 **CI was timing out, and the tests were not the reason.** Four runs on
 2026-08-06 — 131, 132, 134 and 135, two of them on `master` — each burnt exactly

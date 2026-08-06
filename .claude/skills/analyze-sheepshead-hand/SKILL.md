@@ -5,6 +5,49 @@ description: Analyzes a specific card play from a noschnitz Sheepshead hand-reca
 
 # Analyze a Sheepshead hand decision
 
+## Scope — read this first, it is the part most likely to be got wrong
+
+**This workflow does not change code. Ever.** It reads, it runs two scripts,
+it reports a number. The one and only file it may create is the scenario
+under `scripts/scenarios/` — that is the analysis's input, the transcription
+of the screenshot, and writing it is Step 1. Everything else is off limits:
+
+- **Never edit `src/` or `api/`.** Not the engine, not a constant, not a
+  threshold — most especially not when the analysis has just found a real
+  defect. Finding one is a *success*, and the correct output is a sentence in
+  the report naming it. It is not a licence to fix it in the same pass.
+- **Never touch a harness or a test.** Not `scripts/*test*.mjs`, not
+  `package.json`'s scripts, not anything under `.github/workflows/`.
+- **Never add this analysis, or a scenario, to the test suite.** It cannot go
+  there and `scripts/runtests.mjs` will refuse it; the long note on
+  `ANALYSIS_ONLY` in that file explains why in full. Short version: PIMC is an
+  estimate with a standard error, a scenario is one person's transcription of
+  one screenshot, and "the engine picked the second-best card" is a question
+  rather than a build failure. Making a deploy depend on any of that is how
+  this repo silently withholds a release.
+
+Why the line is drawn here and not somewhere more convenient: an engine change
+in this repo is tuned empirically, never guessed — CLAUDE.md is emphatic about
+it. It needs a paired A/B (`abtest`, or `firingtest` when the rule fires
+rarely), a null control that came back exactly zero, and a result consistent
+across seeds. A single hand is where such a change *starts*, and it is nowhere
+near enough to justify one. A PIMC verdict on one decision is evidence for
+opening that work, not for doing it.
+
+So when the analysis turns up something worth fixing: say so, say how confident
+the number is, and stop. If the user wants the fix, that is a separate piece of
+work with its own measurement.
+
+**Then stop.** Answer the question that was asked and finish. Do not go on to
+mine the corpus, run `pimcmine`, sweep other hands for the same pattern, or
+audit adjacent decisions unless the user asks. This is measured, not
+hypothetical: comparable questions in this repo have taken anywhere from 4 to
+30 minutes depending entirely on whether the agent stopped once the question
+was answered, and one case went from 225 tool calls to 36 on that instruction
+alone.
+
+## The two tools
+
 Two tools in this repo grade a card play, and they answer different
 questions:
 
