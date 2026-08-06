@@ -41,7 +41,25 @@ jobs:
     name: fast-forward beta and build it
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+
+    # THE JOB TIMEOUT IS A QUEUE BUDGET, NOT A WORK BUDGET. See the long note in
+    # ci.yml: on 2026-08-06 four CI jobs were cancelled at their `timeout-minutes`
+    # mark having never been given a runner at all, which reads as a failure and
+    # is not one. This job is the worst place for that to happen — a cancelled
+    # Release is exactly what "the deploy never shipped" looks like, and it can
+    # leave beta moved but unverified.
+    #
+    # The old bound was ALSO too small for this job's own work, independently of
+    # any queueing, and that had never been noticed because the fast path exits
+    # in seconds. "Make sure production actually deployed" below is a retry
+    # ladder: six attempts at up to 40s of curl plus a 20s sleep (6 min), then
+    # the deploy hook, then ten more at up to 60s each (10 min). Worst case is
+    # about 16 minutes against a 10-minute job budget — so the repair path this
+    # workflow exists to provide could be cut off partway through, after firing
+    # the hook and before confirming it worked. The step budgets below cover
+    # each step's real worst case; the job budget only has to cover the queue.
+    timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,6 +70,7 @@ jobs:
       # than forcing, because a force-push here would discard a commit that
       # exists nowhere else.
       - name: Fast-forward beta to master
+        timeout-minutes: 5
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
@@ -66,6 +85,7 @@ jobs:
       # It is read from the secret and never echoed. Set it under
       # Settings -> Secrets and variables -> Actions as VERCEL_BETA_DEPLOY_HOOK.
       - name: Request the beta build
+        timeout-minutes: 5
         env:
           HOOK: ${{ secrets.VERCEL_BETA_DEPLOY_HOOK }}
         run: |
@@ -95,7 +115,11 @@ jobs:
       # Fire the production hook only if it does not, which keeps the normal
       # case at one deployment rather than two — the Hobby plan allows 100 a
       # day and each merge already costs one for beta.
+      # 20 minutes: this step's own retry ladder can legitimately run ~16 (see
+      # the note on the job timeout above). Anything past that is not a slow
+      # deploy, it is a stuck one.
       - name: Make sure production actually deployed
+        timeout-minutes: 20
         env:
           HOOK: ${{ secrets.VERCEL_PROD_DEPLOY_HOOK }}
         run: |
@@ -145,6 +169,7 @@ jobs:
           exit 1
 
       - name: Summary
+        timeout-minutes: 5
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |

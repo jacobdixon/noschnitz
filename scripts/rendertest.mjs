@@ -148,7 +148,29 @@ const NAMES = ["You", "Gus", "Bunny", "Duane", "Patty"];
    Same fix as the measurement harnesses (see the long note on `dealWith` in
    abtest.mjs): shuffle from ALL_CARDS, a fixed canonical order, rather than
    reshuffling cards that makeDeck already shuffled — the latter composes with
-   the unseeded shuffle underneath instead of replacing it. */
+   the unseeded shuffle underneath instead of replacing it.
+
+   THE PARTICULAR SEED IS CHOSEN, NOT ARBITRARY, and the reason is the whole
+   cost of this suite. `gradeHandPlays` below is an EXACT double-dummy solve of
+   every decision in the hand, and what that costs depends enormously on the
+   deal — measured over 21 seeds it ranged from 275ms to 89 SECONDS, a 300x
+   spread, because a deal where the trump is split evenly explodes the search
+   that a lopsided one prunes away.
+
+   The old seed (20260804) sat near the bad end at ~18s, and a CPU profile put
+   `ddFuture` plus the GC pressure from its memo table at 16 of this file's 22
+   seconds. So a UI smoke test — which needs a grades object of the right shape
+   and has no opinion whatsoever about the numbers in it — was spending three
+   quarters of its life solving a card game. Seed 11 grades in ~275ms and still
+   produces BOTH a `best` and a `worst` over 15 real decisions, so every marker
+   the recap can draw is still drawn by a real grade of a real hand. No fixture,
+   no mock, no loss of fidelity: just a cheaper deal.
+
+   If this suite balloons again, check the grade cost FIRST — an engine change
+   can move this seed anywhere in that 300x range without anything failing.
+   runtests.mjs will say so out loud (it flags any suite that overruns its
+   declared weight), and the fix is to re-scan for a cheap seed rather than to
+   stop grading. */
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -158,7 +180,7 @@ function mulberry32(a) {
   };
 }
 
-function playToEnd({ stopAfterTricks = null, seed = 20260804 } = {}) {
+function playToEnd({ stopAfterTricks = null, seed = 11 } = {}) {
   let g = engine.freshHand(0, [0, 0, 0, 0, 0], 1);
   const rand = mulberry32(seed);
   const deck = [...engine.ALL_CARDS];
