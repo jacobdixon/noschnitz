@@ -6,6 +6,82 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
+## [0.61.0] - 2026-08-06 (`3edbc8f`)
+**The AI no longer throws away a hand it has already won.** A defender holding
+J♣ and 7♦, playing last on trick 5 with its own side already holding the trick
+and 59 points on the table, kept the Jack and played the 7♦. J♣ is two points
+and is dead — the only card above it is Q♠, and a picker never buries a Queen —
+so banking it ends the hand 61-59 the other way. The two points were the whole
+margin.
+
+- **The bug is an objective, not a blind spot.** Both components that could
+  have caught it optimize card points: `solveEndgameCard` averages points over
+  sampled worlds, and the recap grader ranks decisions by point cost. Sheepshead
+  does not pay in points, it pays in a step at 60/61 — so a 2-point error that
+  crosses the line beats a 20-point error that does not, and neither component
+  can see the difference.
+- **`clinchingCard` fires only where every term is exact**, so it needs no
+  sampling, no prior and no belief: last to act (the trick cannot change hands
+  after the card), the trick held by a *proven* teammate, and a point count that
+  is a deliberate lower bound — seats whose side the table has not settled are
+  excluded, and only the picker counts the bury. A lower bound that clears the
+  line means the true total clears it too, and points banked in a trick our side
+  takes are permanent. It is a proof rather than a tuning, which is what
+  justifies letting it override a search that is otherwise better informed.
+  - The bury needs no belief here at all, and that is what makes it cheap: the
+    bury is the picker's by definition, so a defender counting its own side's
+    taken points never has to know what is in it.
+  - It does not choose the card. Everything that crosses wins, so the residual
+    question is only the multiplier, and the existing stack is restricted to the
+    crossing cards to answer it — the same move `solveEndgameCard` already makes
+    to settle its own ties.
+- **It sits ahead of the dispatch in `aiChooseCard`, and that is load-bearing.**
+  Measured over 12,000 self-play hands, 12 of the 38 decisions it catches sit at
+  `tricksDone >= 4`, where `solveEndgameCard` owns the choice outright — a branch
+  inside `heuristicCard` would never be consulted, and would have missed the
+  reported hand itself.
+- **What it is worth: +0.476 stake per firing, ahead in 3 of 3 seeds**
+  (`firingtest 80000 --seeds 3 --opt clinchWonHand=false`, which puts the rule
+  OFF in the variant seat, so the reported -0.476 is the cost of removing it).
+  That is about double the +0.252 and +0.210 per-firing effects this repo has
+  shipped before on rules whose whole-hand aggregates were flat.
+- **The whole-hand number is +0.0004/seat/hand, and it has to be read with the
+  firing rate next to it.** The rule changes a card on 0.07% of hands for a
+  given seat — roughly 54 firings per seed even at 80,000 hands — so `abtest`
+  cannot resolve this at any sample size this project runs, and would report
+  "no effect" for a change that is provably correct. That is the wrong
+  denominator, not a close call, and it is the third time this repo has hit it.
+  - Sizing it beforehand from self-play: over 12,000 hands the situation arises
+    32.3 times per 1000, the old engine declined to cross on 3.2 of those, 27 of
+    those 38 were the reported shape (a dead non-boss trump), and 9 of the 38
+    went on to actually lose the hand.
+  - Those are ALL-SEAT rates and do not transfer to a per-seat number without
+    dividing by five — 3.2 per 1000 across the table is 0.64 per 1000 for one
+    watched seat, i.e. the 0.07% `firingtest` reports. An earlier draft of this
+    entry quoted ~0.002 stake/seat/hand by skipping that step, which is 5x the
+    measured +0.0004.
+- **Why ship something that small.** The same reasoning that moved
+  `ALONE_OFFER_STRENGTH` to 17 against the measurement: a player counting points
+  who watches the AI hold a dead Jack and lose a hand it had already won does not
+  read that as a tuning weakness, they read it as the game being broken. Unlike a
+  subtle misplay it is checkable at the table by anyone keeping score.
+- **Pinned as a constructed assertion with negative controls** (`aiskilltest`),
+  built as a replay of the whole deal rather than a hand-written position — the
+  count lives in `ptsTaken` and `provenSide` has to resolve off the trick-2
+  called-ace reveal, and hand-writing those invites a fixture that asserts the
+  right card for the wrong reason. Controls: J♣ must still be non-boss (if Q♠
+  were ever accounted for the case would be right for the wrong reason), and with
+  `clinchWonHand: false` the engine must still play 7♦.
+- **Known and NOT fixed here: the endgame sampler's bury is biased, badly.**
+  `sampleEndgameWorld` places the most-constrained cards first and lets whatever
+  it cannot place become the bury — and trump is the least-constrained card
+  there is, because no fail-suit void excludes it. On the reported position that
+  is not a tendency but a certainty: over 2,000 samples it buried two power
+  trump 2,000 times and never once produced the real bury (10♥ 10♣). So the
+  "Q♠ is in the bury" world that makes 7♦ look good is not a 1-in-3 tail, it is
+  the sampler's only hypothesis. Fixing it is a strength change wanting its own
+  measurement; this change routes around it rather than papering over it.
+
 ## [0.60.0] - 2026-08-06 (`PENDING`)
 **The recap now says which two cards came out of the blind.** A trailing dim
 lowercase `b` on the two cards the picker took, wherever they ended up —

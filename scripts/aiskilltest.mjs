@@ -22,7 +22,7 @@ import {
   unseenTrumpCount, SCHMEAR_CONFIDENCE, OVERTAKE_MIN_GAIN, SCHMEAR_KEEP_EQUITY,
   freshHand, assignPartner, resolveTrick, sortHand,
   calledCardCandidates, knownPartner, provenSide, teammateProbability,
-  isPowerTrump, unaccountedFor,
+  isPowerTrump, unaccountedFor, scoreHand,
 } from "../src/engine.js";
 
 let passed = 0;
@@ -1851,6 +1851,98 @@ const trick2 = [
     `J♣=${cardEquity(g, 2, C("J", "C"))} A♦=${cardEquity(g, 2, C("A", "D"))}`);
   check("negative control 2: so the cheapest winner still wins it, Ace and all",
     cid(aiChooseCard(g, 2)) === cid(C("A", "D")), `played ${cid(aiChooseCard(g, 2))}`);
+}
+
+/* ---------- Banking a dead trump to cross the line (2026-08-06) ------------
+   Reported hand, v0.59.3, finished 61-59 to the pickers. Leon (defender) held
+   J-C and 7-D playing LAST on trick 5, his own side already holding the trick
+   with 59 points on the table. J-C is two points and is dead — the only card
+   above it is Q-S and a picker never buries a Queen — so dumping it banks 61
+   and wins the hand outright. The engine kept it and played 7-D.
+
+   Both components that could have caught it optimize card points: the endgame
+   solver averages points over sampled worlds, and the grader ranks by point
+   cost, so a 2-point error that flips the hand sorts below a 20-point one that
+   changes nothing. See clinchingCard in engine.js.
+
+   Built as a REPLAY of the whole deal rather than a constructed position: the
+   count this turns on lives in ptsTaken, provenSide has to resolve off the
+   trick-2 called-ace reveal, and hand-writing those invites a fixture that
+   asserts the right card for the wrong reason. Replaying earns all of it. */
+{
+  const c = (s) => ({ rank: s.slice(0, -1), suit: s.slice(-1) });
+  const HANDS = [
+    ["10D", "KD", "JS", "AS", "8S", "8C"],   // You    (defender)
+    ["QD", "8D", "AH", "8H", "KC", "7C"],    // Miller (partner, holds the called A-H)
+    ["JH", "JD", "AD", "KS", "AC", "9H"],    // Gus    (defender)
+    ["QC", "JC", "7D", "10S", "9C", "KH"],   // Leon   (defender — the seat on trial)
+    ["QS", "QH", "9D", "9S", "7S", "7H"],    // Bernie (picker)
+  ].map((h) => h.map(c));
+  const TRICKS = [
+    [[1, "QD"], [2, "JD"], [3, "QC"], [4, "9D"], [0, "10D"]],
+    [[3, "KH"], [4, "7H"], [0, "KD"], [1, "AH"], [2, "9H"]],
+    [[0, "8S"], [1, "8D"], [2, "KS"], [3, "10S"], [4, "7S"]],
+    [[1, "7C"], [2, "AC"], [3, "9C"], [4, "QH"], [0, "8C"]],
+    [[4, "9S"], [0, "AS"], [1, "8H"], [2, "AD"], [3, "7D"]],
+    [[2, "JH"], [3, "JC"], [4, "QS"], [0, "JS"], [1, "KC"]],
+  ];
+  const deal = () => assignPartner({
+    ...freshHand(0, [0, 0, 0, 0, 0], 1),
+    hands: HANDS.map((h) => [...h]), blind: [], buried: [c("10H"), c("10C")],
+    picker: 4, calledSuit: "H", calledRank: "A", calledUnder: false, underCard: null,
+    phase: "playing", trick: [], turn: 1, leader: 1,
+  });
+  // Replay `tricks` in full; stop early at (trickIdx, pos) when asked.
+  const replay = (tricks, stopTrick = 99, stopPos = 0) => {
+    let g = deal();
+    for (let t = 0; t < tricks.length; t++) {
+      for (let i = 0; i < 5; i++) {
+        if (t === stopTrick && i === stopPos) return g;
+        g = applyPlay(g, tricks[t][i][0], c(tricks[t][i][1]));
+      }
+      g = resolveTrick(g);
+    }
+    return g;
+  };
+
+  const g = replay(TRICKS, 4, 4);   // trick 5, Leon last to act
+
+  check("clinch: fixture is a complete 32-card deal", dealIsComplete(g));
+  check("clinch: Leon is on strike with J♣ and 7♦",
+    g.turn === 3 && g.hands[3].length === 2 && legalPlays(g, 3).length === 2,
+    `turn ${g.turn}, holds ${g.hands[3].map(cid).join(" ")}`);
+  check("clinch: the trick already belongs to Leon's side, provably",
+    provenSide(g, 3, trickWinner(g.trick)) === true);
+  check("clinch: 59 on the table before Leon plays — one point short",
+    [0, 2, 3].reduce((s, p) => s + g.ptsTaken[p], 0)
+      + g.trick.reduce((s, t) => s + cardPts(t.actual ?? t.card), 0) === 59);
+
+  // NEGATIVE CONTROL. The premise is that J♣ is DEAD. If Q♠ were ever
+  // accounted for, J♣ would be boss, keeping it would be right, and this case
+  // would be asserting the correct card for entirely the wrong reason.
+  check("clinch negative control: J♣ is not boss — something unseen still beats it",
+    cardEquity(g, 3, c("JC")) > 0,
+    `equity ${cardEquity(g, 3, c("JC"))}`);
+  // NEGATIVE CONTROL. Without the rule the engine must still play 7♦: if this
+  // ever goes green alongside the assertion below, something else started
+  // fixing the hand and this fixture has stopped testing clinchingCard.
+  check("clinch negative control: with the rule off, the engine still plays 7♦",
+    cid(aiChooseCard(g, 3, { clinchWonHand: false })) === cid(c("7D")),
+    `played ${cid(aiChooseCard(g, 3, { clinchWonHand: false }))}`);
+
+  check("clinch: Leon banks the dead Jack and wins the hand",
+    cid(aiChooseCard(g, 3)) === cid(c("JC")), `played ${cid(aiChooseCard(g, 3))}`);
+
+  // And it is worth the whole hand, not two card points: swapping Leon's two
+  // cards over tricks 5 and 6 turns a 61-59 loss into a 59-61 win.
+  const swapped = TRICKS.map((t, i) => (i === 4 || i === 5
+    ? t.map(([p, s]) => [p, p === 3 ? (i === 4 ? "JC" : "7D") : s]) : t));
+  const before = scoreHand(replay(TRICKS)).result.handDelta;
+  const after = scoreHand(replay(swapped)).result.handDelta;
+  check("clinch: the picker's team wins the hand as played", before[4] > 0, `delta ${before}`);
+  check("clinch: and loses it once Leon banks the Jack", after[4] < 0, `delta ${after}`);
+  check("clinch: Leon's own stake swings on that one card", after[3] > before[3],
+    `${before[3]} -> ${after[3]}`);
 }
 
 console.log(`${passed} passed, ${failures.length} failed`);
