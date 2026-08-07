@@ -6,7 +6,7 @@ changes, MINOR for new features or AI behavior changes, PATCH for small
 fixes/tweaks. The version shown in the app (bottom of the top info strip)
 corresponds to the entries below.
 
-## [0.61.0] - 2026-08-06 (`PENDING`)
+## [0.61.0] - 2026-08-06 (`3edbc8f`)
 **The AI no longer throws away a hand it has already won.** A defender holding
 J♣ and 7♦, playing last on trick 5 with its own side already holding the trick
 and 59 points on the table, kept the Jack and played the 7♦. J♣ is two points
@@ -40,14 +40,26 @@ margin.
   `tricksDone >= 4`, where `solveEndgameCard` owns the choice outright — a branch
   inside `heuristicCard` would never be consulted, and would have missed the
   reported hand itself.
-- **What it is worth.** The situation arises 32.3 times per 1000 hands; the old
-  engine declined to cross on 3.2 of those, 27 of the 38 being the reported shape
-  (a dead non-boss trump), and 9 of the 38 went on to actually lose the hand.
-  That is roughly 0.002 stake/seat/hand — an order of magnitude below the floor
-  `abtest` can resolve, which is why it was measured with `firingtest` instead.
-  The `firingtest` figure is still in flight at the time of this commit (80,000
-  hands x 3 seeds; at ~0.06% firing per watched seat a smaller sample lands too
-  few firings to read) and is filled in alongside the commit hash.
+- **What it is worth: +0.476 stake per firing, ahead in 3 of 3 seeds**
+  (`firingtest 80000 --seeds 3 --opt clinchWonHand=false`, which puts the rule
+  OFF in the variant seat, so the reported -0.476 is the cost of removing it).
+  That is about double the +0.252 and +0.210 per-firing effects this repo has
+  shipped before on rules whose whole-hand aggregates were flat.
+- **The whole-hand number is +0.0004/seat/hand, and it has to be read with the
+  firing rate next to it.** The rule changes a card on 0.07% of hands for a
+  given seat — roughly 54 firings per seed even at 80,000 hands — so `abtest`
+  cannot resolve this at any sample size this project runs, and would report
+  "no effect" for a change that is provably correct. That is the wrong
+  denominator, not a close call, and it is the third time this repo has hit it.
+  - Sizing it beforehand from self-play: over 12,000 hands the situation arises
+    32.3 times per 1000, the old engine declined to cross on 3.2 of those, 27 of
+    those 38 were the reported shape (a dead non-boss trump), and 9 of the 38
+    went on to actually lose the hand.
+  - Those are ALL-SEAT rates and do not transfer to a per-seat number without
+    dividing by five — 3.2 per 1000 across the table is 0.64 per 1000 for one
+    watched seat, i.e. the 0.07% `firingtest` reports. An earlier draft of this
+    entry quoted ~0.002 stake/seat/hand by skipping that step, which is 5x the
+    measured +0.0004.
 - **Why ship something that small.** The same reasoning that moved
   `ALONE_OFFER_STRENGTH` to 17 against the measurement: a player counting points
   who watches the AI hold a dead Jack and lose a hand it had already won does not
